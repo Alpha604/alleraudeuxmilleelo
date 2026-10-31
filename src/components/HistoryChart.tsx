@@ -3,13 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo, useState } from 'react';
-import { BarChart2, Calendar, Filter, Info, Shield, Target } from 'lucide-react';
-import { GameMode, SyncRecord } from '../types/chess';
+import React, { useId, useMemo, useRef, useState } from 'react';
+import { Target, Trophy } from 'lucide-react';
+import { SyncRecord } from '../types/chess';
 import { calculateLinearElo, DEFAULT_START_DATE, DEFAULT_TARGET_DATE } from '../utils/eloEngine';
-
-type TimeFilter = '7d' | '30d' | '90d' | '180d' | 'all';
-type MetricFilter = 'best' | 'bullet' | 'blitz' | 'rapid' | 'all_modes';
 
 interface HistoryChartProps {
   syncHistory: SyncRecord[];
@@ -21,334 +18,269 @@ interface HistoryChartProps {
 
 export const HistoryChart: React.FC<HistoryChartProps> = ({
   syncHistory,
-  startElo,
-  targetElo,
-  startDateStr,
-  targetDateStr,
+  startElo = 1500,
+  targetElo = 2000,
+  startDateStr = DEFAULT_START_DATE,
+  targetDateStr = DEFAULT_TARGET_DATE,
 }) => {
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
-  const [metricFilter, setMetricFilter] = useState<MetricFilter>('best');
-  const [hoveredPoint, setHoveredPoint] = useState<{
+  const gradientId = useId();
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [hoverData, setHoverData] = useState<{
     x: number;
-    y: number;
-    date: string;
-    elo: number;
-    theoretical: number;
-    diff: number;
-    mode: string;
+    yReal: number;
+    yTarget: number;
+    dateFormatted: string;
+    targetElo: number;
+    realElo: number | null;
+    diff: number | null;
   } | null>(null);
 
-  // Filter history records based on selected timeframe
-  const filteredHistory = useMemo(() => {
-    if (syncHistory.length === 0) return [];
+  // Time boundaries: fixed across the entire project duration (31 Oct 2026 → 31 Dec 2027)
+  const startTime = useMemo(() => new Date(startDateStr || DEFAULT_START_DATE).getTime(), [startDateStr]);
+  const endTime = useMemo(() => new Date(targetDateStr || DEFAULT_TARGET_DATE).getTime(), [targetDateStr]);
 
-    const now = new Date().getTime();
-    let cutoff = 0;
-    if (timeFilter === '7d') cutoff = now - 7 * 24 * 3600 * 1000;
-    else if (timeFilter === '30d') cutoff = now - 30 * 24 * 3600 * 1000;
-    else if (timeFilter === '90d') cutoff = now - 90 * 24 * 3600 * 1000;
-    else if (timeFilter === '180d') cutoff = now - 180 * 24 * 3600 * 1000;
+  // Chronologically sorted real sync records
+  const sortedRecords = useMemo(() => {
+    return [...syncHistory].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+  }, [syncHistory]);
 
-    // Sort ascending for chronological chart
-    return syncHistory
-      .filter((r) => new Date(r.timestamp).getTime() >= cutoff)
-      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-  }, [syncHistory, timeFilter]);
+  // Current real rating (latest sync, or startElo if no sync yet)
+  const latestSync = sortedRecords.length > 0 ? sortedRecords[sortedRecords.length - 1] : null;
+  const currentRealElo = latestSync ? latestSync.bestRating : startElo;
+  const currentBestMode = latestSync ? latestSync.bestMode : 'blitz';
 
-  // Compute gain/loss stats
-  const performanceStats = useMemo(() => {
-    if (filteredHistory.length < 1) {
-      return { delta: 0, min: startElo, max: startElo, count: 0 };
+  // Build the continuous progression points starting at project baseline (31 Oct 2026 : 1500)
+  const realPointsData = useMemo(() => {
+    const list: { t: number; elo: number; label: string }[] = [
+      {
+        t: startTime,
+        elo: startElo,
+        label: 'Départ officiel (1500 Elo)',
+      },
+    ];
+
+    sortedRecords.forEach((record) => {
+      const t = new Date(record.timestamp).getTime();
+      // Ensure points fall within project bounds
+      if (t > startTime && t <= endTime) {
+        list.push({
+          t,
+          elo: record.bestRating,
+          label: `${record.bestRating} Elo (${record.bestMode})`,
+        });
+      }
+    });
+
+    // If currently after start date and no recent point today, connect to latest known
+    const now = Date.now();
+    if (list.length === 1 && now > startTime) {
+      list.push({
+        t: Math.min(now, endTime),
+        elo: currentRealElo,
+        label: `${currentRealElo} Elo (${currentBestMode})`,
+      });
     }
-    const firstElo = filteredHistory[0].bestRating;
-    const lastElo = filteredHistory[filteredHistory.length - 1].bestRating;
-    const elos = filteredHistory.map((h) => h.bestRating);
-    return {
-      delta: lastElo - firstElo,
-      min: Math.min(...elos),
-      max: Math.max(...elos),
-      count: filteredHistory.length,
-    };
-  }, [filteredHistory, startElo]);
+
+    return list;
+  }, [startTime, endTime, startElo, sortedRecords, currentRealElo, currentBestMode]);
 
   // Chart Dimensions & Scales
-  const width = 860;
-  const height = 360;
-  const padding = { top: 30, right: 30, bottom: 45, left: 55 };
+  const width = 900;
+  const height = 380;
+  const padding = { top: 30, right: 40, bottom: 45, left: 55 };
   const innerWidth = width - padding.left - padding.right;
   const innerHeight = height - padding.top - padding.bottom;
 
-  // Determine time domain and Elo domain
-  const { startTime, endTime, minElo, maxElo } = useMemo(() => {
-    const startProj = new Date(startDateStr || DEFAULT_START_DATE).getTime();
-    const endProj = new Date(targetDateStr || DEFAULT_TARGET_DATE).getTime();
+  // Fixed Elo axis from 1450 to 2050 for clear perspective
+  const minElo = 1450;
+  const maxElo = 2050;
 
-    let sTime = startProj;
-    let eTime = endProj;
-
-    if (timeFilter !== 'all' && filteredHistory.length > 0) {
-      sTime = Math.min(new Date(filteredHistory[0].timestamp).getTime(), startProj);
-      eTime = Math.max(new Date(filteredHistory[filteredHistory.length - 1].timestamp).getTime(), sTime + 7 * 86400000);
-    }
-
-    const recordedElos: number[] = [];
-    filteredHistory.forEach((r) => {
-      if (r.bestRating) recordedElos.push(r.bestRating);
-      if (r.bullet) recordedElos.push(r.bullet);
-      if (r.blitz) recordedElos.push(r.blitz);
-      if (r.rapid) recordedElos.push(r.rapid);
-    });
-
-    const lowest = recordedElos.length ? Math.min(startElo, ...recordedElos) : startElo;
-    const highest = recordedElos.length ? Math.max(targetElo, ...recordedElos) : targetElo;
-
-    return {
-      startTime: sTime,
-      endTime: eTime,
-      minElo: Math.floor((lowest - 50) / 50) * 50,
-      maxElo: Math.ceil((highest + 50) / 50) * 50,
-    };
-  }, [startDateStr, targetDateStr, timeFilter, filteredHistory, startElo, targetElo]);
-
-  const getX = (timestamp: number) => {
-    const ratio = Math.max(0, Math.min(1, (timestamp - startTime) / (endTime - startTime || 1)));
+  const getX = (t: number) => {
+    const ratio = Math.max(0, Math.min(1, (t - startTime) / (endTime - startTime || 1)));
     return padding.left + ratio * innerWidth;
   };
 
   const getY = (elo: number) => {
-    const ratio = (elo - minElo) / (maxElo - minElo || 1);
+    const ratio = Math.max(0, Math.min(1, (elo - minElo) / (maxElo - minElo || 1)));
     return padding.top + innerHeight - ratio * innerHeight;
   };
 
-  // Theoretical trajectory points (20 sampled points across timeline)
-  const trajectoryPath = useMemo(() => {
-    const steps = 30;
-    const points: string[] = [];
-    for (let i = 0; i <= steps; i++) {
-      const t = startTime + (i / steps) * (endTime - startTime);
-      const theoretical = calculateLinearElo(t, startDateStr, targetDateStr, startElo, targetElo);
-      const x = getX(t);
-      const y = getY(theoretical);
-      points.push(`${i === 0 ? 'M' : 'L'} ${x.toFixed(1)},${y.toFixed(1)}`);
-    }
-    return points.join(' ');
-  }, [startTime, endTime, startDateStr, targetDateStr, startElo, targetElo, minElo, maxElo]);
+  // 1. Line 1: Target Objective Line across time (Start to Finish)
+  const targetLine = useMemo(() => {
+    const x1 = getX(startTime);
+    const y1 = getY(startElo);
+    const x2 = getX(endTime);
+    const y2 = getY(targetElo);
+    return { x1, y1, x2, y2 };
+  }, [startTime, endTime, startElo, targetElo]);
 
-  // Real data lines helper
-  const getLineForProperty = (prop: 'bestRating' | 'bullet' | 'blitz' | 'rapid') => {
-    const valid = filteredHistory.filter((r) => r[prop] !== null && typeof r[prop] === 'number');
-    if (valid.length === 0) return '';
-    return valid
-      .map((r, i) => {
-        const x = getX(new Date(r.timestamp).getTime());
-        const y = getY(r[prop] as number);
-        return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)},${y.toFixed(1)}`;
-      })
+  // 2. Line 2: Real Progress Line (Clean polyline with rounded joints)
+  const realLinePoints = useMemo(() => {
+    return realPointsData.map((pt) => ({
+      x: getX(pt.t),
+      y: getY(pt.elo),
+      t: pt.t,
+      elo: pt.elo,
+    }));
+  }, [realPointsData]);
+
+  const realLinePath = useMemo(() => {
+    if (realLinePoints.length < 2) return '';
+    return realLinePoints
+      .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`)
       .join(' ');
+  }, [realLinePoints]);
+
+  // Subtle gold area fill under the real curve
+  const realAreaPath = useMemo(() => {
+    if (realLinePoints.length < 2) return '';
+    const first = realLinePoints[0];
+    const last = realLinePoints[realLinePoints.length - 1];
+    const baseY = getY(minElo);
+    const line = realLinePoints
+      .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+      .join(' ');
+    return `${line} L ${last.x.toFixed(1)},${baseY} L ${first.x.toFixed(1)},${baseY} Z`;
+  }, [realLinePoints, minElo]);
+
+  // Horizontal Grid Levels (1500, 1600, 1700, 1800, 1900, 2000)
+  const yTicks = [1500, 1600, 1700, 1800, 1900, 2000];
+
+  // X Axis Date Ticks across the 14 months
+  const xTicks = useMemo(() => {
+    return [
+      { t: new Date('2026-10-31').getTime(), label: '31 oct. 2026' },
+      { t: new Date('2027-01-31').getTime(), label: 'Janv. 2027' },
+      { t: new Date('2027-04-30').getTime(), label: 'Avr. 2027' },
+      { t: new Date('2027-07-31').getTime(), label: 'Juil. 2027' },
+      { t: new Date('2027-10-31').getTime(), label: 'Oct. 2027' },
+      { t: new Date('2027-12-31').getTime(), label: '31 déc. 2027' },
+    ];
+  }, []);
+
+  // Pointer hover calculation
+  const handlePointer = (clientX: number) => {
+    if (!svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const svgX = (clientX - rect.left) * (width / rect.width);
+    const boundedX = Math.max(padding.left, Math.min(width - padding.right, svgX));
+
+    const ratio = (boundedX - padding.left) / innerWidth;
+    const t = startTime + ratio * (endTime - startTime);
+
+    // Theoretical Elo on this date
+    const targetAtDate = Math.round(calculateLinearElo(t, startDateStr, targetDateStr, startElo, targetElo));
+    const yTarget = getY(targetAtDate);
+
+    // Nearest real record if close
+    let realAtDate: number | null = null;
+    let yReal = yTarget;
+
+    // Find if within real recorded range
+    const lastRealT = realLinePoints[realLinePoints.length - 1].t;
+    if (t <= lastRealT + 86400000 * 2) {
+      // Find interpolation or closest real point
+      for (let i = 0; i < realLinePoints.length - 1; i++) {
+        const p1 = realLinePoints[i];
+        const p2 = realLinePoints[i + 1];
+        if (t >= p1.t && t <= p2.t) {
+          const r = (t - p1.t) / (p2.t - p1.t || 1);
+          realAtDate = Math.round(p1.elo + r * (p2.elo - p1.elo));
+          yReal = getY(realAtDate);
+          break;
+        }
+      }
+      if (realAtDate === null && realLinePoints.length > 0) {
+        realAtDate = currentRealElo;
+        yReal = getY(currentRealElo);
+      }
+    }
+
+    const diff = realAtDate !== null ? realAtDate - targetAtDate : null;
+
+    setHoverData({
+      x: boundedX,
+      yReal,
+      yTarget,
+      dateFormatted: new Date(t).toLocaleDateString('fr-FR', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }),
+      targetElo: targetAtDate,
+      realElo: realAtDate,
+      diff,
+    });
   };
 
-  const bestLinePath = useMemo(() => getLineForProperty('bestRating'), [filteredHistory, startTime, endTime, minElo, maxElo]);
-  const bulletLinePath = useMemo(() => getLineForProperty('bullet'), [filteredHistory, startTime, endTime, minElo, maxElo]);
-  const blitzLinePath = useMemo(() => getLineForProperty('blitz'), [filteredHistory, startTime, endTime, minElo, maxElo]);
-  const rapidLinePath = useMemo(() => getLineForProperty('rapid'), [filteredHistory, startTime, endTime, minElo, maxElo]);
-
-  // Y-axis grid ticks
-  const yTicks = useMemo(() => {
-    const ticks: number[] = [];
-    const step = (maxElo - minElo) > 600 ? 100 : 50;
-    for (let e = minElo; e <= maxElo; e += step) {
-      ticks.push(e);
-    }
-    return ticks;
-  }, [minElo, maxElo]);
-
-  // X-axis date ticks
-  const xTicks = useMemo(() => {
-    const ticks: { time: number; label: string }[] = [];
-    const count = 5;
-    for (let i = 0; i < count; i++) {
-      const t = startTime + (i / (count - 1)) * (endTime - startTime);
-      const d = new Date(t);
-      const label = d.toLocaleDateString('fr-FR', {
-        month: 'short',
-        year: '2-digit',
-      });
-      ticks.push({ time: t, label });
-    }
-    return ticks;
-  }, [startTime, endTime]);
+  // Theoretical Elo today for quick reference
+  const todayTarget = Math.round(calculateLinearElo(Date.now(), startDateStr, targetDateStr, startElo, targetElo));
+  const diffToday = currentRealElo - todayTarget;
+  const daysRemaining = Math.max(0, Math.ceil((endTime - Date.now()) / (1000 * 60 * 60 * 24)));
 
   return (
     <div className="space-y-6">
-      {/* Header with Title and Filters */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      {/* Quiet, Luxury Header */}
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 border-b border-neutral-800/80 pb-5">
         <div>
-          <h2 className="text-lg font-bold text-neutral-100 dark:text-neutral-100 light:text-neutral-900 flex items-center gap-2">
-            <BarChart2 className="h-5 w-5 text-amber-400" />
-            <span>Évolution & Courbes De Progression Elo</span>
-          </h2>
-          <p className="text-xs text-neutral-400">
-            Comparaison rigoureuse entre la trajectoire théorique et les relevés réels de l'API Chess.com
-          </p>
+          <span className="text-xs uppercase tracking-widest font-semibold text-neutral-400">
+            Trajectoire Vers 2000 Elo
+          </span>
+          <div className="mt-1 flex items-baseline gap-3">
+            <span className="font-mono text-4xl sm:text-5xl font-extrabold text-neutral-100 tracking-tight tabular-nums">
+              {currentRealElo}
+            </span>
+            <span className="text-sm font-semibold uppercase tracking-wider text-amber-400">
+              {currentBestMode}
+            </span>
+            <span className="text-xs text-neutral-400 font-mono">
+              ({diffToday >= 0 ? `+${diffToday}` : diffToday} pts par rapport à la cible)
+            </span>
+          </div>
         </div>
 
-        {/* Filters Controls */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Cadence filter */}
-          <div className="flex items-center rounded-lg border border-neutral-800 bg-neutral-900 p-1 dark:border-neutral-800 dark:bg-neutral-900 light:border-neutral-300 light:bg-neutral-100">
-            <button
-              onClick={() => setMetricFilter('best')}
-              className={`px-2.5 py-1 text-xs rounded font-medium transition-colors whitespace-nowrap ${
-                metricFilter === 'best'
-                  ? 'bg-amber-500/20 text-amber-300 font-semibold'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Meilleur
-            </button>
-            <button
-              onClick={() => setMetricFilter('bullet')}
-              className={`px-2.5 py-1 text-xs rounded font-medium transition-colors whitespace-nowrap ${
-                metricFilter === 'bullet'
-                  ? 'bg-amber-500/20 text-amber-300 font-semibold'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Bullet
-            </button>
-            <button
-              onClick={() => setMetricFilter('blitz')}
-              className={`px-2.5 py-1 text-xs rounded font-medium transition-colors whitespace-nowrap ${
-                metricFilter === 'blitz'
-                  ? 'bg-amber-500/20 text-amber-300 font-semibold'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Blitz
-            </button>
-            <button
-              onClick={() => setMetricFilter('rapid')}
-              className={`px-2.5 py-1 text-xs rounded font-medium transition-colors whitespace-nowrap ${
-                metricFilter === 'rapid'
-                  ? 'bg-amber-500/20 text-amber-300 font-semibold'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Rapide
-            </button>
-            <button
-              onClick={() => setMetricFilter('all_modes')}
-              className={`px-2.5 py-1 text-xs rounded font-medium transition-colors whitespace-nowrap ${
-                metricFilter === 'all_modes'
-                  ? 'bg-amber-500/20 text-amber-300 font-semibold'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Tous
-            </button>
+        {/* Legend: Exactly the two lines requested */}
+        <div className="flex items-center gap-6 text-xs text-neutral-400 font-medium">
+          <div className="flex items-center gap-2">
+            <span className="h-0.5 w-6 border-b-2 border-dashed border-neutral-400" />
+            <span className="text-neutral-400">Objectif (1500 → 2000 Elo)</span>
           </div>
-
-          {/* Timeframe filter */}
-          <div className="flex items-center rounded-lg border border-neutral-800 bg-neutral-900 p-1 dark:border-neutral-800 dark:bg-neutral-900 light:border-neutral-300 light:bg-neutral-100">
-            <button
-              onClick={() => setTimeFilter('7d')}
-              className={`px-2.5 py-1 text-xs rounded font-medium transition-colors whitespace-nowrap ${
-                timeFilter === '7d' ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              7j
-            </button>
-            <button
-              onClick={() => setTimeFilter('30d')}
-              className={`px-2.5 py-1 text-xs rounded font-medium transition-colors whitespace-nowrap ${
-                timeFilter === '30d' ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              30j
-            </button>
-            <button
-              onClick={() => setTimeFilter('90d')}
-              className={`px-2.5 py-1 text-xs rounded font-medium transition-colors whitespace-nowrap ${
-                timeFilter === '90d' ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              3m
-            </button>
-            <button
-              onClick={() => setTimeFilter('180d')}
-              className={`px-2.5 py-1 text-xs rounded font-medium transition-colors whitespace-nowrap ${
-                timeFilter === '180d' ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              6m
-            </button>
-            <button
-              onClick={() => setTimeFilter('all')}
-              className={`px-2.5 py-1 text-xs rounded font-medium transition-colors whitespace-nowrap ${
-                timeFilter === 'all' ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Tout
-            </button>
+          <div className="flex items-center gap-2">
+            <span className="h-0.5 w-6 bg-amber-400" />
+            <span className="text-amber-300 font-semibold">Progression réelle</span>
           </div>
         </div>
       </div>
 
-      {/* Main Chart Container */}
-      <div className="relative rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/90 light:border-neutral-200 light:bg-white">
-        {/* Legend */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-800/80 pb-4 text-xs dark:border-neutral-800/80 light:border-neutral-200">
-          <div className="flex flex-wrap items-center gap-5">
-            <div className="flex items-center gap-2">
-              <span className="h-0.5 w-5 bg-neutral-400 border-b border-dashed border-neutral-400" />
-              <span className="text-neutral-400">Trajectoire théorique (2000 Elo)</span>
-            </div>
-
-            {(metricFilter === 'best' || metricFilter === 'all_modes') && (
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
-                <span className="font-semibold text-amber-300">Meilleur Elo Réel</span>
-              </div>
-            )}
-
-            {(metricFilter === 'bullet' || metricFilter === 'all_modes') && (
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-cyan-400" />
-                <span className="text-cyan-300">Bullet</span>
-              </div>
-            )}
-
-            {(metricFilter === 'blitz' || metricFilter === 'all_modes') && (
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-orange-400" />
-                <span className="text-orange-300">Blitz</span>
-              </div>
-            )}
-
-            {(metricFilter === 'rapid' || metricFilter === 'all_modes') && (
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                <span className="text-emerald-300">Rapide</span>
-              </div>
-            )}
-          </div>
-
-          <div className="text-neutral-400 font-mono text-[11px]">
-            {filteredHistory.length} synchronisation{filteredHistory.length > 1 ? 's' : ''} enregistrée{filteredHistory.length > 1 ? 's' : ''}
-          </div>
-        </div>
-
-        {/* SVG Viewport */}
-        <div className="relative mt-4 w-full overflow-hidden">
+      {/* Pure, Minimalist Chart Canvas */}
+      <div className="rounded-2xl border border-neutral-800/80 bg-neutral-900/40 p-4 sm:p-6 shadow-xl backdrop-blur-sm">
+        <div className="relative select-none">
           <svg
+            ref={svgRef}
             viewBox={`0 0 ${width} ${height}`}
-            className="w-full h-auto select-none overflow-visible"
+            className="w-full h-auto overflow-visible cursor-crosshair touch-none"
+            onMouseMove={(e) => handlePointer(e.clientX)}
+            onMouseLeave={() => setHoverData(null)}
+            onTouchMove={(e) => {
+              if (e.touches.length > 0) handlePointer(e.touches[0].clientX);
+            }}
+            onTouchEnd={() => setHoverData(null)}
           >
-            {/* Horizontal Grid lines */}
+            <defs>
+              <linearGradient id={`goldGrad-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.16" />
+                <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.0" />
+              </linearGradient>
+            </defs>
+
+            {/* Horizontal Grid Lines */}
             {yTicks.map((tick) => {
               const y = getY(tick);
               const isTarget = tick === targetElo;
               const isStart = tick === startElo;
+
               return (
                 <g key={tick}>
                   <line
@@ -358,23 +290,25 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                     y2={y}
                     stroke={
                       isTarget
-                        ? 'rgba(245, 158, 11, 0.4)'
+                        ? 'rgba(245, 158, 11, 0.35)'
                         : isStart
-                        ? 'rgba(255, 255, 255, 0.2)'
-                        : 'rgba(255, 255, 255, 0.06)'
+                        ? 'rgba(255, 255, 255, 0.15)'
+                        : 'rgba(255, 255, 255, 0.05)'
                     }
                     strokeDasharray={isTarget || isStart ? '4 3' : undefined}
                     strokeWidth={isTarget ? 1.5 : 1}
                   />
+
+                  {/* Left Elo Label */}
                   <text
-                    x={padding.left - 10}
+                    x={padding.left - 12}
                     y={y + 4}
                     textAnchor="end"
-                    className={`font-mono text-[10px] ${
+                    className={`font-mono text-[11px] ${
                       isTarget
                         ? 'fill-amber-400 font-bold'
                         : isStart
-                        ? 'fill-neutral-300'
+                        ? 'fill-neutral-300 font-semibold'
                         : 'fill-neutral-500'
                     }`}
                   >
@@ -384,9 +318,9 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               );
             })}
 
-            {/* Vertical Time Grid lines */}
+            {/* Vertical Time Lines */}
             {xTicks.map((tick, i) => {
-              const x = getX(tick.time);
+              const x = getX(tick.t);
               return (
                 <g key={i}>
                   <line
@@ -394,13 +328,13 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                     y1={padding.top}
                     x2={x}
                     y2={height - padding.bottom}
-                    stroke="rgba(255, 255, 255, 0.05)"
+                    stroke="rgba(255, 255, 255, 0.04)"
                   />
                   <text
                     x={x}
                     y={height - padding.bottom + 20}
                     textAnchor="middle"
-                    className="font-mono text-[10px] fill-neutral-400 capitalize"
+                    className="font-mono text-[10px] fill-neutral-400"
                   >
                     {tick.label}
                   </text>
@@ -408,207 +342,178 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               );
             })}
 
-            {/* Theoretical Trajectory Line */}
-            <path
-              d={trajectoryPath}
-              fill="none"
-              stroke="#e2e8f0"
+            {/* Subtle Area under Real Curve */}
+            {realAreaPath && (
+              <path d={realAreaPath} fill={`url(#goldGrad-${gradientId})`} />
+            )}
+
+            {/* 1. Target Objective Line (Start 1500 to End 2000) */}
+            <line
+              x1={targetLine.x1}
+              y1={targetLine.y1}
+              x2={targetLine.x2}
+              y2={targetLine.y2}
+              stroke="#a1a1aa"
               strokeWidth="2"
-              strokeDasharray="6 4"
-              opacity="0.45"
+              strokeDasharray="6 5"
+              opacity="0.65"
             />
 
-            {/* Mode Lines */}
-            {metricFilter === 'all_modes' && (
-              <>
-                {bulletLinePath && (
-                  <path d={bulletLinePath} fill="none" stroke="#22d3ee" strokeWidth="2" opacity="0.8" />
-                )}
-                {blitzLinePath && (
-                  <path d={blitzLinePath} fill="none" stroke="#fb923c" strokeWidth="2" opacity="0.8" />
-                )}
-                {rapidLinePath && (
-                  <path d={rapidLinePath} fill="none" stroke="#34d399" strokeWidth="2" opacity="0.8" />
-                )}
-              </>
-            )}
-
-            {metricFilter === 'bullet' && bulletLinePath && (
-              <path d={bulletLinePath} fill="none" stroke="#22d3ee" strokeWidth="2.5" />
-            )}
-            {metricFilter === 'blitz' && blitzLinePath && (
-              <path d={blitzLinePath} fill="none" stroke="#fb923c" strokeWidth="2.5" />
-            )}
-            {metricFilter === 'rapid' && rapidLinePath && (
-              <path d={rapidLinePath} fill="none" stroke="#34d399" strokeWidth="2.5" />
-            )}
-
-            {/* Best Elo Solid Curve */}
-            {(metricFilter === 'best' || metricFilter === 'all_modes') && bestLinePath && (
+            {/* 2. Real Progress Line */}
+            {realLinePath && (
               <path
-                d={bestLinePath}
+                d={realLinePath}
                 fill="none"
                 stroke="#f59e0b"
-                strokeWidth="3"
-                className="drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               />
             )}
 
-            {/* Real Recorded Data Points (Circles with hover handlers) */}
-            {filteredHistory.map((record) => {
-              const t = new Date(record.timestamp).getTime();
-              const x = getX(t);
-              const theoretical = calculateLinearElo(t, startDateStr, targetDateStr, startElo, targetElo);
-
-              let ratingToDisplay = record.bestRating;
-              let modeName = record.bestMode;
-
-              if (metricFilter === 'bullet' && record.bullet) {
-                ratingToDisplay = record.bullet;
-                modeName = 'bullet' as GameMode;
-              } else if (metricFilter === 'blitz' && record.blitz) {
-                ratingToDisplay = record.blitz;
-                modeName = 'blitz' as GameMode;
-              } else if (metricFilter === 'rapid' && record.rapid) {
-                ratingToDisplay = record.rapid;
-                modeName = 'rapid' as GameMode;
-              }
-
-              const y = getY(ratingToDisplay);
-              const diff = ratingToDisplay - theoretical;
-
+            {/* Real Points Dots */}
+            {realLinePoints.map((pt, i) => {
+              const isLast = i === realLinePoints.length - 1;
               return (
-                <g key={record.id} className="cursor-pointer">
-                  {/* Invisible hit circle for easy touch/mouse hover */}
+                <g key={i}>
+                  {isLast && (
+                    <circle
+                      cx={pt.x}
+                      cy={pt.y}
+                      r="7"
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth="1.5"
+                      opacity="0.5"
+                    />
+                  )}
                   <circle
-                    cx={x}
-                    cy={y}
-                    r="12"
-                    fill="transparent"
-                    onMouseEnter={() =>
-                      setHoveredPoint({
-                        x,
-                        y,
-                        date: new Date(record.timestamp).toLocaleString('fr-FR'),
-                        elo: ratingToDisplay,
-                        theoretical,
-                        diff: Math.round(diff * 10) / 10,
-                        mode: modeName,
-                      })
-                    }
-                    onMouseLeave={() => setHoveredPoint(null)}
-                  />
-                  {/* Visible point */}
-                  <circle
-                    cx={x}
-                    cy={y}
-                    r="4.5"
-                    fill="#0a0a0a"
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={isLast ? 4.5 : 3.5}
+                    fill="#0e1015"
                     stroke="#f59e0b"
-                    strokeWidth="2.5"
+                    strokeWidth="2"
                   />
                 </g>
               );
             })}
 
-            {/* Tooltip on SVG hover */}
-            {hoveredPoint && (
+            {/* Native SVG Tooltip (Snaps smoothly on hover, zero bug, zero jump) */}
+            {hoverData && (
               <g pointerEvents="none">
+                {/* Hairline Crosshair */}
                 <line
-                  x1={hoveredPoint.x}
+                  x1={hoverData.x}
                   y1={padding.top}
-                  x2={hoveredPoint.x}
+                  x2={hoverData.x}
                   y2={height - padding.bottom}
-                  stroke="rgba(245, 158, 11, 0.4)"
+                  stroke="rgba(245, 158, 11, 0.45)"
+                  strokeWidth="1"
                   strokeDasharray="3 3"
                 />
-                <circle cx={hoveredPoint.x} cy={hoveredPoint.y} r="6" fill="#f59e0b" />
+
+                {/* Target Point Indicator */}
+                <circle
+                  cx={hoverData.x}
+                  cy={hoverData.yTarget}
+                  r="4"
+                  fill="#0e1015"
+                  stroke="#a1a1aa"
+                  strokeWidth="2"
+                />
+
+                {/* Real Point Indicator */}
+                {hoverData.realElo !== null && (
+                  <circle
+                    cx={hoverData.x}
+                    cy={hoverData.yReal}
+                    r="4.5"
+                    fill="#f59e0b"
+                    stroke="#ffffff"
+                    strokeWidth="1.5"
+                  />
+                )}
+
+                {/* Clean Floating Box */}
+                <g
+                  transform={`translate(${Math.max(
+                    padding.left + 5,
+                    Math.min(width - padding.right - 190, hoverData.x - 95)
+                  )}, ${Math.max(padding.top + 5, Math.min(height - 120, hoverData.yTarget - 85))})`}
+                >
+                  <rect
+                    x="0"
+                    y="0"
+                    width="190"
+                    height="75"
+                    rx="8"
+                    fill="#14171d"
+                    stroke="rgba(245, 158, 11, 0.35)"
+                    strokeWidth="1"
+                  />
+
+                  {/* Date */}
+                  <text x="12" y="18" fill="#e4e4e7" fontSize="10" fontWeight="bold">
+                    {hoverData.dateFormatted}
+                  </text>
+
+                  {/* Objective Line */}
+                  <text x="12" y="38" fill="#a1a1aa" fontSize="10">
+                    Cible théorique :
+                  </text>
+                  <text x="178" y="38" fill="#e4e4e7" fontSize="11" fontWeight="bold" textAnchor="end" fontFamily="monospace">
+                    {hoverData.targetElo} Elo
+                  </text>
+
+                  {/* Real Line if available */}
+                  {hoverData.realElo !== null ? (
+                    <>
+                      <text x="12" y="54" fill="#a1a1aa" fontSize="10">
+                        Votre classement :
+                      </text>
+                      <text x="178" y="54" fill="#f59e0b" fontSize="11" fontWeight="bold" textAnchor="end" fontFamily="monospace">
+                        {hoverData.realElo} Elo
+                      </text>
+
+                      <text x="12" y="68" fill="#a1a1aa" fontSize="9">
+                        Écart :
+                      </text>
+                      <text
+                        x="178"
+                        y="68"
+                        fill={hoverData.diff !== null && hoverData.diff >= 0 ? '#34d399' : '#f87171'}
+                        fontSize="9"
+                        fontWeight="bold"
+                        textAnchor="end"
+                        fontFamily="monospace"
+                      >
+                        {hoverData.diff !== null && hoverData.diff > 0 ? `+${hoverData.diff}` : hoverData.diff} pts
+                      </text>
+                    </>
+                  ) : (
+                    <text x="12" y="56" fill="#71717a" fontSize="10" fontStyle="italic">
+                      Progression future
+                    </text>
+                  )}
+                </g>
               </g>
             )}
           </svg>
-
-          {/* HTML Overlay Tooltip */}
-          {hoveredPoint && (
-            <div
-              className="absolute pointer-events-none rounded-lg border border-amber-500/40 bg-neutral-950/95 p-2.5 text-xs shadow-2xl backdrop-blur-md z-30 transition-all font-sans"
-              style={{
-                left: `${Math.min(hoveredPoint.x + 12, innerWidth - 80)}px`,
-                top: `${Math.max(10, hoveredPoint.y - 65)}px`,
-              }}
-            >
-              <div className="font-semibold text-neutral-200 border-b border-neutral-800 pb-1 mb-1">
-                {hoveredPoint.date}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-neutral-400">Elo réel ({hoveredPoint.mode}):</span>
-                <span className="font-mono font-bold text-amber-400">{hoveredPoint.elo}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-neutral-400">Cible théorique :</span>
-                <span className="font-mono text-neutral-300">{hoveredPoint.theoretical}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-neutral-400">Écart :</span>
-                <span
-                  className={`font-mono font-semibold ${
-                    hoveredPoint.diff >= 0 ? 'text-emerald-400' : 'text-rose-400'
-                  }`}
-                >
-                  {hoveredPoint.diff > 0 ? `+${hoveredPoint.diff}` : hoveredPoint.diff} pts
-                </span>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Empty state / Notice */}
-        {filteredHistory.length === 0 && (
-          <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-950/50 p-6 text-center text-xs text-neutral-400">
-            <Info className="mx-auto h-6 w-6 text-amber-400 mb-2" />
-            <p className="font-semibold text-neutral-200">Aucun point enregistré pour ce filtre temporel.</p>
-            <p className="mt-1">
-              Effectuez une synchronisation avec Chess.com pour enregistrer les points réels sur la courbe.
-            </p>
+        {/* Quiet Subtitle Details */}
+        <div className="mt-4 pt-3 border-t border-neutral-800/60 flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-400">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-neutral-300">Base du projet :</span>
+            <span className="font-mono">1500 Elo le 31/10/2026</span>
           </div>
-        )}
-      </div>
 
-      {/* Analytical Callout Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
-          <span className="text-neutral-400 uppercase tracking-wider text-[11px] font-semibold">
-            Point de départ
-          </span>
-          <div className="mt-1 font-mono text-xl font-bold text-neutral-200">
-            1500 Elo
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-neutral-300">Objectif final :</span>
+            <span className="font-mono text-amber-400 font-semibold">2000 Elo le 31/12/2027</span>
+            <span className="text-neutral-500 font-mono">({daysRemaining} jours restants)</span>
           </div>
-          <p className="mt-1 text-neutral-500 text-[11px]">
-            Fixé au 31 octobre 2026, indépendant des fluctuations
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
-          <span className="text-neutral-400 uppercase tracking-wider text-[11px] font-semibold">
-            Objectif d'arrivée
-          </span>
-          <div className="mt-1 font-mono text-xl font-bold text-amber-400">
-            2000 Elo
-          </div>
-          <p className="mt-1 text-neutral-500 text-[11px]">
-            Au 31 décembre 2027 à 23h59 (Europe/Paris)
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4">
-          <span className="text-neutral-400 uppercase tracking-wider text-[11px] font-semibold">
-            Total Points à Gagner
-          </span>
-          <div className="mt-1 font-mono text-xl font-bold text-neutral-100">
-            +500 Elo
-          </div>
-          <p className="mt-1 text-neutral-500 text-[11px]">
-            Trajectoire progressive sur 14 mois de compétition
-          </p>
         </div>
       </div>
     </div>
