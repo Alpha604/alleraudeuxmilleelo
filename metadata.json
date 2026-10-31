@@ -1,0 +1,6 @@
+{
+  "name": "Road to 2000 Elo — Chess Performance",
+  "description": "Suivi de performance échiquéenne en temps réel vers 2000 Elo, synchronisation API Chess.com et calculs d'objectifs journaliers et mensuels.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
