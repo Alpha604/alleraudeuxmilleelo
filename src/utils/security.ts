@@ -6,12 +6,15 @@
 import QRCode from 'qrcode';
 
 const ADMIN_AUTH_KEY = 'roadto2000_admin_session_v2';
-const ADMIN_PASSWORD_HASH_KEY = 'roadto2000_admin_pwd_hash_v2';
-const ADMIN_TOTP_SECRET_KEY = 'roadto2000_totp_secret_v2';
-const DEFAULT_MASTER_PASSWORD = '2000elo';
+const ADMIN_PASSWORD_HASH_KEY = 'roadto2000_admin_pwd_hash_v3';
+const ADMIN_TRUSTED_IP_KEY = 'roadto2000_trusted_ip_v1';
+const DEFAULT_MASTER_PASSWORD = 'alpha604';
 
 // 30 minutes session duration
 export const SESSION_DURATION_MS = 30 * 60 * 1000;
+
+// Memory fallback for SSR / testing environments
+const memoryStore: Record<string, string> = {};
 
 // Safe Storage helpers
 function safeGet(key: string): string | null {
@@ -20,7 +23,7 @@ function safeGet(key: string): string | null {
       return window.localStorage.getItem(key);
     }
   } catch {}
-  return null;
+  return memoryStore[key] || null;
 }
 
 function safeSet(key: string, val: string): void {
@@ -29,6 +32,7 @@ function safeSet(key: string, val: string): void {
       window.localStorage.setItem(key, val);
     }
   } catch {}
+  memoryStore[key] = val;
 }
 
 function safeRemove(key: string): void {
@@ -37,13 +41,14 @@ function safeRemove(key: string): void {
       window.localStorage.removeItem(key);
     }
   } catch {}
+  delete memoryStore[key];
 }
 
 /**
- * SHA-256 hashing using Web Crypto API with fallback
+ * SHA-256 hashing using Web Crypto API with case-insensitive normalization
  */
 export async function hashPassword(password: string): Promise<string> {
-  const normalized = password.trim();
+  const normalized = password.trim().toLowerCase();
   if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
     try {
       const msgBuffer = new TextEncoder().encode(`road2000_salt_${normalized}`);
@@ -62,7 +67,7 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 /**
- * Retrieves the stored password hash or sets the default password hash (2000elo)
+ * Retrieves the stored password hash or sets the default password hash (alpha604)
  */
 export async function getStoredPasswordHash(): Promise<string> {
   const stored = safeGet(ADMIN_PASSWORD_HASH_KEY);
@@ -73,24 +78,73 @@ export async function getStoredPasswordHash(): Promise<string> {
 }
 
 /**
- * Updates the master admin password
+ * Updates the master admin password (case-insensitive)
  */
 export async function updateAdminPassword(newPassword: string): Promise<boolean> {
   if (!newPassword || newPassword.trim().length < 4) return false;
-  const newHash = await hashPassword(newPassword.trim());
+  const newHash = await hashPassword(newPassword.trim().toLowerCase());
   safeSet(ADMIN_PASSWORD_HASH_KEY, newHash);
   return true;
 }
 
 /**
- * Verifies if entered password matches master admin password
+ * Verifies if entered password matches master admin password (case-insensitive)
  */
 export async function verifyAdminPassword(candidate: string): Promise<boolean> {
-  const clean = candidate.trim();
+  const clean = candidate.trim().toLowerCase();
   if (!clean) return false;
   const candidateHash = await hashPassword(clean);
   const targetHash = await getStoredPasswordHash();
   return candidateHash === targetHash;
+}
+
+/**
+ * Get configured trusted IP address
+ */
+export function getTrustedIp(): string {
+  return safeGet(ADMIN_TRUSTED_IP_KEY) || '';
+}
+
+/**
+ * Set configured trusted IP address
+ */
+export function setTrustedIp(ip: string): void {
+  safeSet(ADMIN_TRUSTED_IP_KEY, ip.trim());
+}
+
+/**
+ * Removes configured trusted IP address
+ */
+export function removeTrustedIp(): void {
+  safeRemove(ADMIN_TRUSTED_IP_KEY);
+}
+
+/**
+ * Fetches the user's current public IP address via reliable endpoints
+ */
+export async function getClientIp(): Promise<string> {
+  const endpoints = [
+    'https://api.ipify.org?format=json',
+    'https://api64.ipify.org?format=json',
+    'https://ipapi.co/json/',
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(endpoint, { signal: controller.signal });
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json();
+        const ip = data.ip || data.ip_addr;
+        if (ip && typeof ip === 'string' && ip.trim().length >= 7) {
+          return ip.trim();
+        }
+      }
+    } catch {}
+  }
+  return '';
 }
 
 /**
@@ -150,11 +204,10 @@ export function revokeAdminSession(): void {
 
 /**
  * Computes a deterministic 6-digit confirmation token for a given session and timestamp.
- * This is displayed on the smartphone after entering the correct password, allowing the user
- * to validate the desktop session immediately even across different devices/networks!
+ * This is displayed on the smartphone after entering the correct password (or IP auto-auth),
+ * allowing the desktop session to be validated immediately even across isolated networks!
  */
 export function generateSessionValidationCode(sessionId: string): string {
-  // 6-digit code derived from sessionId
   let sum = 0;
   for (let i = 0; i < sessionId.length; i++) {
     sum = (sum * 31 + sessionId.charCodeAt(i)) % 900000;
@@ -164,13 +217,16 @@ export function generateSessionValidationCode(sessionId: string): string {
 }
 
 /**
- * Generates the full URL that the smartphone opens when scanning the QR code
+ * Generates the full URL that the smartphone opens when scanning the QR code,
+ * including session ID and optional trusted IP reference for seamless zero-tap mobile unlock.
  */
 export function getMobileAuthUrl(sessionId: string): string {
   if (typeof window === 'undefined') return '';
   const origin = window.location.origin;
   const path = window.location.pathname;
-  return `${origin}${path}?mobile_auth=${encodeURIComponent(sessionId)}`;
+  const trustedIp = getTrustedIp();
+  const tipParam = trustedIp ? `&tip=${encodeURIComponent(trustedIp)}` : '';
+  return `${origin}${path}?mobile_auth=${encodeURIComponent(sessionId)}${tipParam}`;
 }
 
 /**

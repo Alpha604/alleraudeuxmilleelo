@@ -3,21 +3,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AlertCircle,
   ArrowRight,
   CheckCircle2,
   Eye,
   EyeOff,
-  KeyRound,
+  Globe,
   Lock,
   ShieldCheck,
   Smartphone,
   Trophy,
+  Zap,
 } from 'lucide-react';
 import {
   generateSessionValidationCode,
+  getClientIp,
+  getTrustedIp,
   setAdminSession,
   verifyAdminPassword,
 } from '../utils/security';
@@ -37,6 +40,74 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
   const [errorMessage, setErrorMessage] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [generatedCode, setGeneratedCode] = useState('');
+  const [detectedIp, setDetectedIp] = useState<string>('');
+  const [isTrustedIpMatch, setIsTrustedIpMatch] = useState<boolean>(false);
+  const [isCheckingIp, setIsCheckingIp] = useState<boolean>(true);
+
+  // Common unlock execution function
+  const executeUnlock = (reason: 'password' | 'trusted_ip') => {
+    const code = generateSessionValidationCode(sessionId);
+    setGeneratedCode(code);
+    setIsSuccess(true);
+    if (reason === 'trusted_ip') {
+      setIsTrustedIpMatch(true);
+    }
+
+    // 1. Activate admin session on this device
+    setAdminSession();
+
+    // 2. Transmit unlock to desktop via localStorage and BroadcastChannel
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(`roadto2000_unlocked_${sessionId}`, 'true');
+      }
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const bc = new BroadcastChannel('roadto2000_auth_channel');
+        bc.postMessage({ type: 'MOBILE_UNLOCKED', sessionId, reason, timestamp: Date.now() });
+        bc.close();
+      }
+    } catch (e) {
+      console.warn('Sync broadcast warning:', e);
+    }
+  };
+
+  // On mount: Check client IP and compare with Trusted IP configuration
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkIpAndAutoAuth() {
+      setIsCheckingIp(true);
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const urlTip = params.get('tip') || '';
+        const storedTip = getTrustedIp();
+        const configuredTip = (urlTip || storedTip).trim();
+
+        const currentIp = await getClientIp();
+        if (!isMounted) return;
+
+        if (currentIp) {
+          setDetectedIp(currentIp);
+
+          // If current mobile IP exactly matches configured trusted IP: AUTO-UNLOCK!
+          if (configuredTip && currentIp === configuredTip) {
+            executeUnlock('trusted_ip');
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('IP verification skipped:', err);
+      } finally {
+        if (isMounted) setIsCheckingIp(false);
+      }
+    }
+
+    checkIpAndAutoAuth();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [sessionId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,30 +122,12 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
     setIsVerifying(true);
 
     try {
+      // Case-insensitive verification (e.g. Alpha604 matches alpha604)
       const isValid = await verifyAdminPassword(input);
       if (isValid) {
-        const code = generateSessionValidationCode(sessionId);
-        setGeneratedCode(code);
-        setIsSuccess(true);
-
-        // 1. Activate admin session on this device
-        setAdminSession();
-
-        // 2. Transmit unlock to desktop via localStorage and BroadcastChannel
-        try {
-          if (typeof window !== 'undefined' && window.localStorage) {
-            window.localStorage.setItem(`roadto2000_unlocked_${sessionId}`, 'true');
-          }
-          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-            const bc = new BroadcastChannel('roadto2000_auth_channel');
-            bc.postMessage({ type: 'MOBILE_UNLOCKED', sessionId, timestamp: Date.now() });
-            bc.close();
-          }
-        } catch (e) {
-          console.warn('Sync broadcast warning:', e);
-        }
+        executeUnlock('password');
       } else {
-        setErrorMessage('Mot de passe incorrect. (Par défaut : 2000elo)');
+        setErrorMessage('Mot de passe incorrect. Veuillez vérifier votre saisie.');
       }
     } catch {
       setErrorMessage('Une erreur est survenue lors de la validation.');
@@ -108,22 +161,33 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                <h2 className="text-base font-bold text-emerald-300">Session Autorisée Avec Succès !</h2>
+                <h2 className="text-base font-bold text-emerald-300">
+                  {isTrustedIpMatch
+                    ? 'IP De Confiance Reconnue !'
+                    : 'Session Autorisée Avec Succès !'}
+                </h2>
                 <p className="text-xs text-neutral-300 leading-relaxed">
-                  Votre ordinateur a reçu la validation de sécurité et est déverrouillé.
+                  {isTrustedIpMatch ? (
+                    <>
+                      Votre adresse IP (<strong className="text-amber-300 font-mono">{detectedIp}</strong>) correspond à l'IP de confiance. Déverrouillage automatique effectué sans saisie de mot de passe !
+                    </>
+                  ) : (
+                    'Votre ordinateur a reçu la validation de sécurité et est déverrouillé.'
+                  )}
                 </p>
               </div>
 
               {/* 6-digit sync code */}
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-1">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-400/80">
-                  Code d'autorisation unique
-                </span>
-                <div className="text-2xl font-mono font-bold tracking-widest text-amber-300">
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-1.5">
+                <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-400">
+                  {isTrustedIpMatch && <Zap className="h-3.5 w-3.5 text-amber-300" />}
+                  <span>Code d'activation unique</span>
+                </div>
+                <div className="text-3xl font-mono font-bold tracking-widest text-amber-300 py-1">
                   {generatedCode}
                 </div>
                 <p className="text-[10px] text-neutral-400">
-                  (Ce code a été validé automatiquement sur votre ordinateur)
+                  Votre ordinateur s'est déverrouillé automatiquement. Si vous n'êtes pas sur le même réseau, saisissez ce code sur votre ordinateur.
                 </p>
               </div>
 
@@ -152,10 +216,20 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
                 Veuillez saisir votre mot de passe administrateur sur ce téléphone pour déverrouiller l'accès aux paramètres, à la synchronisation et aux tests sur votre écran principal.
               </p>
 
+              {/* IP Status pill */}
+              <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-neutral-950 border border-neutral-800 text-[11px]">
+                <span className="flex items-center gap-1.5 text-neutral-400">
+                  <Globe className="h-3.5 w-3.5 text-neutral-500" />
+                  <span>Adresse IP de ce téléphone :</span>
+                </span>
+                <span className="font-mono text-neutral-200">
+                  {isCheckingIp ? 'Détection en cours...' : detectedIp || 'Non détectée'}
+                </span>
+              </div>
+
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <label className="font-medium text-neutral-300">Mot de passe Administrateur</label>
-                  <span className="text-[10px] text-neutral-500">Défaut : 2000elo</span>
                 </div>
 
                 <div className="relative">
@@ -196,7 +270,7 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
 
               <div className="text-center pt-2">
                 <span className="text-[11px] text-neutral-500">
-                  Sécurisé par chiffrement local SHA-256
+                  Sécurisé par chiffrement local SHA-256 (insensible aux majuscules)
                 </span>
               </div>
             </form>

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -11,7 +11,6 @@ import {
   Lock,
   QrCode,
   ShieldAlert,
-  ShieldCheck,
   Smartphone,
   X,
 } from 'lucide-react';
@@ -20,7 +19,6 @@ import {
   generateSessionValidationCode,
   getMobileAuthUrl,
   setAdminSession,
-  verifyAdminPassword,
 } from '../utils/security';
 
 interface SecurityModalProps {
@@ -106,27 +104,23 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     const input = codeOrPassword.trim();
 
     if (!input) {
-      setErrorMessage('Veuillez entrer le code affiché sur votre téléphone ou le mot de passe.');
+      setErrorMessage('Veuillez scanner le QR Code avec votre téléphone ou saisir le code mobile à 6 chiffres.');
       return;
     }
 
     setIsVerifying(true);
 
     try {
-      // 1. Check if it matches the 6-digit session code generated on the phone
+      // Strictly verify against the 6-digit session code generated on the smartphone
       if (input === expectedMobileCode) {
         handleUnlockSuccess();
         return;
       }
 
-      // 2. Check if it matches the master password
-      const isPasswordValid = await verifyAdminPassword(input);
-      if (isPasswordValid) {
-        handleUnlockSuccess();
-        return;
-      }
-
-      setErrorMessage('Code mobile ou mot de passe invalide. Veuillez réessayer.');
+      // Explicitly reject direct password entry on PC as requested by security policy
+      setErrorMessage(
+        'Accès refusé : la saisie du mot de passe sur PC est désactivée. Vous devez obligatoirement valider l\'accès depuis votre smartphone ou saisir le code mobile à 6 chiffres affiché sur votre téléphone.'
+      );
     } catch {
       setErrorMessage('Une erreur est survenue lors de la vérification.');
     } finally {
@@ -155,10 +149,10 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
           </div>
           <div>
             <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-              <span>Authentification 2FA Requise</span>
+              <span>Authentification 2FA Téléphone Requise</span>
             </h3>
             <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-              Pour déverrouiller <strong className="text-amber-300">{actionTitle}</strong>, confirmez votre identité avec votre téléphone.
+              Pour déverrouiller <strong className="text-amber-300">{actionTitle}</strong>, confirmez votre identité avec votre smartphone.
             </p>
           </div>
         </div>
@@ -190,45 +184,46 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
               <div className="space-y-2.5 text-xs text-neutral-300">
                 <div className="flex items-center gap-2 text-amber-400 font-semibold uppercase tracking-wider text-[11px]">
                   <Smartphone className="h-4 w-4" />
-                  <span>Double Authentification Mobile</span>
+                  <span>Validation Strictement Mobile</span>
                 </div>
                 <ol className="space-y-2 text-neutral-300/90 list-decimal list-inside leading-relaxed text-[11px]">
                   <li>
                     Ouvrez l'<strong>appareil photo</strong> de votre téléphone et scannez ce QR Code.
                   </li>
                   <li>
-                    Une page sécurisée s'ouvre sur votre téléphone : <strong>saisissez votre mot de passe sur votre téléphone</strong>.
+                    Si votre téléphone partage votre <strong>IP de confiance</strong>, l'accès est <strong>instantané</strong> sans mot de passe !
                   </li>
                   <li>
-                    Validez : cet écran se déverrouille instantanément !
+                    Sinon, validez votre mot de passe directement sur votre téléphone.
                   </li>
                 </ol>
 
                 <div className="pt-1 flex items-center gap-2 text-[10px] text-amber-400/90 font-mono">
                   <span className="inline-block h-2 w-2 rounded-full bg-amber-400 animate-ping" />
-                  <span>En attente de confirmation mobile...</span>
+                  <span>En attente du scan par votre téléphone...</span>
                 </div>
               </div>
             </div>
 
-            {/* Step 2: Code or Password input */}
+            {/* Step 2: 6-digit sync code input for cross-network verification */}
             <form onSubmit={handleVerify} className="space-y-3">
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-medium text-neutral-300">
-                    Code de validation mobile (6 chiffres) ou mot de passe maître
+                    Code d'activation mobile (6 chiffres)
                   </label>
-                  <span className="text-[10px] text-neutral-500">Par défaut : 2000elo</span>
+                  <span className="text-[10px] text-amber-400/80 font-medium">Affiché sur votre smartphone</span>
                 </div>
 
                 <div className="relative">
                   <input
-                    type="password"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
                     value={codeOrPassword}
-                    onChange={(e) => setCodeOrPassword(e.target.value)}
-                    placeholder="Entrez le code mobile ou '2000elo'"
-                    autoFocus
-                    className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2.5 text-xs text-white placeholder-neutral-600 focus:border-amber-500 focus:outline-none font-mono"
+                    onChange={(e) => setCodeOrPassword(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Entrez les 6 chiffres (ex: 489201)"
+                    className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2.5 text-xs text-white placeholder-neutral-600 focus:border-amber-500 focus:outline-none font-mono tracking-wider"
                   />
                   <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-neutral-500">
                     <KeyRound className="h-4 w-4" />
@@ -236,8 +231,8 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                 </div>
 
                 {errorMessage && (
-                  <div className="flex items-center gap-1.5 text-xs text-rose-400 font-medium pt-1">
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  <div className="flex items-start gap-1.5 text-xs text-rose-400 font-medium pt-1 leading-snug">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                     <span>{errorMessage}</span>
                   </div>
                 )}
@@ -253,11 +248,11 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={isVerifying}
-                  className="flex items-center gap-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 px-5 py-2 text-xs font-bold transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] disabled:opacity-50"
+                  disabled={isVerifying || codeOrPassword.trim().length !== 6}
+                  className="flex items-center gap-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 px-5 py-2 text-xs font-bold transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] disabled:opacity-40"
                 >
                   <Lock className="h-3.5 w-3.5" />
-                  <span>{isVerifying ? 'Vérification...' : 'Déverrouiller la session'}</span>
+                  <span>{isVerifying ? 'Vérification...' : 'Valider le code mobile'}</span>
                 </button>
               </div>
             </form>

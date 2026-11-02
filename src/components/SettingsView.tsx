@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Bell,
   CheckCircle2,
+  Globe,
   KeyRound,
   Lock,
   Moon,
@@ -21,10 +22,18 @@ import {
   Trash2,
   Unlock,
   User,
+  Wifi,
+  Zap,
 } from 'lucide-react';
 import { AppSettings, GameMode, TrajectoryModel } from '../types/chess';
 import { DEFAULT_SETTINGS } from '../utils/storage';
-import { updateAdminPassword } from '../utils/security';
+import {
+  getClientIp,
+  getTrustedIp,
+  removeTrustedIp,
+  setTrustedIp,
+  updateAdminPassword,
+} from '../utils/security';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -56,6 +65,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState(false);
   const [passwordError, setPasswordError] = useState('');
+
+  // Trusted IP state
+  const [trustedIp, setTrustedIpInput] = useState<string>(() => getTrustedIp());
+  const [isDetectingIp, setIsDetectingIp] = useState<boolean>(false);
+  const [ipMessage, setIpMessage] = useState<string>('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,6 +134,47 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     } else {
       setPasswordError('Impossible de mettre à jour le mot de passe.');
     }
+  };
+
+  const handleDetectCurrentIp = async () => {
+    setIsDetectingIp(true);
+    setIpMessage('');
+    try {
+      const ip = await getClientIp();
+      if (ip) {
+        setTrustedIpInput(ip);
+        setIpMessage(`Adresse IP détectée : ${ip}`);
+      } else {
+        setIpMessage('Impossible de détecter automatiquement votre IP.');
+      }
+    } catch {
+      setIpMessage('Erreur lors de la détection de l\'adresse IP.');
+    } finally {
+      setIsDetectingIp(false);
+    }
+  };
+
+  const handleSaveTrustedIp = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanIp = trustedIp.trim();
+    setTrustedIp(cleanIp);
+    if (cleanIp) {
+      setIpMessage(`IP de confiance enregistrée : ${cleanIp}`);
+      onShowMessage(`IP de confiance configurée sur ${cleanIp}`, 'success');
+    } else {
+      removeTrustedIp();
+      setIpMessage('IP de confiance désactivée.');
+      onShowMessage('IP de confiance désactivée.', 'info');
+    }
+    setTimeout(() => setIpMessage(''), 4000);
+  };
+
+  const handleClearTrustedIp = () => {
+    removeTrustedIp();
+    setTrustedIpInput('');
+    setIpMessage('IP de confiance supprimée.');
+    onShowMessage('IP de confiance supprimée.', 'info');
+    setTimeout(() => setIpMessage(''), 3000);
   };
 
   // If in Iframe: show strictly read-only banner
@@ -513,7 +568,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <KeyRound className="h-4 w-4" />
             <span>Sécurité 2FA : Modifier Le Mot De Passe Maître</span>
           </div>
-          <span className="text-[11px] text-neutral-400">Défaut : 2000elo</span>
+          <span className="text-[11px] text-neutral-500 font-mono">Insensible à la casse</span>
         </div>
 
         <form onSubmit={handleChangePassword} className="space-y-4 max-w-xl">
@@ -569,6 +624,87 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <span>Changer le mot de passe 2FA</span>
           </button>
         </form>
+      </div>
+
+      {/* Section 6: Gestion de l'IP de Confiance pour scan instantané */}
+      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400">
+            <Zap className="h-4 w-4 text-amber-400" />
+            <span>IP De Confiance : Autorisation Instantanée Par QR Code</span>
+          </div>
+          {trustedIp && (
+            <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              Active : {trustedIp}
+            </span>
+          )}
+        </div>
+
+        <div className="space-y-4 max-w-2xl">
+          <p className="text-xs text-neutral-300 leading-relaxed">
+            Configurez l'adresse IP de votre réseau (ex: le WiFi de votre box ou le réseau que partage votre téléphone). Lorsque vous scannez le QR code avec votre smartphone partageant cette même adresse IP, l'autorisation est <strong>instantanée sans saisie de mot de passe</strong> et vous recevez immédiatement le code d'activation !
+          </p>
+
+          <form onSubmit={handleSaveTrustedIp} className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                Adresse IP publique de confiance
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={trustedIp}
+                    onChange={(e) => setTrustedIpInput(e.target.value.trim())}
+                    placeholder="Ex: 82.64.12.34 (ou cliquez sur Détecter)"
+                    className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white placeholder-neutral-600 focus:border-amber-500 focus:outline-none font-mono"
+                  />
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-neutral-500">
+                    <Globe className="h-4 w-4" />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDetectCurrentIp}
+                  disabled={isDetectingIp}
+                  className="flex items-center justify-center gap-2 rounded-lg border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 px-3.5 py-2 text-xs font-medium transition-colors disabled:opacity-50 shrink-0"
+                >
+                  <Wifi className="h-3.5 w-3.5 text-amber-400" />
+                  <span>{isDetectingIp ? 'Détection...' : 'Détecter mon IP actuelle'}</span>
+                </button>
+              </div>
+            </div>
+
+            {ipMessage && (
+              <div className="flex items-center gap-2 text-xs text-amber-300 font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                <span>{ipMessage}</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                type="submit"
+                className="flex items-center gap-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 px-4 py-2 text-xs font-bold transition-all shadow-[0_0_15px_rgba(245,158,11,0.2)]"
+              >
+                <Save className="h-3.5 w-3.5" />
+                <span>Enregistrer l'IP de confiance</span>
+              </button>
+
+              {trustedIp && (
+                <button
+                  type="button"
+                  onClick={handleClearTrustedIp}
+                  className="px-3 py-2 text-xs font-medium text-neutral-400 hover:text-rose-400 transition-colors"
+                >
+                  Désactiver cette IP
+                </button>
+              )}
+            </div>
+          </form>
+        </div>
       </div>
 
       {/* Confirmation Modal for Hard Purge */}
