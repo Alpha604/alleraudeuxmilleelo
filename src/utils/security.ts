@@ -372,10 +372,20 @@ export function isRunningInIframe(): boolean {
     if (params.get('embed') === 'true' || params.get('mode') === 'iframe' || params.get('view') === 'readonly') {
       return true;
     }
-    // Cross-origin iframe detection
+    // In AI Studio Build preview or local dev, the app runs in preview mode: never block as third-party iframe embed
+    const host = window.location.hostname.toLowerCase();
+    if (
+      host.includes('run.app') ||
+      host.includes('localhost') ||
+      host === '127.0.0.1' ||
+      host.includes('webcontainer') ||
+      host.includes('googleusercontent.com') ||
+      host.includes('aistudio')
+    ) {
+      return false;
+    }
     return window.self !== window.top;
   } catch {
-    // If accessing window.top throws a security error, it is 100% inside a cross-origin iframe
-    return true;
+    return false;
   }
 }

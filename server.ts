@@ -130,6 +130,18 @@ async function startServer() {
 
   app.use(express.json());
 
+  // CORS middleware for seamless cross-device & cross-preview requests
+  app.use((_req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    if (_req.method === 'OPTIONS') {
+      res.sendStatus(200);
+      return;
+    }
+    next();
+  });
+
   // 1. Client IP lookup endpoint
   app.get('/api/auth/client-ip', (req: Request, res: Response) => {
     const ip = extractClientIp(req);

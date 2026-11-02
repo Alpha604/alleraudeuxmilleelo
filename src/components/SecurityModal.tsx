@@ -6,7 +6,10 @@
 import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
+  Copy,
+  ExternalLink,
   KeyRound,
   Lock,
   QrCode,
@@ -40,6 +43,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
   const [sessionId] = useState<string>(() => `auth_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [mobileUrl, setMobileUrl] = useState<string>('');
+  const [copiedUrl, setCopiedUrl] = useState<boolean>(false);
   const [codeOrPassword, setCodeOrPassword] = useState<string>('');
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -78,9 +82,16 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
       body: JSON.stringify({ sessionId }),
     }).catch(() => {});
 
-    // 2. Compute reachable mobile URL (use LAN IP if running on localhost)
+    // 2. Compute reachable mobile URL (use public preview ais-pre or local LAN IP)
     async function setupMobileUrl() {
       let baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+
+      // In AI Studio preview: ais-dev-*.run.app requires developer Google login cookies,
+      // whereas ais-pre-*.run.app is the shared public preview reachable by ANY phone camera!
+      if (baseOrigin.includes('ais-dev-')) {
+        baseOrigin = baseOrigin.replace('ais-dev-', 'ais-pre-');
+      }
+
       if (
         typeof window !== 'undefined' &&
         (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
@@ -331,6 +342,42 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                 )}
               </div>
             </div>
+
+            {/* Quick Testing & Mobile Link helper bar */}
+            {mobileUrl && (
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-neutral-950/90 border border-neutral-800/90 text-[11px]">
+                <div className="flex items-center gap-1.5 text-neutral-400 truncate max-w-[200px] sm:max-w-[240px]">
+                  <Smartphone className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                  <span className="font-mono text-[10px] truncate">{mobileUrl.replace(/^https?:\/\//, '').split('&')[0]}</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (navigator?.clipboard) {
+                        navigator.clipboard.writeText(mobileUrl);
+                        setCopiedUrl(true);
+                        setTimeout(() => setCopiedUrl(false), 2000);
+                      }
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors"
+                  >
+                    {copiedUrl ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                    <span>{copiedUrl ? 'Copié !' : 'Copier lien'}</span>
+                  </button>
+
+                  <a
+                    href={mobileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 hover:text-white transition-colors font-semibold"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    <span>Tester simulateur</span>
+                  </a>
+                </div>
+              </div>
+            )}
 
             {/* Step 2: 6-digit sync code input for cross-network verification */}
             <form onSubmit={handleVerify} className="space-y-3">

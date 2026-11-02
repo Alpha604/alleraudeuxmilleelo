@@ -617,13 +617,15 @@ export default function App() {
       <NotificationToast toasts={toasts} onDismiss={dismissToast} />
 
       {/* 2FA Security Modal with Smartphone QR Code Scan */}
-      <SecurityModal
-        isOpen={securityModalOpen}
-        onClose={() => setSecurityModalOpen(false)}
-        onSuccess={handleSecuritySuccess}
-        actionTitle={securityModalTitle}
-        onShowMessage={showToast}
-      />
+      {securityModalOpen && (
+        <SecurityModal
+          isOpen={securityModalOpen}
+          onClose={() => setSecurityModalOpen(false)}
+          onSuccess={handleSecuritySuccess}
+          actionTitle={securityModalTitle}
+          onShowMessage={showToast}
+        />
+      )}
 
       {/* Editorial Clean Footer */}
       <footer className="border-t border-neutral-800/80 bg-neutral-950/90 py-6 text-center text-xs text-neutral-500 transition-colors dark:border-neutral-800/80 dark:bg-neutral-950/90 light:border-neutral-200 light:bg-neutral-50">
