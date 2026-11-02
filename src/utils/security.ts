@@ -204,9 +204,24 @@ export function setTrustedIp(ip: string): void {
 }
 
 /**
- * Fetches the user's current public IP address via reliable endpoints
+ * Fetches the user's current IP address via internal API endpoint with external fallbacks
  */
 export async function getClientIp(): Promise<string> {
+  // 1. First try our own local server endpoint (instantaneous, no rate limit)
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+    const internalRes = await fetch('/api/auth/client-ip', { signal: controller.signal });
+    clearTimeout(timer);
+    if (internalRes.ok) {
+      const data = await internalRes.json();
+      if (data.ip && typeof data.ip === 'string' && data.ip.trim().length >= 7 && data.ip !== '127.0.0.1') {
+        return data.ip.trim();
+      }
+    }
+  } catch {}
+
+  // 2. Fall back to public IP resolution services
   const endpoints = [
     'https://api.ipify.org?format=json',
     'https://api64.ipify.org?format=json',
@@ -229,6 +244,19 @@ export async function getClientIp(): Promise<string> {
     } catch {}
   }
   return '';
+}
+
+/**
+ * Fetches local network info from the backend
+ */
+export async function getServerInfo(): Promise<{ lanIp: string; port: number } | null> {
+  try {
+    const res = await fetch('/api/auth/server-info');
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {}
+  return null;
 }
 
 /**
@@ -304,9 +332,9 @@ export function generateSessionValidationCode(sessionId: string): string {
  * Generates the full URL that the smartphone opens when scanning the QR code,
  * including session ID and optional trusted IP reference for seamless zero-tap mobile unlock.
  */
-export function getMobileAuthUrl(sessionId: string): string {
+export function getMobileAuthUrl(sessionId: string, baseOrigin?: string): string {
   if (typeof window === 'undefined') return '';
-  const origin = window.location.origin;
+  const origin = baseOrigin || window.location.origin;
   const path = window.location.pathname;
   const trustedIps = getTrustedIps();
   const tipsParam = trustedIps.length > 0 ? `&tips=${encodeURIComponent(trustedIps.join(','))}` : '';

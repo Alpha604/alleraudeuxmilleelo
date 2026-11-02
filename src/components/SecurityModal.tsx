@@ -18,6 +18,7 @@ import {
   generateQrCodeDataUrl,
   generateSessionValidationCode,
   getMobileAuthUrl,
+  getServerInfo,
   setAdminSession,
 } from '../utils/security';
 
@@ -48,29 +49,125 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     timestamp: number;
   } | null>(null);
 
+  const unlockedRef = React.useRef(false);
+
+  const handleUnlockSuccess = React.useCallback(() => {
+    if (unlockedRef.current) return;
+    unlockedRef.current = true;
+    setIsUnlocked(true);
+    setAdminSession();
+    onShowMessage('Authentification réussie ! Session administrateur active.', 'success');
+    setTimeout(() => {
+      onSuccess();
+      onClose();
+    }, 1100);
+  }, [onSuccess, onClose, onShowMessage]);
+
   const expectedMobileCode = generateSessionValidationCode(sessionId);
 
-  // Generate QR code on open
+  // Generate QR code and initialize server session on open
   useEffect(() => {
     if (!isOpen) return;
+    let isMounted = true;
+    unlockedRef.current = false;
 
-    const url = getMobileAuthUrl(sessionId);
-    setMobileUrl(url);
+    // 1. Register session on the backend server
+    fetch('/api/auth/session/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    }).catch(() => {});
 
-    generateQrCodeDataUrl(url).then((dataUrl) => {
-      setQrDataUrl(dataUrl);
-    });
+    // 2. Compute reachable mobile URL (use LAN IP if running on localhost)
+    async function setupMobileUrl() {
+      let baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+      if (
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ) {
+        const info = await getServerInfo();
+        if (info?.lanIp && info.lanIp !== '127.0.0.1') {
+          baseOrigin = `http://${info.lanIp}:${info.port || 3000}`;
+        }
+      }
+
+      const url = getMobileAuthUrl(sessionId, baseOrigin);
+      if (!isMounted) return;
+
+      setMobileUrl(url);
+      const dataUrl = await generateQrCodeDataUrl(url);
+      if (isMounted) setQrDataUrl(dataUrl);
+    }
+
+    setupMobileUrl();
+
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen, sessionId]);
 
-  // Listen for background unlock events and scan events from the mobile device via BroadcastChannel and storage
+  // Listen for real-time mobile scan events and remote unlock via Server SSE, Polling, and BroadcastChannel
   useEffect(() => {
     if (!isOpen) return;
 
+    let isMounted = true;
+    let sse: EventSource | null = null;
+    let pollTimer: any = null;
+
+    // 1. Instant Real-Time Push via Server-Sent Events (SSE)
+    try {
+      if (typeof window !== 'undefined' && 'EventSource' in window) {
+        sse = new EventSource(`/api/auth/session/events?sessionId=${encodeURIComponent(sessionId)}`);
+        sse.onmessage = (event) => {
+          if (!isMounted) return;
+          try {
+            const data = JSON.parse(event.data);
+            if (data.scanning) {
+              setMobileScanningInfo({
+                ipPrefix: data.ipPrefix || '***',
+                timestamp: Date.now(),
+              });
+            }
+            if (data.unlocked) {
+              handleUnlockSuccess();
+            }
+          } catch {}
+        };
+      }
+    } catch {}
+
+    // 2. Ultra-reliable Polling every 750ms as solid guarantee across all networks & proxies
+    const pollStatus = async () => {
+      if (!isMounted || unlockedRef.current) return;
+      try {
+        const res = await fetch(`/api/auth/session/status?sessionId=${encodeURIComponent(sessionId)}`);
+        if (res.ok && isMounted) {
+          const data = await res.json();
+          if (data.scanning) {
+            setMobileScanningInfo((prev) => {
+              if (prev && prev.ipPrefix === data.ipPrefix) return prev;
+              return {
+                ipPrefix: data.ipPrefix || '***',
+                timestamp: Date.now(),
+              };
+            });
+          }
+          if (data.unlocked) {
+            handleUnlockSuccess();
+          }
+        }
+      } catch {}
+    };
+
+    pollTimer = setInterval(pollStatus, 750);
+
+    // 3. Local BroadcastChannel (immediate in-browser tabs)
     let bc: BroadcastChannel | null = null;
     try {
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         bc = new BroadcastChannel('roadto2000_auth_channel');
         bc.onmessage = (event) => {
+          if (!isMounted) return;
           if (event.data?.type === 'MOBILE_SCAN_STARTED' && event.data?.sessionId === sessionId) {
             setMobileScanningInfo({
               ipPrefix: event.data.ipPrefix || '***',
@@ -84,7 +181,9 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
       }
     } catch {}
 
+    // 4. LocalStorage event
     const handleStorageEvent = (e: StorageEvent) => {
+      if (!isMounted) return;
       if (e.key === `roadto2000_scanning_${sessionId}` && e.newValue) {
         try {
           const parsed = JSON.parse(e.newValue);
@@ -102,20 +201,13 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     window.addEventListener('storage', handleStorageEvent);
 
     return () => {
-      window.removeEventListener('storage', handleStorageEvent);
+      isMounted = false;
+      if (pollTimer) clearInterval(pollTimer);
+      if (sse) sse.close();
       if (bc) bc.close();
+      window.removeEventListener('storage', handleStorageEvent);
     };
-  }, [isOpen, sessionId]);
-
-  const handleUnlockSuccess = () => {
-    setIsUnlocked(true);
-    setAdminSession();
-    onShowMessage('Authentification réussie ! Session administrateur active.', 'success');
-    setTimeout(() => {
-      onSuccess();
-      onClose();
-    }, 1200);
-  };
+  }, [isOpen, sessionId, handleUnlockSuccess]);
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();

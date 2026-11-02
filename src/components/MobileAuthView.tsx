@@ -52,7 +52,7 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
   const [hasSentUnlock, setHasSentUnlock] = useState<boolean>(false);
 
   // Common unlock execution function
-  const executeUnlock = (reason: 'password' | 'trusted_ip') => {
+  const executeUnlock = async (reason: 'password' | 'trusted_ip') => {
     const code = generateSessionValidationCode(sessionId);
     setGeneratedCode(code);
     setIsSuccess(true);
@@ -64,7 +64,18 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
     // 1. Activate admin session on this device
     setAdminSession();
 
-    // 2. Transmit unlock to desktop via localStorage and BroadcastChannel
+    // 2. Transmit unlock to server to unlock PC in real-time across devices!
+    try {
+      await fetch('/api/auth/session/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, reason }),
+      });
+    } catch (e) {
+      console.warn('Server remote unlock error:', e);
+    }
+
+    // 3. Transmit unlock to desktop via localStorage and BroadcastChannel (same-machine fallback)
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem(`roadto2000_unlocked_${sessionId}`, 'true');
@@ -80,7 +91,15 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
   };
 
   // Re-broadcast remote unlock signal
-  const handleResendUnlock = () => {
+  const handleResendUnlock = async () => {
+    try {
+      await fetch('/api/auth/session/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, reason: 'resend' }),
+      });
+    } catch {}
+
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem(`roadto2000_unlocked_${sessionId}`, 'true');
@@ -93,7 +112,7 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
     } catch {}
   };
 
-  // On mount: broadcast scan start to PC with masked IP, and check if IP is in trusted list
+  // On mount: notify server of scan start with detected IP, and check if IP is in trusted list
   useEffect(() => {
     let isMounted = true;
 
@@ -108,11 +127,26 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
         const currentIp = await getClientIp();
         if (!isMounted) return;
 
-        const effectiveIp = currentIp || 'Mobile';
+        const effectiveIp = currentIp || '';
         setDetectedIp(currentIp);
 
-        // Notify desktop in real-time that phone has scanned QR code with IP prefix
-        const prefix = formatIpPrefix(effectiveIp);
+        // Notify server in real-time that phone has scanned QR code with IP prefix
+        const prefix = formatIpPrefix(effectiveIp || 'Mobile');
+
+        try {
+          await fetch('/api/auth/session/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId,
+              ipPrefix: prefix,
+              clientIp: effectiveIp,
+            }),
+          });
+        } catch (serverErr) {
+          console.warn('Server scan notify error:', serverErr);
+        }
+
         try {
           if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
             const bc = new BroadcastChannel('roadto2000_auth_channel');
