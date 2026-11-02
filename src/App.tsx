@@ -11,9 +11,11 @@ import { HistoryChart } from './components/HistoryChart';
 import { IframeEmbedGuide } from './components/IframeEmbedGuide';
 import { KpiSummaryRow } from './components/KpiSummaryRow';
 import { MilestoneCalendar } from './components/MilestoneCalendar';
+import { MobileAuthView } from './components/MobileAuthView';
 import { Navbar, NavTab } from './components/Navbar';
 import { NotificationToast, ToastMessage } from './components/NotificationToast';
 import { MonthlyObjectiveCard } from './components/MonthlyObjectiveCard';
+import { SecurityModal } from './components/SecurityModal';
 import { SettingsView } from './components/SettingsView';
 import { SyncLog } from './components/SyncLog';
 import { TestRunner } from './components/TestRunner';
@@ -34,6 +36,11 @@ import {
   getProjectTimeMetrics,
 } from './utils/eloEngine';
 import {
+  isAdminSessionActive,
+  isRunningInIframe,
+  revokeAdminSession,
+} from './utils/security';
+import {
   addSyncRecord,
   getStoredSettings,
   getStoredSyncHistory,
@@ -44,10 +51,25 @@ import {
 } from './utils/storage';
 
 export default function App() {
+  // Mobile 2FA Auth Route detection (?mobile_auth=SESSION_ID)
+  const [mobileAuthSessionId, setMobileAuthSessionId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('mobile_auth');
+  });
+
+  // Strict Iframe & Embed Mode Detection
+  const isIframe = useMemo(() => isRunningInIframe(), []);
+
+  // Admin 2FA Session state
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminSessionActive());
+  const [securityModalOpen, setSecurityModalOpen] = useState(false);
+  const [securityModalTitle, setSecurityModalTitle] = useState('Accès Protégé');
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+
   // Load settings from local persistent storage
   const [settings, setSettings] = useState<AppSettings>(() => {
     const s = getStoredSettings();
-    // Immediate proactive purge of old stale data or 1938 residue
     purgeLegacyAndStaleData(s.username);
     return s;
   });
@@ -82,6 +104,41 @@ export default function App() {
     }
   }, [settings.theme]);
 
+  // Periodic check for admin session validity & BroadcastChannel synchronization
+  useEffect(() => {
+    const checkInterval = setInterval(() => {
+      const active = isAdminSessionActive();
+      setIsAdmin(active);
+    }, 15000);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bc = new BroadcastChannel('roadto2000_auth_channel');
+        bc.onmessage = (event) => {
+          if (event.data?.type === 'AUTH_UNLOCKED' || event.data?.type === 'MOBILE_UNLOCKED') {
+            setIsAdmin(true);
+            setSecurityModalOpen(false);
+          } else if (event.data?.type === 'AUTH_LOCKED') {
+            setIsAdmin(false);
+          }
+        };
+      }
+    } catch {}
+
+    return () => {
+      clearInterval(checkInterval);
+      if (bc) bc.close();
+    };
+  }, []);
+
+  // In iframe mode, ensure user cannot remain on settings or tests tab
+  useEffect(() => {
+    if (isIframe && (currentTab === 'settings' || currentTab === 'tests')) {
+      setCurrentTab('dashboard');
+    }
+  }, [isIframe, currentTab]);
+
   // Toast notification helper
   const showToast = useCallback((message: string, type: 'info' | 'success' | 'warning' = 'info', title = 'Road to 2000') => {
     const newToast: ToastMessage = {
@@ -99,6 +156,39 @@ export default function App() {
   const dismissToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  // Open Security Modal with custom title and optional callback upon unlock
+  const handleOpenSecurityModal = useCallback((title: string = 'Accès Protégé', onGranted?: () => void) => {
+    if (isIframe) {
+      showToast('Cette action est désactivée en mode Iframe consultation.', 'warning');
+      return;
+    }
+    if (isAdmin) {
+      if (onGranted) onGranted();
+      return;
+    }
+    setSecurityModalTitle(title);
+    setPendingAction(() => onGranted || null);
+    setSecurityModalOpen(true);
+  }, [isAdmin, isIframe, showToast]);
+
+  const handleSecuritySuccess = useCallback(() => {
+    setIsAdmin(true);
+    setSecurityModalOpen(false);
+    if (pendingAction) {
+      pendingAction();
+      setPendingAction(null);
+    }
+  }, [pendingAction]);
+
+  const handleLockAdmin = useCallback(() => {
+    revokeAdminSession();
+    setIsAdmin(false);
+    if (currentTab === 'settings' || currentTab === 'tests') {
+      setCurrentTab('dashboard');
+    }
+    showToast('Session administrateur verrouillée avec succès.', 'info');
+  }, [currentTab, showToast]);
 
   // Perform Chess.com synchronization
   const performSync = useCallback(
@@ -202,7 +292,7 @@ export default function App() {
     performSync(false);
   }, []);
 
-  // Periodic auto-sync
+  // Periodic auto-sync (Runs in background even in iframe so visitors see current data)
   useEffect(() => {
     if (settings.autoSyncMinutes <= 0) return;
     const intervalMs = settings.autoSyncMinutes * 60 * 1000;
@@ -214,6 +304,15 @@ export default function App() {
 
   // Handle settings update: clean switch between accounts
   const handleSettingsUpdate = (updated: AppSettings) => {
+    if (isIframe) {
+      showToast('Modification des paramètres interdite en mode Iframe.', 'warning');
+      return;
+    }
+    if (!isAdmin) {
+      handleOpenSecurityModal('Modification des paramètres', () => handleSettingsUpdate(updated));
+      return;
+    }
+
     const oldUser = settings.username.trim().toLowerCase();
     const newUser = updated.username.trim().toLowerCase();
     const isNewUser = oldUser !== newUser;
@@ -245,6 +344,15 @@ export default function App() {
 
   // Dedicated Hard Purge of all cached data for current account
   const handlePurgeAccountData = () => {
+    if (isIframe) {
+      showToast('Action non autorisée en mode Iframe.', 'warning');
+      return;
+    }
+    if (!isAdmin) {
+      handleOpenSecurityModal('Purge des données du compte', handlePurgeAccountData);
+      return;
+    }
+
     const activeUser = settings.username.trim().toLowerCase();
     purgeAllUserData(activeUser);
     setStats(null);
@@ -366,6 +474,23 @@ export default function App() {
     };
   }, [syncHistory, currentElo, settings.startElo, settings.targetElo, activeBestMode]);
 
+  // If user scanned QR code with mobile phone, render the dedicated Mobile Auth View!
+  if (mobileAuthSessionId) {
+    return (
+      <MobileAuthView
+        sessionId={mobileAuthSessionId}
+        onFinishMobileAuth={() => {
+          // Remove ?mobile_auth parameter from URL and load full dashboard
+          if (typeof window !== 'undefined' && window.history) {
+            window.history.replaceState({}, '', window.location.pathname);
+          }
+          setMobileAuthSessionId(null);
+          setIsAdmin(true);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans transition-colors dark:bg-neutral-950 dark:text-neutral-100 light:bg-neutral-100 light:text-neutral-900">
       {/* Top Bar Navigation */}
@@ -379,6 +504,10 @@ export default function App() {
         onToggleTheme={handleToggleTheme}
         profile={profile}
         username={settings.username}
+        isAdmin={isAdmin}
+        isIframe={isIframe}
+        onOpenSecurityModal={handleOpenSecurityModal}
+        onLockAdmin={handleLockAdmin}
       />
 
       {/* Main Content Viewport */}
@@ -451,28 +580,50 @@ export default function App() {
             onShowMessage={showToast}
             username={settings.username}
             onPurgeAccountData={handlePurgeAccountData}
+            isAdmin={isAdmin}
+            isIframe={isIframe}
+            onOpenSecurityModal={handleOpenSecurityModal}
           />
         )}
 
-        {/* TAB 5: TESTS */}
-        {currentTab === 'tests' && <TestRunner />}
+        {/* TAB 5: TESTS (Protected by 2FA, hidden in iframe) */}
+        {currentTab === 'tests' && !isIframe && (
+          <TestRunner
+            isAdmin={isAdmin}
+            isIframe={isIframe}
+            onOpenSecurityModal={handleOpenSecurityModal}
+          />
+        )}
 
         {/* TAB 6: IFRAME GUIDE */}
         {currentTab === 'iframe' && <IframeEmbedGuide />}
 
-        {/* TAB 7: SETTINGS */}
-        {currentTab === 'settings' && (
+        {/* TAB 7: SETTINGS (Protected by 2FA, hidden in iframe) */}
+        {currentTab === 'settings' && !isIframe && (
           <SettingsView
             settings={settings}
             onSettingsUpdate={handleSettingsUpdate}
             onShowMessage={showToast}
             onPurgeAccountData={handlePurgeAccountData}
+            isAdmin={isAdmin}
+            isIframe={isIframe}
+            onOpenSecurityModal={handleOpenSecurityModal}
+            onLockAdmin={handleLockAdmin}
           />
         )}
       </main>
 
       {/* Discrete Notification Toasts */}
       <NotificationToast toasts={toasts} onDismiss={dismissToast} />
+
+      {/* 2FA Security Modal with Smartphone QR Code Scan */}
+      <SecurityModal
+        isOpen={securityModalOpen}
+        onClose={() => setSecurityModalOpen(false)}
+        onSuccess={handleSecuritySuccess}
+        actionTitle={securityModalTitle}
+        onShowMessage={showToast}
+      />
 
       {/* Editorial Clean Footer */}
       <footer className="border-t border-neutral-800/80 bg-neutral-950/90 py-6 text-center text-xs text-neutral-500 transition-colors dark:border-neutral-800/80 dark:bg-neutral-950/90 light:border-neutral-200 light:bg-neutral-50">
@@ -481,6 +632,12 @@ export default function App() {
             <span className="font-semibold text-neutral-400">Road to 2000 Elo</span>
             <span aria-hidden="true">·</span>
             <span>Programme officiel de performance sportive</span>
+            {isIframe && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-amber-400 font-semibold">[Mode Iframe Consultation Seule]</span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-2 text-[11px] font-mono text-neutral-400">
             <span>Joueur : @{settings.username}</span>

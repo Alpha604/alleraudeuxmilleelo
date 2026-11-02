@@ -8,24 +8,33 @@ import {
   AlertTriangle,
   Bell,
   CheckCircle2,
+  KeyRound,
+  Lock,
   Moon,
   RefreshCw,
   RotateCcw,
   Save,
   Settings as SettingsIcon,
+  ShieldCheck,
   Sliders,
   Sun,
   Trash2,
+  Unlock,
   User,
 } from 'lucide-react';
 import { AppSettings, GameMode, TrajectoryModel } from '../types/chess';
 import { DEFAULT_SETTINGS } from '../utils/storage';
+import { updateAdminPassword } from '../utils/security';
 
 interface SettingsViewProps {
   settings: AppSettings;
   onSettingsUpdate: (updated: AppSettings) => void;
   onShowMessage: (msg: string, type?: 'info' | 'success' | 'warning') => void;
   onPurgeAccountData?: () => void;
+  isAdmin?: boolean;
+  isIframe?: boolean;
+  onOpenSecurityModal?: (title?: string) => void;
+  onLockAdmin?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -33,13 +42,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSettingsUpdate,
   onShowMessage,
   onPurgeAccountData,
+  isAdmin = false,
+  isIframe = false,
+  onOpenSecurityModal,
+  onLockAdmin,
 }) => {
   const [form, setForm] = useState<AppSettings>(settings);
   const [isSaved, setIsSaved] = useState(false);
   const [showPurgeModal, setShowPurgeModal] = useState(false);
 
+  // Change password state
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isIframe) {
+      onShowMessage("Mode Iframe : modification des paramètres interdite.", 'warning');
+      return;
+    }
+    if (!isAdmin) {
+      if (onOpenSecurityModal) onOpenSecurityModal('Enregistrement des paramètres');
+      return;
+    }
+
     const isNewUser = form.username.trim().toLowerCase() !== settings.username.trim().toLowerCase();
     onSettingsUpdate(form);
     setIsSaved(true);
@@ -50,6 +78,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   const handleReset = () => {
+    if (isIframe) return;
+    if (!isAdmin) {
+      if (onOpenSecurityModal) onOpenSecurityModal('Réinitialisation des paramètres');
+      return;
+    }
     setForm(DEFAULT_SETTINGS);
     onSettingsUpdate(DEFAULT_SETTINGS);
     onShowMessage('Paramètres réinitialisés aux valeurs officielles du projet (alpharomeo1500, 1500 → 2000 Elo).', 'info');
@@ -62,27 +95,112 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess(false);
+
+    if (newPassword.length < 4) {
+      setPasswordError('Le nouveau mot de passe doit comporter au moins 4 caractères.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Les deux mots de passe ne correspondent pas.');
+      return;
+    }
+
+    const ok = await updateAdminPassword(newPassword);
+    if (ok) {
+      setPasswordSuccess(true);
+      setNewPassword('');
+      setConfirmPassword('');
+      onShowMessage('Mot de passe administrateur 2FA modifié avec succès !', 'success');
+      setTimeout(() => setPasswordSuccess(false), 4000);
+    } else {
+      setPasswordError('Impossible de mettre à jour le mot de passe.');
+    }
+  };
+
+  // If in Iframe: show strictly read-only banner
+  if (isIframe) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-8 text-center space-y-3">
+          <Lock className="h-10 w-10 text-amber-400 mx-auto" />
+          <h3 className="text-base font-bold text-amber-300">Mode Iframe Sécurisé (Lecture Seule)</h3>
+          <p className="text-xs text-neutral-300 max-w-xl mx-auto leading-relaxed">
+            Cette intégration fonctionne en mode consultation restreinte. La modification des paramètres, le changement de pseudo, l'effacement de données et les synchronisations manuelles sont formellement bloqués dans un contexte iframe.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // If not authenticated as Admin: prompt 2FA unlock
+  if (!isAdmin) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="rounded-2xl border border-amber-500/40 bg-neutral-900/90 p-8 text-center space-y-5 shadow-2xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-400">
+            <Lock className="h-7 w-7" />
+          </div>
+          <div className="space-y-1.5">
+            <h3 className="text-lg font-bold text-white">Espace Paramètres Verrouillé (2FA)</h3>
+            <p className="text-xs text-neutral-400 max-w-lg mx-auto leading-relaxed">
+              Pour des raisons de sécurité, la modification de la configuration du projet nécessite une authentification à deux facteurs avec votre smartphone.
+            </p>
+          </div>
+          <button
+            onClick={() => onOpenSecurityModal && onOpenSecurityModal('Accès aux Paramètres')}
+            className="inline-flex items-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 px-6 py-3 text-xs font-bold transition-all shadow-[0_0_20px_rgba(245,158,11,0.25)]"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            <span>Déverrouiller avec le QR Code 2FA</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-200">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-neutral-100 dark:text-neutral-100 light:text-neutral-900 flex items-center gap-2">
             <SettingsIcon className="h-5 w-5 text-amber-400" />
             <span>Paramètres Personnalisables Du Projet</span>
+            <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+              <ShieldCheck className="h-3 w-3" />
+              <span>Session Admin 2FA Active</span>
+            </span>
           </h2>
           <p className="text-xs text-neutral-400">
             Ajustez votre profil, vos cibles et les préférences du moteur de performance.
           </p>
         </div>
 
-        <button
-          onClick={handleReset}
-          className="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition-colors self-start"
-        >
-          <RotateCcw className="h-3.5 w-3.5" />
-          <span>Réinitialiser par défaut</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {onLockAdmin && (
+            <button
+              onClick={onLockAdmin}
+              className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+              title="Verrouiller la session d'administration"
+            >
+              <Lock className="h-3.5 w-3.5" />
+              <span>Verrouiller</span>
+            </button>
+          )}
+
+          <button
+            onClick={handleReset}
+            className="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition-colors"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            <span>Réinitialiser par défaut</span>
+          </button>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -387,6 +505,71 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </button>
         </div>
       </form>
+
+      {/* Section 5: Modification du mot de passe Administrateur 2FA */}
+      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400">
+            <KeyRound className="h-4 w-4" />
+            <span>Sécurité 2FA : Modifier Le Mot De Passe Maître</span>
+          </div>
+          <span className="text-[11px] text-neutral-400">Défaut : 2000elo</span>
+        </div>
+
+        <form onSubmit={handleChangePassword} className="space-y-4 max-w-xl">
+          <p className="text-xs text-neutral-300 leading-relaxed">
+            Ce mot de passe est celui demandé sur votre smartphone lors du scan du QR Code pour déverrouiller la synchronisation, les paramètres et les tests.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-neutral-300 mb-1">Nouveau mot de passe</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="4 caractères minimum"
+                required
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-neutral-300 mb-1">Confirmer le mot de passe</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirmer"
+                required
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {passwordError && (
+            <div className="flex items-center gap-1.5 text-xs text-rose-400">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              <span>{passwordError}</span>
+            </div>
+          )}
+
+          {passwordSuccess && (
+            <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span>Nouveau mot de passe maître enregistré avec succès !</span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="flex items-center gap-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-2 text-xs font-semibold transition-colors"
+          >
+            <Lock className="h-3.5 w-3.5 text-amber-400" />
+            <span>Changer le mot de passe 2FA</span>
+          </button>
+        </form>
+      </div>
 
       {/* Confirmation Modal for Hard Purge */}
       {showPurgeModal && (

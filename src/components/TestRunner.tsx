@@ -4,7 +4,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { CheckCircle2, Play, RefreshCw, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
+import { CheckCircle2, Lock, Play, RefreshCw, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
 import { ChessComStatsResponse } from '../types/chess';
 import {
   calculateDailyObjective,
@@ -24,7 +24,17 @@ interface TestCase {
   run: () => { passed: boolean; message: string; details: any };
 }
 
-export const TestRunner: React.FC = () => {
+interface TestRunnerProps {
+  isAdmin?: boolean;
+  isIframe?: boolean;
+  onOpenSecurityModal?: (title?: string) => void;
+}
+
+export const TestRunner: React.FC<TestRunnerProps> = ({
+  isAdmin = false,
+  isIframe = false,
+  onOpenSecurityModal,
+}) => {
   const [isRunning, setIsRunning] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'passed' | 'failed'>('all');
 
@@ -226,6 +236,45 @@ export const TestRunner: React.FC = () => {
       setIsRunning(false);
     }, 400);
   };
+
+  if (isIframe) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-8 text-center space-y-3">
+          <Lock className="h-10 w-10 text-amber-400 mx-auto" />
+          <h3 className="text-base font-bold text-amber-300">Mode Iframe Sécurisé (Lecture Seule)</h3>
+          <p className="text-xs text-neutral-300 max-w-xl mx-auto leading-relaxed">
+            La suite de tests algorithmiques est réservée au site officiel et masquée en intégration iframe.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="rounded-2xl border border-amber-500/40 bg-neutral-900/90 p-8 text-center space-y-5 shadow-2xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-400">
+            <Lock className="h-7 w-7" />
+          </div>
+          <div className="space-y-1.5">
+            <h3 className="text-lg font-bold text-white">Espace Tests Verrouillé (2FA)</h3>
+            <p className="text-xs text-neutral-400 max-w-lg mx-auto leading-relaxed">
+              L'exécution et la vérification des tests de conformité nécessitent une autorisation à deux facteurs avec votre téléphone.
+            </p>
+          </div>
+          <button
+            onClick={() => onOpenSecurityModal && onOpenSecurityModal('Exécution des Tests')}
+            className="inline-flex items-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 px-6 py-3 text-xs font-bold transition-all shadow-[0_0_20px_rgba(245,158,11,0.25)]"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            <span>Déverrouiller avec le QR Code 2FA</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">

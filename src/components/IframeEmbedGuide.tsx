@@ -86,6 +86,10 @@ export const IframeEmbedGuide: React.FC = () => {
           <ul className="space-y-2 text-xs text-neutral-300">
             <li className="flex items-start gap-2">
               <span className="text-amber-400 font-bold">✓</span>
+              <span><strong>Sécurité formelle en lecture seule :</strong> En iframe, les paramètres, synchronisations manuelles, purges et tests sont <strong>formellement verrouillés et inaccessibles</strong>. Les visiteurs peuvent uniquement consulter les statistiques, le graphique, le calendrier et les relevés sans risque d'altération.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-amber-400 font-bold">✓</span>
               <span><strong>Largeur 100% adaptative :</strong> Aucune largeur fixe rigide, s'étire selon le conteneur hôte.</span>
             </li>
             <li className="flex items-start gap-2">
@@ -98,7 +102,7 @@ export const IframeEmbedGuide: React.FC = () => {
             </li>
             <li className="flex items-start gap-2">
               <span className="text-amber-400 font-bold">✓</span>
-              <span><strong>Autonomie sans popups :</strong> Toutes les fonctions (sync, export, graphiques, filtres) s'exécutent dans l'iframe sans ouvrir de fenêtre externe obligatoire.</span>
+              <span><strong>Autonomie sans popups :</strong> Toutes les fonctions autorisées s'exécutent dans l'iframe sans ouvrir de fenêtre externe obligatoire.</span>
             </li>
           </ul>
         </div>

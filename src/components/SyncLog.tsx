@@ -10,6 +10,7 @@ import {
   FileJson,
   FileSpreadsheet,
   History,
+  Lock,
   RotateCcw,
   Trash2,
   Upload,
@@ -28,6 +29,9 @@ interface SyncLogProps {
   onShowMessage: (msg: string, type?: 'info' | 'success' | 'warning') => void;
   username: string;
   onPurgeAccountData?: () => void;
+  isAdmin?: boolean;
+  isIframe?: boolean;
+  onOpenSecurityModal?: (title?: string) => void;
 }
 
 export const SyncLog: React.FC<SyncLogProps> = ({
@@ -36,6 +40,9 @@ export const SyncLog: React.FC<SyncLogProps> = ({
   onShowMessage,
   username,
   onPurgeAccountData,
+  isAdmin = false,
+  isIframe = false,
+  onOpenSecurityModal,
 }) => {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -65,6 +72,12 @@ export const SyncLog: React.FC<SyncLogProps> = ({
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isIframe) return;
+    if (!isAdmin) {
+      if (onOpenSecurityModal) onOpenSecurityModal("Import de données d'historique");
+      return;
+    }
+
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -92,7 +105,37 @@ export const SyncLog: React.FC<SyncLogProps> = ({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleTriggerImport = () => {
+    if (isIframe) return;
+    if (!isAdmin) {
+      if (onOpenSecurityModal) onOpenSecurityModal("Import de relevés d'historique");
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
+  const handleTriggerPurge = () => {
+    if (isIframe) return;
+    if (!isAdmin) {
+      if (onOpenSecurityModal) onOpenSecurityModal("Purge des données d'historique");
+      return;
+    }
+    if (onPurgeAccountData) {
+      onPurgeAccountData();
+    }
+  };
+
+  const handleTriggerClear = () => {
+    if (isIframe) return;
+    if (!isAdmin) {
+      if (onOpenSecurityModal) onOpenSecurityModal("Suppression de l'historique complet");
+      return;
+    }
+    setShowClearConfirm(true);
+  };
+
   const handleClearHistory = () => {
+    if (isIframe || !isAdmin) return;
     clearSyncHistory(username);
     onHistoryUpdate([]);
     setShowClearConfirm(false);
@@ -102,13 +145,15 @@ export const SyncLog: React.FC<SyncLogProps> = ({
   return (
     <div className="space-y-6">
       {/* Hidden file input */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileUpload}
-        accept=".json,.csv"
-        className="hidden"
-      />
+      {!isIframe && (
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileUpload}
+          accept=".json,.csv"
+          className="hidden"
+        />
+      )}
 
       {/* Header and Toolbar */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -118,20 +163,23 @@ export const SyncLog: React.FC<SyncLogProps> = ({
             <span>Historique Des Synchronisations</span>
           </h2>
           <p className="text-xs text-neutral-400">
-            Relevés officiels horodatés pour <strong className="text-amber-300">@{username}</strong>, conservés localement avec support d'export et d'import sécurisé.
+            Relevés officiels horodatés pour <strong className="text-amber-300">@{username}</strong>
+            {isIframe && ' (Mode consultation en lecture seule)'}.
           </p>
         </div>
 
         {/* Action buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          {onPurgeAccountData && (
+          {/* Purge Button (Hidden in iframe, locked when not admin) */}
+          {!isIframe && onPurgeAccountData && (
             <button
-              onClick={onPurgeAccountData}
-              title="Purger le cache et forcer un relevé neuf"
+              onClick={handleTriggerPurge}
+              title={isAdmin ? "Purger le cache et forcer un relevé neuf" : "Action protégée par 2FA"}
               className="flex items-center gap-1.5 rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-1.5 text-xs font-medium text-amber-300 hover:bg-amber-900/30 transition-colors"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               <span>Purger l'ancien compte</span>
+              {!isAdmin && <Lock className="h-2.5 w-2.5 text-amber-400" />}
             </button>
           )}
 
@@ -151,28 +199,36 @@ export const SyncLog: React.FC<SyncLogProps> = ({
             <span>Export JSON</span>
           </button>
 
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800 transition-colors"
-          >
-            <Upload className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Importer</span>
-          </button>
-
-          {history.length > 0 && (
+          {/* Import Button (Hidden in iframe) */}
+          {!isIframe && (
             <button
-              onClick={() => setShowClearConfirm(true)}
+              onClick={handleTriggerImport}
+              title={isAdmin ? "Importer un fichier d'historique" : "Import protégé par 2FA"}
+              className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800 transition-colors"
+            >
+              <Upload className="h-3.5 w-3.5 text-cyan-400" />
+              <span>Importer</span>
+              {!isAdmin && <Lock className="h-2.5 w-2.5 text-amber-400" />}
+            </button>
+          )}
+
+          {/* Clear Button (Hidden in iframe) */}
+          {!isIframe && history.length > 0 && (
+            <button
+              onClick={handleTriggerClear}
+              title={isAdmin ? "Vider l'historique" : "Action protégée par 2FA"}
               className="flex items-center gap-1.5 rounded-lg border border-rose-900/40 bg-rose-950/20 px-3 py-1.5 text-xs font-medium text-rose-300 hover:bg-rose-900/30 transition-colors"
             >
               <Trash2 className="h-3.5 w-3.5" />
               <span>Vider</span>
+              {!isAdmin && <Lock className="h-2.5 w-2.5 text-rose-400" />}
             </button>
           )}
         </div>
       </div>
 
       {/* Confirmation Modal for Clearing History */}
-      {showClearConfirm && (
+      {!isIframe && showClearConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
             <div className="flex items-center gap-3 text-rose-400">
@@ -207,7 +263,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
             <Clock className="mx-auto h-8 w-8 text-neutral-600 mb-2" />
             <p className="font-semibold text-neutral-300">Aucune synchronisation enregistrée pour @{username}.</p>
             <p className="mt-1">
-              Cliquez sur le bouton "Synchroniser" en haut à droite pour relever vos statistiques Chess.com.
+              Les statistiques sont synchronisées périodiquement depuis l'API officielle Chess.com.
             </p>
           </div>
         ) : (
