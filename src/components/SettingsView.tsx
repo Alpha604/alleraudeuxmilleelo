@@ -37,16 +37,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    saveStoredSettings(form);
+    const isNewUser = form.username.trim().toLowerCase() !== settings.username.trim().toLowerCase();
     onSettingsUpdate(form);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
-    onShowMessage('Paramètres enregistrés avec succès ! Tous les calculs ont été mis à jour.', 'success');
+    if (!isNewUser) {
+      onShowMessage('Paramètres enregistrés avec succès ! Tous les calculs ont été mis à jour.', 'success');
+    }
   };
 
   const handleReset = () => {
     setForm(DEFAULT_SETTINGS);
-    saveStoredSettings(DEFAULT_SETTINGS);
     onSettingsUpdate(DEFAULT_SETTINGS);
     onShowMessage('Paramètres réinitialisés aux valeurs officielles du projet (alpharomeo1500, 1500 → 2000 Elo).', 'info');
   };
@@ -94,8 +95,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 required
                 className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
               />
-              <span className="text-[11px] text-neutral-500 mt-1 block">
-                Par défaut : <strong className="text-neutral-300">alpharomeo1500</strong>
+              <span className="text-[11px] text-neutral-400 mt-1 block">
+                Par défaut : <strong className="text-neutral-200">alpharomeo1500</strong>. Changer de pseudo réinitialise automatiquement l'ancien profil et ses relevés pour éviter toute donnée faussée.
               </span>
             </div>
 

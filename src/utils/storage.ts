@@ -15,6 +15,7 @@ import {
 const SETTINGS_KEY = 'roadto2000_settings_v1';
 const HISTORY_KEY = 'roadto2000_sync_history_v1';
 const NOTIFICATIONS_KEY = 'roadto2000_notifications_v1';
+const LAST_SYNCED_USER_KEY = 'roadto2000_synced_user_v1';
 
 // In-memory fallback if localStorage is blocked in sandboxed iframes
 const memoryStore: Record<string, string> = {};
@@ -41,6 +42,22 @@ function safeSetItem(key: string, value: string): boolean {
   }
   memoryStore[key] = value;
   return true;
+}
+
+export function getLastSyncedUser(): string | null {
+  return safeGetItem(LAST_SYNCED_USER_KEY);
+}
+
+export function setLastSyncedUser(username: string): void {
+  safeSetItem(LAST_SYNCED_USER_KEY, username.trim().toLowerCase());
+}
+
+/**
+ * Completely clears previous account data when switching to a new Chess.com username.
+ */
+export function handleAccountSwitch(newUsername: string): void {
+  safeSetItem(HISTORY_KEY, JSON.stringify([]));
+  safeSetItem(LAST_SYNCED_USER_KEY, newUsername.trim().toLowerCase());
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -88,13 +105,20 @@ export function saveStoredSettings(settings: AppSettings): boolean {
   return safeSetItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
-export function getStoredSyncHistory(): SyncRecord[] {
+export function getStoredSyncHistory(filterUsername?: string): SyncRecord[] {
   const raw = safeGetItem(HISTORY_KEY);
   if (!raw) return [];
   try {
     const list = JSON.parse(raw);
     if (!Array.isArray(list)) return [];
-    return list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    
+    // Filter by username if specified to avoid showing another account's records
+    const normalizedUser = filterUsername ? filterUsername.trim().toLowerCase() : null;
+    const filtered = normalizedUser
+      ? list.filter((r) => !r.username || r.username.toLowerCase() === normalizedUser)
+      : list;
+
+    return filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   } catch (e) {
     console.error('Failed to parse history:', e);
     return [];
@@ -111,9 +135,10 @@ export function saveStoredSyncHistory(history: SyncRecord[]): boolean {
  */
 export function addSyncRecord(
   data: Omit<SyncRecord, 'id'>,
-  force: boolean = false
+  force: boolean = false,
+  username?: string
 ): { record: SyncRecord; isDuplicate: boolean; history: SyncRecord[] } {
-  const history = getStoredSyncHistory();
+  const history = getStoredSyncHistory(username);
   const latest = history[0];
 
   const nowMs = new Date(data.timestamp).getTime();
@@ -135,10 +160,16 @@ export function addSyncRecord(
     };
   }
 
+  const normalizedUser = (username || data.username || '').trim().toLowerCase();
   const newRecord: SyncRecord = {
     ...data,
+    username: normalizedUser || undefined,
     id: `sync_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
   };
+
+  if (normalizedUser) {
+    setLastSyncedUser(normalizedUser);
+  }
 
   const updated = [newRecord, ...history].slice(0, 500); // Keep last 500 records
   saveStoredSyncHistory(updated);

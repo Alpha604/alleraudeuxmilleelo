@@ -267,7 +267,10 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                       </td>
 
                       <td className="py-3 px-4 font-sans text-[11px] text-neutral-500 whitespace-nowrap">
-                        {record.source}
+                        <div>{record.source}</div>
+                        {record.username && (
+                          <div className="text-[10px] text-neutral-600 font-mono">@{record.username}</div>
+                        )}
                       </td>
                     </tr>
                   );

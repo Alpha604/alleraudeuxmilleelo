@@ -55,6 +55,7 @@ export interface ChessComProfileResponse {
 
 export interface SyncRecord {
   id: string;
+  username?: string;
   timestamp: string; // ISO string
   blitz: number | null;
   rapid: number | null;

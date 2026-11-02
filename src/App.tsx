@@ -35,15 +35,26 @@ import {
 } from './utils/eloEngine';
 import {
   addSyncRecord,
+  getLastSyncedUser,
   getStoredSettings,
   getStoredSyncHistory,
+  handleAccountSwitch,
   saveStoredSettings,
 } from './utils/storage';
 
 export default function App() {
   // Load settings & sync history from local persistent storage
   const [settings, setSettings] = useState<AppSettings>(() => getStoredSettings());
-  const [syncHistory, setSyncHistory] = useState<SyncRecord[]>(() => getStoredSyncHistory());
+  const [syncHistory, setSyncHistory] = useState<SyncRecord[]>(() => {
+    const s = getStoredSettings();
+    const lastUser = getLastSyncedUser();
+    // If stored history belonged to a different account than current settings, purge it
+    if (lastUser && lastUser.toLowerCase() !== s.username.trim().toLowerCase()) {
+      handleAccountSwitch(s.username);
+      return [];
+    }
+    return getStoredSyncHistory(s.username);
+  });
 
   // Navigation tab
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
@@ -53,7 +64,8 @@ export default function App() {
   const [profile, setProfile] = useState<ChessComProfileResponse | undefined>(undefined);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
-    const history = getStoredSyncHistory();
+    const s = getStoredSettings();
+    const history = getStoredSyncHistory(s.username);
     return history.length > 0 ? history[0].timestamp : null;
   });
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -88,15 +100,16 @@ export default function App() {
 
   // Perform Chess.com synchronization
   const performSync = useCallback(
-    async (manual = false) => {
+    async (manual = false, overrideUsername?: string) => {
+      const activeUser = (overrideUsername || settings.username).trim().toLowerCase();
       setIsSyncing(true);
       try {
-        const result = await fetchChessComData(settings.username);
+        const result = await fetchChessComData(activeUser);
 
         if (!result.success || !result.stats) {
           if (manual || settings.notifications.syncErrors) {
             showToast(
-              result.error || 'Erreur lors de la synchronisation avec Chess.com. Vos données précédentes sont conservées.',
+              result.error || `Erreur lors de la synchronisation avec Chess.com (@${activeUser}).`,
               'warning',
               'Alerte Synchronisation'
             );
@@ -107,6 +120,8 @@ export default function App() {
         setStats(result.stats);
         if (result.profile) {
           setProfile(result.profile);
+        } else {
+          setProfile(undefined);
         }
         setLastSyncTime(result.timestamp);
 
@@ -114,7 +129,7 @@ export default function App() {
         const bestInfo = getBestGameMode(result.stats);
 
         // Check for personal record or goal reached
-        const previousRecords = getStoredSyncHistory();
+        const previousRecords = getStoredSyncHistory(activeUser);
         const previousPeak = previousRecords.length > 0
           ? Math.max(...previousRecords.map((r) => r.bestRating))
           : settings.startElo;
@@ -135,29 +150,34 @@ export default function App() {
           );
         }
 
-        // Add to persistent sync history with duplicate detection
-        const { record, isDuplicate, history } = addSyncRecord({
-          timestamp: result.timestamp,
-          bullet: result.stats.chess_bullet?.last?.rating ?? null,
-          blitz: result.stats.chess_blitz?.last?.rating ?? null,
-          rapid: result.stats.chess_rapid?.last?.rating ?? null,
-          bestRating: bestInfo.rating,
-          bestMode: bestInfo.mode,
-          source: result.source,
-        });
+        // Add to persistent sync history with duplicate detection and user attribution
+        const { record, isDuplicate, history } = addSyncRecord(
+          {
+            timestamp: result.timestamp,
+            username: activeUser,
+            bullet: result.stats.chess_bullet?.last?.rating ?? null,
+            blitz: result.stats.chess_blitz?.last?.rating ?? null,
+            rapid: result.stats.chess_rapid?.last?.rating ?? null,
+            bestRating: bestInfo.rating,
+            bestMode: bestInfo.mode,
+            source: result.source,
+          },
+          false,
+          activeUser
+        );
 
         setSyncHistory(history);
 
         if (manual) {
           if (isDuplicate) {
             showToast(
-              `Statistiques à jour (${bestInfo.rating} Elo en ${bestInfo.mode}). Aucun changement depuis le dernier relevé.`,
+              `Statistiques à jour pour @${activeUser} (${bestInfo.rating} Elo en ${bestInfo.mode}). Aucun changement depuis le dernier relevé.`,
               'info',
               'Synchronisé'
             );
           } else {
             showToast(
-              `Données Chess.com actualisées avec succès : ${bestInfo.rating} Elo (${bestInfo.mode}).`,
+              `Données de @${activeUser} actualisées : ${bestInfo.rating} Elo (${bestInfo.mode}).`,
               'success',
               'Synchronisation réussie'
             );
@@ -190,10 +210,34 @@ export default function App() {
     return () => clearInterval(timer);
   }, [settings.autoSyncMinutes, performSync]);
 
-  // Handle settings update
+  // Handle settings update: purge old data if account changed
   const handleSettingsUpdate = (updated: AppSettings) => {
+    const oldUser = settings.username.trim().toLowerCase();
+    const newUser = updated.username.trim().toLowerCase();
+    const isNewUser = oldUser !== newUser;
+
     setSettings(updated);
     saveStoredSettings(updated);
+
+    if (isNewUser) {
+      // 1. Purge previous player's stats, profile and timestamps completely
+      setStats(null);
+      setProfile(undefined);
+      setLastSyncTime(null);
+
+      // 2. Clear old sync history so records never contaminate the new player's curves
+      handleAccountSwitch(newUser);
+      setSyncHistory([]);
+
+      showToast(
+        `Compte Chess.com modifié pour @${updated.username}. Les anciennes données ont été purgées. Synchronisation en cours...`,
+        'info',
+        'Changement de compte'
+      );
+
+      // 3. Immediately launch sync with the new username!
+      performSync(true, updated.username);
+    }
   };
 
   // Toggle Theme
