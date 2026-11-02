@@ -12,6 +12,7 @@ import {
   KeyRound,
   Lock,
   Moon,
+  Plus,
   RefreshCw,
   RotateCcw,
   Save,
@@ -23,15 +24,17 @@ import {
   Unlock,
   User,
   Wifi,
+  X,
   Zap,
 } from 'lucide-react';
 import { AppSettings, GameMode, TrajectoryModel } from '../types/chess';
 import { DEFAULT_SETTINGS } from '../utils/storage';
 import {
+  addTrustedIp,
   getClientIp,
-  getTrustedIp,
+  getTrustedIps,
   removeTrustedIp,
-  setTrustedIp,
+  setTrustedIps,
   updateAdminPassword,
 } from '../utils/security';
 
@@ -66,8 +69,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [passwordSuccess, setPasswordSuccess] = useState(false);
   const [passwordError, setPasswordError] = useState('');
 
-  // Trusted IP state
-  const [trustedIp, setTrustedIpInput] = useState<string>(() => getTrustedIp());
+  // Multiple Trusted IPs state
+  const [trustedIps, setTrustedIpsState] = useState<string[]>(() => getTrustedIps());
+  const [newIpInput, setNewIpInput] = useState<string>('');
   const [isDetectingIp, setIsDetectingIp] = useState<boolean>(false);
   const [ipMessage, setIpMessage] = useState<string>('');
 
@@ -142,7 +146,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     try {
       const ip = await getClientIp();
       if (ip) {
-        setTrustedIpInput(ip);
+        setNewIpInput(ip);
         setIpMessage(`Adresse IP détectée : ${ip}`);
       } else {
         setIpMessage('Impossible de détecter automatiquement votre IP.');
@@ -154,26 +158,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
-  const handleSaveTrustedIp = (e: React.FormEvent) => {
+  const handleAddTrustedIp = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanIp = trustedIp.trim();
-    setTrustedIp(cleanIp);
-    if (cleanIp) {
-      setIpMessage(`IP de confiance enregistrée : ${cleanIp}`);
-      onShowMessage(`IP de confiance configurée sur ${cleanIp}`, 'success');
-    } else {
-      removeTrustedIp();
-      setIpMessage('IP de confiance désactivée.');
-      onShowMessage('IP de confiance désactivée.', 'info');
+    const cleanIp = newIpInput.trim();
+    if (cleanIp.length < 7) {
+      setIpMessage('Veuillez entrer une adresse IP valide (ex: 82.64.12.34).');
+      return;
     }
-    setTimeout(() => setIpMessage(''), 4000);
+    const ok = addTrustedIp(cleanIp);
+    if (ok) {
+      const updated = getTrustedIps();
+      setTrustedIpsState(updated);
+      setNewIpInput('');
+      setIpMessage(`IP ${cleanIp} ajoutée à la liste de confiance !`);
+      onShowMessage(`IP ${cleanIp} ajoutée`, 'success');
+      setTimeout(() => setIpMessage(''), 4000);
+    } else {
+      setIpMessage('Format d\'IP invalide.');
+    }
   };
 
-  const handleClearTrustedIp = () => {
-    removeTrustedIp();
-    setTrustedIpInput('');
-    setIpMessage('IP de confiance supprimée.');
-    onShowMessage('IP de confiance supprimée.', 'info');
+  const handleRemoveTrustedIp = (ipToRemove: string) => {
+    removeTrustedIp(ipToRemove);
+    const updated = getTrustedIps();
+    setTrustedIpsState(updated);
+    setIpMessage(`IP ${ipToRemove} retirée.`);
+    onShowMessage(`IP ${ipToRemove} retirée.`, 'info');
+    setTimeout(() => setIpMessage(''), 3000);
+  };
+
+  const handleClearAllTrustedIps = () => {
+    setTrustedIps([]);
+    setTrustedIpsState([]);
+    setIpMessage('Toutes les adresses IP de confiance ont été supprimées.');
+    onShowMessage('Toutes les adresses IP de confiance ont été supprimées.', 'info');
     setTimeout(() => setIpMessage(''), 3000);
   };
 
@@ -626,37 +644,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </form>
       </div>
 
-      {/* Section 6: Gestion de l'IP de Confiance pour scan instantané */}
+      {/* Section 6: Gestion de multiples IPs de Confiance pour scan instantané */}
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm space-y-4">
         <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400">
             <Zap className="h-4 w-4 text-amber-400" />
-            <span>IP De Confiance : Autorisation Instantanée Par QR Code</span>
+            <span>IPs De Confiance : Autorisation Instantanée Par QR Code (Multi-IP)</span>
           </div>
-          {trustedIp && (
-            <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
-              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              Active : {trustedIp}
-            </span>
-          )}
+          <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
+            <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            {trustedIps.length} {trustedIps.length > 1 ? 'adresses actives' : 'adresse active'}
+          </span>
         </div>
 
         <div className="space-y-4 max-w-2xl">
           <p className="text-xs text-neutral-300 leading-relaxed">
-            Configurez l'adresse IP de votre réseau (ex: le WiFi de votre box ou le réseau que partage votre téléphone). Lorsque vous scannez le QR code avec votre smartphone partageant cette même adresse IP, l'autorisation est <strong>instantanée sans saisie de mot de passe</strong> et vous recevez immédiatement le code d'activation !
+            Vous pouvez configurer <strong>plusieurs adresses IP de confiance</strong> (ex: le WiFi de votre domicile, votre connexion au bureau ou le partage 4G/5G). Tout smartphone scannant le QR code depuis l'une de ces adresses IP est <strong>immédiatement autorisé</strong> sans avoir besoin de saisir de mot de passe !
           </p>
 
-          <form onSubmit={handleSaveTrustedIp} className="space-y-3">
+          {/* Form to add a new IP */}
+          <form onSubmit={handleAddTrustedIp} className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                Adresse IP publique de confiance
+                Ajouter une adresse IP publique de confiance
               </label>
               <div className="flex flex-col sm:flex-row gap-2.5">
                 <div className="relative flex-1">
                   <input
                     type="text"
-                    value={trustedIp}
-                    onChange={(e) => setTrustedIpInput(e.target.value.trim())}
+                    value={newIpInput}
+                    onChange={(e) => setNewIpInput(e.target.value.trim())}
                     placeholder="Ex: 82.64.12.34 (ou cliquez sur Détecter)"
                     className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white placeholder-neutral-600 focus:border-amber-500 focus:outline-none font-mono"
                   />
@@ -674,6 +691,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <Wifi className="h-3.5 w-3.5 text-amber-400" />
                   <span>{isDetectingIp ? 'Détection...' : 'Détecter mon IP actuelle'}</span>
                 </button>
+
+                <button
+                  type="submit"
+                  disabled={newIpInput.trim().length < 7}
+                  className="flex items-center justify-center gap-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 px-4 py-2 text-xs font-bold transition-all shadow-[0_0_15px_rgba(245,158,11,0.2)] disabled:opacity-40 shrink-0"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Ajouter cette IP</span>
+                </button>
               </div>
             </div>
 
@@ -683,27 +709,51 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <span>{ipMessage}</span>
               </div>
             )}
+          </form>
 
-            <div className="flex items-center gap-3 pt-1">
-              <button
-                type="submit"
-                className="flex items-center gap-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 px-4 py-2 text-xs font-bold transition-all shadow-[0_0_15px_rgba(245,158,11,0.2)]"
-              >
-                <Save className="h-3.5 w-3.5" />
-                <span>Enregistrer l'IP de confiance</span>
-              </button>
-
-              {trustedIp && (
+          {/* List of active trusted IPs */}
+          <div className="space-y-2 pt-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-neutral-300">
+                Adresses IP autorisées pour le déverrouillage direct ({trustedIps.length})
+              </span>
+              {trustedIps.length > 0 && (
                 <button
                   type="button"
-                  onClick={handleClearTrustedIp}
-                  className="px-3 py-2 text-xs font-medium text-neutral-400 hover:text-rose-400 transition-colors"
+                  onClick={handleClearAllTrustedIps}
+                  className="text-[11px] text-neutral-400 hover:text-rose-400 transition-colors"
                 >
-                  Désactiver cette IP
+                  Tout supprimer
                 </button>
               )}
             </div>
-          </form>
+
+            {trustedIps.length === 0 ? (
+              <div className="p-4 rounded-xl border border-neutral-800/80 bg-neutral-950/60 text-center text-xs text-neutral-500">
+                Aucune adresse IP de confiance enregistrée. Ajoutez-en une pour déverrouiller instantanément par QR code sans mot de passe.
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {trustedIps.map((ip) => (
+                  <div
+                    key={ip}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-emerald-800/60 bg-emerald-950/30 text-emerald-300 text-xs font-mono"
+                  >
+                    <Globe className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>{ip}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTrustedIp(ip)}
+                      title={`Supprimer ${ip}`}
+                      className="text-neutral-400 hover:text-rose-400 p-0.5 rounded transition-colors ml-1"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

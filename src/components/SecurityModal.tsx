@@ -43,6 +43,10 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
+  const [mobileScanningInfo, setMobileScanningInfo] = useState<{
+    ipPrefix: string;
+    timestamp: number;
+  } | null>(null);
 
   const expectedMobileCode = generateSessionValidationCode(sessionId);
 
@@ -58,7 +62,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     });
   }, [isOpen, sessionId]);
 
-  // Listen for background unlock events from the mobile device via BroadcastChannel and storage
+  // Listen for background unlock events and scan events from the mobile device via BroadcastChannel and storage
   useEffect(() => {
     if (!isOpen) return;
 
@@ -67,6 +71,12 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         bc = new BroadcastChannel('roadto2000_auth_channel');
         bc.onmessage = (event) => {
+          if (event.data?.type === 'MOBILE_SCAN_STARTED' && event.data?.sessionId === sessionId) {
+            setMobileScanningInfo({
+              ipPrefix: event.data.ipPrefix || '***',
+              timestamp: Date.now(),
+            });
+          }
           if (event.data?.type === 'MOBILE_UNLOCKED' && event.data?.sessionId === sessionId) {
             handleUnlockSuccess();
           }
@@ -75,6 +85,15 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     } catch {}
 
     const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === `roadto2000_scanning_${sessionId}` && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          setMobileScanningInfo({
+            ipPrefix: parsed.ipPrefix || '***',
+            timestamp: parsed.timestamp || Date.now(),
+          });
+        } catch {}
+      }
       if (e.key === `roadto2000_unlocked_${sessionId}` && e.newValue === 'true') {
         handleUnlockSuccess();
       }
@@ -198,10 +217,26 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                   </li>
                 </ol>
 
-                <div className="pt-1 flex items-center gap-2 text-[10px] text-amber-400/90 font-mono">
-                  <span className="inline-block h-2 w-2 rounded-full bg-amber-400 animate-ping" />
-                  <span>En attente du scan par votre téléphone...</span>
-                </div>
+                {mobileScanningInfo ? (
+                  <div className="pt-1.5 p-2.5 rounded-lg border border-amber-500/40 bg-amber-500/15 text-amber-200 animate-in fade-in space-y-1">
+                    <div className="flex items-center gap-2 text-[11px] font-bold text-white">
+                      <span className="relative flex h-2.5 w-2.5 shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+                      </span>
+                      <span>Téléphone connecté en direct !</span>
+                    </div>
+                    <p className="text-[10px] text-neutral-300 leading-snug">
+                      Un téléphone est en cours de validation avec l'IP :{' '}
+                      <strong className="font-mono text-amber-300 font-bold tracking-wider">{mobileScanningInfo.ipPrefix}</strong>
+                    </p>
+                  </div>
+                ) : (
+                  <div className="pt-1 flex items-center gap-2 text-[10px] text-amber-400/90 font-mono">
+                    <span className="inline-block h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+                    <span>En attente du scan par votre téléphone...</span>
+                  </div>
+                )}
               </div>
             </div>
 

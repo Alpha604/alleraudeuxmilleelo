@@ -8,6 +8,7 @@ import QRCode from 'qrcode';
 const ADMIN_AUTH_KEY = 'roadto2000_admin_session_v2';
 const ADMIN_PASSWORD_HASH_KEY = 'roadto2000_admin_pwd_hash_v3';
 const ADMIN_TRUSTED_IP_KEY = 'roadto2000_trusted_ip_v1';
+const ADMIN_TRUSTED_IPS_KEY = 'roadto2000_trusted_ips_v2';
 const DEFAULT_MASTER_PASSWORD = 'alpha604';
 
 // 30 minutes session duration
@@ -99,24 +100,107 @@ export async function verifyAdminPassword(candidate: string): Promise<boolean> {
 }
 
 /**
- * Get configured trusted IP address
+ * Get list of configured trusted IP addresses
+ */
+export function getTrustedIps(): string[] {
+  try {
+    const raw = safeGet(ADMIN_TRUSTED_IPS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((s) => String(s).trim()).filter((s) => s.length >= 7);
+      }
+    }
+    // Migration from single IP v1
+    const legacy = safeGet(ADMIN_TRUSTED_IP_KEY);
+    if (legacy && legacy.trim().length >= 7) {
+      const migrated = [legacy.trim()];
+      safeSet(ADMIN_TRUSTED_IPS_KEY, JSON.stringify(migrated));
+      return migrated;
+    }
+  } catch {}
+  return [];
+}
+
+/**
+ * Set full list of configured trusted IP addresses
+ */
+export function setTrustedIps(ips: string[]): void {
+  const clean = Array.from(new Set(ips.map((s) => s.trim()).filter((s) => s.length >= 7)));
+  safeSet(ADMIN_TRUSTED_IPS_KEY, JSON.stringify(clean));
+}
+
+/**
+ * Add a new trusted IP address
+ */
+export function addTrustedIp(ip: string): boolean {
+  const clean = ip.trim();
+  if (clean.length < 7) return false;
+  const current = getTrustedIps();
+  if (current.includes(clean)) return true;
+  setTrustedIps([...current, clean]);
+  return true;
+}
+
+/**
+ * Remove a specific trusted IP address
+ */
+export function removeTrustedIp(ip: string): void {
+  const clean = ip.trim();
+  const current = getTrustedIps();
+  setTrustedIps(current.filter((item) => item !== clean));
+}
+
+/**
+ * Checks whether an IP matches any configured trusted IP
+ */
+export function isIpTrusted(candidateIp: string, allowedIps?: string[]): boolean {
+  const clean = candidateIp.trim();
+  if (!clean) return false;
+  const pool = allowedIps && allowedIps.length > 0 ? allowedIps : getTrustedIps();
+  return pool.some((ip) => ip.trim() === clean);
+}
+
+/**
+ * Formats an IP address by masking the end for privacy while showing the prefix
+ * (e.g. "82.64.12.34" -> "82.64.***")
+ */
+export function formatIpPrefix(ip: string): string {
+  const clean = ip.trim();
+  if (!clean) return '***';
+  if (clean.includes('.')) {
+    // IPv4
+    const parts = clean.split('.');
+    if (parts.length >= 2) {
+      return `${parts[0]}.${parts[1]}.***`;
+    }
+  } else if (clean.includes(':')) {
+    // IPv6
+    const parts = clean.split(':');
+    if (parts.length >= 2) {
+      return `${parts[0]}:${parts[1]}:***`;
+    }
+  }
+  return clean.substring(0, Math.min(clean.length, 6)) + '***';
+}
+
+/**
+ * Legacy getter for single IP
  */
 export function getTrustedIp(): string {
-  return safeGet(ADMIN_TRUSTED_IP_KEY) || '';
+  const ips = getTrustedIps();
+  return ips.length > 0 ? ips[0] : '';
 }
 
 /**
- * Set configured trusted IP address
+ * Legacy setter for single IP
  */
 export function setTrustedIp(ip: string): void {
-  safeSet(ADMIN_TRUSTED_IP_KEY, ip.trim());
-}
-
-/**
- * Removes configured trusted IP address
- */
-export function removeTrustedIp(): void {
-  safeRemove(ADMIN_TRUSTED_IP_KEY);
+  if (ip.trim()) {
+    addTrustedIp(ip);
+  } else {
+    setTrustedIps([]);
+  }
 }
 
 /**
@@ -224,9 +308,9 @@ export function getMobileAuthUrl(sessionId: string): string {
   if (typeof window === 'undefined') return '';
   const origin = window.location.origin;
   const path = window.location.pathname;
-  const trustedIp = getTrustedIp();
-  const tipParam = trustedIp ? `&tip=${encodeURIComponent(trustedIp)}` : '';
-  return `${origin}${path}?mobile_auth=${encodeURIComponent(sessionId)}${tipParam}`;
+  const trustedIps = getTrustedIps();
+  const tipsParam = trustedIps.length > 0 ? `&tips=${encodeURIComponent(trustedIps.join(','))}` : '';
+  return `${origin}${path}?mobile_auth=${encodeURIComponent(sessionId)}${tipsParam}`;
 }
 
 /**

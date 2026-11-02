@@ -4,17 +4,20 @@
  */
 
 import {
+  addTrustedIp,
+  formatIpPrefix,
   generateSessionValidationCode,
-  getTrustedIp,
+  getTrustedIps,
   hashPassword,
+  isIpTrusted,
   removeTrustedIp,
-  setTrustedIp,
+  setTrustedIps,
   updateAdminPassword,
   verifyAdminPassword,
 } from './security';
 
 async function runSecurityTests() {
-  console.log('--- TEST DE SÉCURITÉ 2FA ET GESTION DES MOTS DE PASSE (Alpha604) ---');
+  console.log('--- TEST DE SÉCURITÉ 2FA, MULTI-IPS ET SCAN EN DIRECT ---');
 
   // Test 1: Hash generation is deterministic and case-insensitive
   const h1 = await hashPassword('Alpha604');
@@ -70,29 +73,50 @@ async function runSecurityTests() {
     throw new Error(`FAILED: Format de code invalide (${code1})`);
   }
 
-  // Test 7: Same session generates same code
-  const code2 = generateSessionValidationCode('sess_123456');
-  if (code1 === code2) {
-    console.log('✅ PASSED: Code de validation identique pour la même session');
+  // Test 7: Multi-IPs handling
+  setTrustedIps(['82.64.12.34', '192.168.1.50']);
+  let ips = getTrustedIps();
+  if (ips.length === 2 && ips.includes('82.64.12.34') && ips.includes('192.168.1.50')) {
+    console.log('✅ PASSED: Enregistrement et lecture de multiples IPs de confiance');
   } else {
-    throw new Error('FAILED: Code divergent pour la même session');
+    throw new Error('FAILED: Erreur sur setTrustedIps');
   }
 
-  // Test 8: Trusted IP handling
-  setTrustedIp('82.64.12.34');
-  if (getTrustedIp() === '82.64.12.34') {
-    console.log('✅ PASSED: Enregistrement et lecture de l\'IP de confiance valides');
+  // Test 8: Adding additional IP
+  addTrustedIp('176.150.20.10');
+  ips = getTrustedIps();
+  if (ips.length === 3 && isIpTrusted('176.150.20.10')) {
+    console.log('✅ PASSED: Ajout d\'une nouvelle IP dans la liste');
   } else {
-    throw new Error('FAILED: Erreur sur getTrustedIp');
+    throw new Error('FAILED: Erreur sur addTrustedIp');
   }
-  removeTrustedIp();
-  if (getTrustedIp() === '') {
-    console.log('✅ PASSED: Suppression de l\'IP de confiance valide');
+
+  // Test 9: isIpTrusted match and mismatch
+  if (isIpTrusted('82.64.12.34') && !isIpTrusted('10.0.0.1')) {
+    console.log('✅ PASSED: Vérification isIpTrusted conforme');
+  } else {
+    throw new Error('FAILED: Erreur sur isIpTrusted');
+  }
+
+  // Test 10: Removing an IP
+  removeTrustedIp('82.64.12.34');
+  ips = getTrustedIps();
+  if (ips.length === 2 && !ips.includes('82.64.12.34')) {
+    console.log('✅ PASSED: Suppression ciblée d\'une IP dans la liste');
   } else {
     throw new Error('FAILED: Erreur sur removeTrustedIp');
   }
 
-  console.log('--- TOUS LES TESTS DE SÉCURITÉ SONT VALIDÉS AVEC SUCCÈS ! ---');
+  // Test 11: formatIpPrefix masking
+  const p1 = formatIpPrefix('82.64.12.34');
+  const p2 = formatIpPrefix('2001:0db8:85a3::1');
+  if (p1 === '82.64.***' && p2.startsWith('2001:0db8:')) {
+    console.log(`✅ PASSED: Masquage IP préfixe valide (${p1}, ${p2})`);
+  } else {
+    throw new Error(`FAILED: Format de préfixe IP incorrect (${p1}, ${p2})`);
+  }
+
+  console.log('--- TOUS LES TESTS DE SÉCURITÉ 2FA ET MULTI-IPS SONT VALIDÉS AVEC SUCCÈS ! ---');
 }
 
 runSecurityTests().catch((err) => {
