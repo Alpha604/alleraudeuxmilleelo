@@ -35,24 +35,26 @@ import {
 } from './utils/eloEngine';
 import {
   addSyncRecord,
-  getLastSyncedUser,
   getStoredSettings,
   getStoredSyncHistory,
   handleAccountSwitch,
+  purgeAllUserData,
+  purgeLegacyAndStaleData,
   saveStoredSettings,
 } from './utils/storage';
 
 export default function App() {
-  // Load settings & sync history from local persistent storage
-  const [settings, setSettings] = useState<AppSettings>(() => getStoredSettings());
+  // Load settings from local persistent storage
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    const s = getStoredSettings();
+    // Immediate proactive purge of old stale data or 1938 residue
+    purgeLegacyAndStaleData(s.username);
+    return s;
+  });
+
+  // Sync history strictly bound to active username
   const [syncHistory, setSyncHistory] = useState<SyncRecord[]>(() => {
     const s = getStoredSettings();
-    const lastUser = getLastSyncedUser();
-    // If stored history belonged to a different account than current settings, purge it
-    if (lastUser && lastUser.toLowerCase() !== s.username.trim().toLowerCase()) {
-      handleAccountSwitch(s.username);
-      return [];
-    }
     return getStoredSyncHistory(s.username);
   });
 
@@ -125,7 +127,7 @@ export default function App() {
         }
         setLastSyncTime(result.timestamp);
 
-        // Determine best rating
+        // Determine best rating strictly among bullet, blitz, rapid
         const bestInfo = getBestGameMode(result.stats);
 
         // Check for personal record or goal reached
@@ -150,8 +152,8 @@ export default function App() {
           );
         }
 
-        // Add to persistent sync history with duplicate detection and user attribution
-        const { record, isDuplicate, history } = addSyncRecord(
+        // Add to persistent sync history strictly isolated to activeUser
+        const { isDuplicate, history } = addSyncRecord(
           {
             timestamp: result.timestamp,
             username: activeUser,
@@ -210,7 +212,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, [settings.autoSyncMinutes, performSync]);
 
-  // Handle settings update: purge old data if account changed
+  // Handle settings update: clean switch between accounts
   const handleSettingsUpdate = (updated: AppSettings) => {
     const oldUser = settings.username.trim().toLowerCase();
     const newUser = updated.username.trim().toLowerCase();
@@ -220,24 +222,43 @@ export default function App() {
     saveStoredSettings(updated);
 
     if (isNewUser) {
-      // 1. Purge previous player's stats, profile and timestamps completely
+      // 1. Immediately wipe previous player's stats, profile and timestamps completely
       setStats(null);
       setProfile(undefined);
       setLastSyncTime(null);
 
-      // 2. Clear old sync history so records never contaminate the new player's curves
+      // 2. Switch account context and load this new user's isolated history
       handleAccountSwitch(newUser);
-      setSyncHistory([]);
+      const newUserHistory = getStoredSyncHistory(newUser);
+      setSyncHistory(newUserHistory);
 
       showToast(
-        `Compte Chess.com modifié pour @${updated.username}. Les anciennes données ont été purgées. Synchronisation en cours...`,
+        `Compte Chess.com basculé sur @${newUser}. Les données du profil précédent ont été écartées. Synchronisation en cours...`,
         'info',
         'Changement de compte'
       );
 
-      // 3. Immediately launch sync with the new username!
-      performSync(true, updated.username);
+      // 3. Immediately launch sync with the new username
+      performSync(true, newUser);
     }
+  };
+
+  // Dedicated Hard Purge of all cached data for current account
+  const handlePurgeAccountData = () => {
+    const activeUser = settings.username.trim().toLowerCase();
+    purgeAllUserData(activeUser);
+    setStats(null);
+    setProfile(undefined);
+    setLastSyncTime(null);
+    setSyncHistory([]);
+
+    showToast(
+      `Toutes les données en cache pour @${activeUser} ont été purgées. Synchronisation fraîche en cours...`,
+      'info',
+      'Purge effectuée'
+    );
+
+    performSync(true, activeUser);
   };
 
   // Toggle Theme
@@ -249,7 +270,7 @@ export default function App() {
   };
 
   // Compute active ratings and best mode
-  const { currentElo, activeBestMode, allRatings } = useMemo(() => {
+  const { currentElo, activeBestMode } = useMemo(() => {
     if (stats) {
       const best = getBestGameMode(stats);
       if (settings.selectedMode !== 'auto') {
@@ -267,7 +288,7 @@ export default function App() {
       };
     }
 
-    // Fallback from latest sync history
+    // Fallback strictly from current user's latest sync history
     if (syncHistory.length > 0) {
       const latest = syncHistory[0];
       return {
@@ -281,7 +302,7 @@ export default function App() {
       };
     }
 
-    // Default project initial rating
+    // Default project initial rating (1500)
     return {
       currentElo: settings.startElo,
       activeBestMode: 'blitz' as GameMode,
@@ -428,6 +449,8 @@ export default function App() {
             history={syncHistory}
             onHistoryUpdate={setSyncHistory}
             onShowMessage={showToast}
+            username={settings.username}
+            onPurgeAccountData={handlePurgeAccountData}
           />
         )}
 
@@ -443,6 +466,7 @@ export default function App() {
             settings={settings}
             onSettingsUpdate={handleSettingsUpdate}
             onShowMessage={showToast}
+            onPurgeAccountData={handlePurgeAccountData}
           />
         )}
       </main>

@@ -5,35 +5,38 @@
 
 import React, { useState } from 'react';
 import {
+  AlertTriangle,
   Bell,
   CheckCircle2,
-  Clock,
   Moon,
+  RefreshCw,
   RotateCcw,
   Save,
   Settings as SettingsIcon,
-  Shield,
   Sliders,
   Sun,
-  Target,
+  Trash2,
   User,
 } from 'lucide-react';
 import { AppSettings, GameMode, TrajectoryModel } from '../types/chess';
-import { DEFAULT_SETTINGS, saveStoredSettings } from '../utils/storage';
+import { DEFAULT_SETTINGS } from '../utils/storage';
 
 interface SettingsViewProps {
   settings: AppSettings;
   onSettingsUpdate: (updated: AppSettings) => void;
   onShowMessage: (msg: string, type?: 'info' | 'success' | 'warning') => void;
+  onPurgeAccountData?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   settings,
   onSettingsUpdate,
   onShowMessage,
+  onPurgeAccountData,
 }) => {
   const [form, setForm] = useState<AppSettings>(settings);
   const [isSaved, setIsSaved] = useState(false);
+  const [showPurgeModal, setShowPurgeModal] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +53,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setForm(DEFAULT_SETTINGS);
     onSettingsUpdate(DEFAULT_SETTINGS);
     onShowMessage('Paramètres réinitialisés aux valeurs officielles du projet (alpharomeo1500, 1500 → 2000 Elo).', 'info');
+  };
+
+  const handleExecutePurge = () => {
+    setShowPurgeModal(false);
+    if (onPurgeAccountData) {
+      onPurgeAccountData();
+    }
   };
 
   return (
@@ -96,7 +106,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
               />
               <span className="text-[11px] text-neutral-400 mt-1 block">
-                Par défaut : <strong className="text-neutral-200">alpharomeo1500</strong>. Changer de pseudo réinitialise automatiquement l'ancien profil et ses relevés pour éviter toute donnée faussée.
+                Par défaut : <strong className="text-neutral-200">alpharomeo1500</strong>. Changer de pseudo isole et purge automatiquement les données de l'ancien compte pour éviter toute valeur faussée.
               </span>
             </div>
 
@@ -329,6 +339,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
+        {/* Section 4: Zone de purge & sécurité des données */}
+        <div className="rounded-2xl border border-rose-900/40 bg-rose-950/15 p-6 shadow-xl backdrop-blur-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-rose-900/30 pb-3">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-400">
+              <Trash2 className="h-4 w-4" />
+              <span>Purge Du Cache & Réinitialisation Du Joueur</span>
+            </div>
+            <span className="text-[11px] font-mono text-rose-300/80">Joueur actuel : @{form.username}</span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <p className="text-xs text-neutral-300 leading-relaxed max-w-xl">
+              Si vous constatez des données résiduelles d'un ancien compte (ou d'un test précédent), ce bouton supprime immédiatement tous les relevés en mémoire cache locale et relance une synchronisation neuve et certifiée avec Chess.com pour <strong>@{form.username}</strong>.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setShowPurgeModal(true)}
+              className="flex items-center gap-2 rounded-lg border border-rose-800 bg-rose-950/60 hover:bg-rose-900 text-rose-200 px-4 py-2 text-xs font-bold transition-all shrink-0 active:scale-95"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span>Purger & Re-synchroniser @{form.username}</span>
+            </button>
+          </div>
+        </div>
+
         {/* Save Bar */}
         <div className="flex items-center justify-between pt-4">
           {isSaved ? (
@@ -351,6 +387,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </button>
         </div>
       </form>
+
+      {/* Confirmation Modal for Hard Purge */}
+      {showPurgeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-rose-900/60 bg-neutral-900 p-6 shadow-2xl">
+            <div className="flex items-center gap-3 text-rose-400">
+              <AlertTriangle className="h-6 w-6" />
+              <h3 className="text-base font-bold text-white">Confirmer la purge du cache</h3>
+            </div>
+            <p className="mt-3 text-xs text-neutral-300 leading-relaxed">
+              Êtes-vous certain de vouloir purger le cache local ? Toutes les anciennes données enregistrées pour <strong>@{form.username}</strong> et les anciens comptes seront effacées. L'application se re-synchronisera immédiatement avec l'API officielle de Chess.com.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowPurgeModal(false)}
+                className="px-4 py-2 text-xs font-medium text-neutral-400 hover:text-white"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleExecutePurge}
+                className="rounded-lg bg-rose-600 hover:bg-rose-500 px-4 py-2 text-xs font-bold text-white transition-colors"
+              >
+                Confirmer la purge
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

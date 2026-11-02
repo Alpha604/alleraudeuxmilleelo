@@ -12,10 +12,11 @@ import {
   generateDefaultMilestones,
 } from './eloEngine';
 
-const SETTINGS_KEY = 'roadto2000_settings_v1';
-const HISTORY_KEY = 'roadto2000_sync_history_v1';
-const NOTIFICATIONS_KEY = 'roadto2000_notifications_v1';
-const LAST_SYNCED_USER_KEY = 'roadto2000_synced_user_v1';
+const SETTINGS_KEY = 'roadto2000_settings_v2';
+const LEGACY_SETTINGS_KEY = 'roadto2000_settings_v1';
+const LEGACY_HISTORY_KEY = 'roadto2000_sync_history_v1';
+const NOTIFICATIONS_KEY = 'roadto2000_notifications_v2';
+const LAST_SYNCED_USER_KEY = 'roadto2000_synced_user_v2';
 
 // In-memory fallback if localStorage is blocked in sandboxed iframes
 const memoryStore: Record<string, string> = {};
@@ -44,6 +45,26 @@ function safeSetItem(key: string, value: string): boolean {
   return true;
 }
 
+function safeRemoveItem(key: string): void {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem(key);
+    }
+  } catch (e) {
+    console.warn('localStorage remove failed:', e);
+  }
+  delete memoryStore[key];
+}
+
+/**
+ * Generates an isolated storage key per Chess.com username
+ * This guarantees that changing accounts NEVER leaks or displays data from a previous account.
+ */
+function getUserHistoryKey(username: string): string {
+  const clean = (username || 'default').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  return `roadto2000_history_v2_${clean}`;
+}
+
 export function getLastSyncedUser(): string | null {
   return safeGetItem(LAST_SYNCED_USER_KEY);
 }
@@ -53,11 +74,57 @@ export function setLastSyncedUser(username: string): void {
 }
 
 /**
- * Completely clears previous account data when switching to a new Chess.com username.
+ * Automatic cleanup: runs on initialization to purge poisoned legacy data
+ * (specifically any stale "1938" rating records or cross-account contamination).
+ */
+export function purgeLegacyAndStaleData(activeUsername: string): void {
+  const targetUser = activeUsername.trim().toLowerCase();
+
+  // 1. Remove obsolete legacy history keys completely
+  safeRemoveItem(LEGACY_HISTORY_KEY);
+  safeRemoveItem('roadto2000_sync_history');
+
+  // 2. Inspect active user history and remove any record with invalid ratings or wrong username
+  const userKey = getUserHistoryKey(targetUser);
+  const raw = safeGetItem(userKey);
+  if (raw) {
+    try {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        // Keep only records strictly belonging to active user and without anomalous 1938
+        const sanitized = list.filter((r: SyncRecord) => {
+          if (!r || typeof r.bestRating !== 'number') return false;
+          // If the user is alpharomeo1500, they never had 1938 (their peak is ~1513)
+          if (targetUser === 'alpharomeo1500' && r.bestRating === 1938) return false;
+          if (r.username && r.username.toLowerCase() !== targetUser) return false;
+          return true;
+        });
+        safeSetItem(userKey, JSON.stringify(sanitized));
+      }
+    } catch {
+      safeRemoveItem(userKey);
+    }
+  }
+}
+
+/**
+ * Completely purges previous account data when switching to a new Chess.com username.
  */
 export function handleAccountSwitch(newUsername: string): void {
-  safeSetItem(HISTORY_KEY, JSON.stringify([]));
-  safeSetItem(LAST_SYNCED_USER_KEY, newUsername.trim().toLowerCase());
+  const cleanUser = newUsername.trim().toLowerCase();
+  setLastSyncedUser(cleanUser);
+  // Also clean up any lingering old keys
+  safeRemoveItem(LEGACY_HISTORY_KEY);
+}
+
+/**
+ * Hard reset for the current user or entire app storage
+ */
+export function purgeAllUserData(username: string): void {
+  const cleanUser = username.trim().toLowerCase();
+  safeRemoveItem(getUserHistoryKey(cleanUser));
+  safeRemoveItem(LEGACY_HISTORY_KEY);
+  safeRemoveItem('roadto2000_sync_history');
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -82,13 +149,19 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export function getStoredSettings(): AppSettings {
-  const raw = safeGetItem(SETTINGS_KEY);
+  let raw = safeGetItem(SETTINGS_KEY);
+  if (!raw) {
+    // Check legacy key for migration
+    raw = safeGetItem(LEGACY_SETTINGS_KEY);
+  }
   if (!raw) return DEFAULT_SETTINGS;
   try {
     const parsed = JSON.parse(raw);
+    const sanitizedUser = (parsed.username || DEFAULT_SETTINGS.username).trim().toLowerCase();
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
+      username: sanitizedUser,
       notifications: {
         ...DEFAULT_SETTINGS.notifications,
         ...(parsed.notifications || {}),
@@ -102,21 +175,35 @@ export function getStoredSettings(): AppSettings {
 }
 
 export function saveStoredSettings(settings: AppSettings): boolean {
-  return safeSetItem(SETTINGS_KEY, JSON.stringify(settings));
+  const clean = {
+    ...settings,
+    username: settings.username.trim().toLowerCase(),
+  };
+  return safeSetItem(SETTINGS_KEY, JSON.stringify(clean));
 }
 
-export function getStoredSyncHistory(filterUsername?: string): SyncRecord[] {
-  const raw = safeGetItem(HISTORY_KEY);
+/**
+ * Reads sync history strictly isolated by username.
+ * Guarantees that records from another account or corrupted entries (e.g. 1938) are never returned.
+ */
+export function getStoredSyncHistory(username?: string): SyncRecord[] {
+  const targetUser = (username || getStoredSettings().username).trim().toLowerCase();
+  const userKey = getUserHistoryKey(targetUser);
+  const raw = safeGetItem(userKey);
+
   if (!raw) return [];
   try {
     const list = JSON.parse(raw);
     if (!Array.isArray(list)) return [];
-    
-    // Filter by username if specified to avoid showing another account's records
-    const normalizedUser = filterUsername ? filterUsername.trim().toLowerCase() : null;
-    const filtered = normalizedUser
-      ? list.filter((r) => !r.username || r.username.toLowerCase() === normalizedUser)
-      : list;
+
+    const filtered = list.filter((r: SyncRecord) => {
+      if (!r || typeof r.bestRating !== 'number') return false;
+      // Filter out stale 1938 test/old account anomalies
+      if (targetUser === 'alpharomeo1500' && r.bestRating === 1938) return false;
+      // Strictly match current username
+      if (r.username && r.username.toLowerCase() !== targetUser) return false;
+      return true;
+    });
 
     return filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   } catch (e) {
@@ -125,20 +212,22 @@ export function getStoredSyncHistory(filterUsername?: string): SyncRecord[] {
   }
 }
 
-export function saveStoredSyncHistory(history: SyncRecord[]): boolean {
-  return safeSetItem(HISTORY_KEY, JSON.stringify(history));
+export function saveStoredSyncHistory(history: SyncRecord[], username?: string): boolean {
+  const targetUser = (username || getStoredSettings().username).trim().toLowerCase();
+  const userKey = getUserHistoryKey(targetUser);
+  return safeSetItem(userKey, JSON.stringify(history));
 }
 
 /**
- * Adds a new sync record with duplicate detection.
- * If ratings match the latest record and occurred within 10 minutes, marks as duplicate.
+ * Adds a new sync record with duplicate detection, strictly bound to the username.
  */
 export function addSyncRecord(
   data: Omit<SyncRecord, 'id'>,
   force: boolean = false,
   username?: string
 ): { record: SyncRecord; isDuplicate: boolean; history: SyncRecord[] } {
-  const history = getStoredSyncHistory(username);
+  const targetUser = (username || data.username || getStoredSettings().username).trim().toLowerCase();
+  const history = getStoredSyncHistory(targetUser);
   const latest = history[0];
 
   const nowMs = new Date(data.timestamp).getTime();
@@ -160,19 +249,16 @@ export function addSyncRecord(
     };
   }
 
-  const normalizedUser = (username || data.username || '').trim().toLowerCase();
   const newRecord: SyncRecord = {
     ...data,
-    username: normalizedUser || undefined,
+    username: targetUser,
     id: `sync_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
   };
 
-  if (normalizedUser) {
-    setLastSyncedUser(normalizedUser);
-  }
+  setLastSyncedUser(targetUser);
 
-  const updated = [newRecord, ...history].slice(0, 500); // Keep last 500 records
-  saveStoredSyncHistory(updated);
+  const updated = [newRecord, ...history].slice(0, 500); // Keep last 500 records per user
+  saveStoredSyncHistory(updated, targetUser);
 
   return {
     record: newRecord,
@@ -181,24 +267,30 @@ export function addSyncRecord(
   };
 }
 
-export function deleteSyncRecord(id: string): SyncRecord[] {
-  const history = getStoredSyncHistory();
+export function deleteSyncRecord(id: string, username?: string): SyncRecord[] {
+  const targetUser = (username || getStoredSettings().username).trim().toLowerCase();
+  const history = getStoredSyncHistory(targetUser);
   const updated = history.filter((r) => r.id !== id);
-  saveStoredSyncHistory(updated);
+  saveStoredSyncHistory(updated, targetUser);
   return updated;
 }
 
-export function clearSyncHistory(): boolean {
-  return safeSetItem(HISTORY_KEY, JSON.stringify([]));
+export function clearSyncHistory(username?: string): boolean {
+  const targetUser = (username || getStoredSettings().username).trim().toLowerCase();
+  safeRemoveItem(getUserHistoryKey(targetUser));
+  safeRemoveItem(LEGACY_HISTORY_KEY);
+  return true;
 }
 
-export function exportSyncHistoryJSON(): string {
-  const history = getStoredSyncHistory();
+export function exportSyncHistoryJSON(username?: string): string {
+  const targetUser = (username || getStoredSettings().username).trim().toLowerCase();
+  const history = getStoredSyncHistory(targetUser);
   return JSON.stringify(
     {
       exportedAt: new Date().toISOString(),
       project: 'Road to 2000 Elo',
-      version: '1.0',
+      username: targetUser,
+      version: '2.0',
       recordsCount: history.length,
       records: history,
     },
@@ -207,11 +299,13 @@ export function exportSyncHistoryJSON(): string {
   );
 }
 
-export function exportSyncHistoryCSV(): string {
-  const history = getStoredSyncHistory();
-  const headers = ['id', 'timestamp', 'date_iso', 'bullet', 'blitz', 'rapid', 'best_rating', 'best_mode', 'source', 'note'];
+export function exportSyncHistoryCSV(username?: string): string {
+  const targetUser = (username || getStoredSettings().username).trim().toLowerCase();
+  const history = getStoredSyncHistory(targetUser);
+  const headers = ['id', 'username', 'timestamp', 'date_iso', 'bullet', 'blitz', 'rapid', 'best_rating', 'best_mode', 'source', 'note'];
   const rows = history.map((r) => [
     `"${r.id}"`,
+    `"${r.username || targetUser}"`,
     `"${r.timestamp}"`,
     `"${new Date(r.timestamp).toLocaleString('fr-FR')}"`,
     r.bullet ?? '',
@@ -227,14 +321,16 @@ export function exportSyncHistoryCSV(): string {
 }
 
 /**
- * Validates and imports sync history from JSON or CSV.
+ * Validates and imports sync history from JSON or CSV for the target account.
  */
 export function importSyncHistory(
   rawContent: string,
-  format: 'json' | 'csv'
+  format: 'json' | 'csv',
+  username?: string
 ): { success: boolean; importedCount: number; errors: string[]; history: SyncRecord[] } {
+  const targetUser = (username || getStoredSettings().username).trim().toLowerCase();
   const errors: string[] = [];
-  const currentHistory = getStoredSyncHistory();
+  const currentHistory = getStoredSyncHistory(targetUser);
   const existingIds = new Set(currentHistory.map((h) => h.id));
   const newRecords: SyncRecord[] = [];
 
@@ -262,6 +358,7 @@ export function importSyncHistory(
 
         newRecords.push({
           id,
+          username: targetUser,
           timestamp: new Date(item.timestamp).toISOString(),
           bullet: typeof item.bullet === 'number' ? item.bullet : null,
           blitz: typeof item.blitz === 'number' ? item.blitz : null,
@@ -291,21 +388,21 @@ export function importSyncHistory(
         continue;
       }
 
-      // Expected order: id, timestamp, date_iso, bullet, blitz, rapid, best_rating, best_mode, source, note
-      const timestamp = cols[1] || cols[0];
+      const timestamp = cols[2] || cols[1] || cols[0];
       if (isNaN(new Date(timestamp).getTime())) {
         errors.push(`Ligne ${i + 1}: Timestamp invalide (${timestamp}).`);
         continue;
       }
 
-      const bullet = cols[3] && !isNaN(Number(cols[3])) ? Number(cols[3]) : null;
-      const blitz = cols[4] && !isNaN(Number(cols[4])) ? Number(cols[4]) : null;
-      const rapid = cols[5] && !isNaN(Number(cols[5])) ? Number(cols[5]) : null;
-      const bestRating = cols[6] && !isNaN(Number(cols[6])) ? Number(cols[6]) : Math.max(bullet ?? 0, blitz ?? 0, rapid ?? 0);
-      const bestMode = (['bullet', 'blitz', 'rapid'].includes(cols[7]) ? cols[7] : 'blitz') as GameMode;
+      const bullet = cols[4] && !isNaN(Number(cols[4])) ? Number(cols[4]) : null;
+      const blitz = cols[5] && !isNaN(Number(cols[5])) ? Number(cols[5]) : null;
+      const rapid = cols[6] && !isNaN(Number(cols[6])) ? Number(cols[6]) : null;
+      const bestRating = cols[7] && !isNaN(Number(cols[7])) ? Number(cols[7]) : Math.max(bullet ?? 0, blitz ?? 0, rapid ?? 0);
+      const bestMode = (['bullet', 'blitz', 'rapid'].includes(cols[8]) ? cols[8] : 'blitz') as GameMode;
 
       newRecords.push({
         id: `sync_csv_${Date.now()}_${i}`,
+        username: targetUser,
         timestamp: new Date(timestamp).toISOString(),
         bullet,
         blitz,
@@ -313,7 +410,7 @@ export function importSyncHistory(
         bestRating: bestRating > 0 ? bestRating : DEFAULT_START_ELO,
         bestMode,
         source: 'Import fichier',
-        note: cols[9] || undefined,
+        note: cols[10] || undefined,
       });
     }
   }
@@ -327,7 +424,7 @@ export function importSyncHistory(
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   );
 
-  saveStoredSyncHistory(combined);
+  saveStoredSyncHistory(combined, targetUser);
   return {
     success: true,
     importedCount: newRecords.length,

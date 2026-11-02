@@ -7,10 +7,10 @@ import React, { useRef, useState } from 'react';
 import {
   AlertTriangle,
   Clock,
-  Download,
   FileJson,
   FileSpreadsheet,
   History,
+  RotateCcw,
   Trash2,
   Upload,
 } from 'lucide-react';
@@ -26,35 +26,39 @@ interface SyncLogProps {
   history: SyncRecord[];
   onHistoryUpdate: (updated: SyncRecord[]) => void;
   onShowMessage: (msg: string, type?: 'info' | 'success' | 'warning') => void;
+  username: string;
+  onPurgeAccountData?: () => void;
 }
 
 export const SyncLog: React.FC<SyncLogProps> = ({
   history,
   onHistoryUpdate,
   onShowMessage,
+  username,
+  onPurgeAccountData,
 }) => {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExportJSON = () => {
-    const jsonStr = exportSyncHistoryJSON();
+    const jsonStr = exportSyncHistoryJSON(username);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `road2000_chess_history_${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `road2000_chess_history_${username}_${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
     onShowMessage('Historique JSON exporté avec succès !', 'success');
   };
 
   const handleExportCSV = () => {
-    const csvStr = exportSyncHistoryCSV();
+    const csvStr = exportSyncHistoryCSV(username);
     const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `road2000_chess_history_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `road2000_chess_history_${username}_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     onShowMessage('Historique CSV exporté avec succès !', 'success');
@@ -75,10 +79,10 @@ export const SyncLog: React.FC<SyncLogProps> = ({
 
     reader.onload = (event) => {
       const content = event.target?.result as string;
-      const res = importSyncHistory(content, isJson ? 'json' : 'csv');
+      const res = importSyncHistory(content, isJson ? 'json' : 'csv', username);
       if (res.success) {
         onHistoryUpdate(res.history);
-        onShowMessage(`${res.importedCount} relevés importés avec succès sans doublons !`, 'success');
+        onShowMessage(`${res.importedCount} relevés importés avec succès sans doublons pour @${username} !`, 'success');
       } else {
         onShowMessage(`Erreur d'importation : ${res.errors.join(' ')}`, 'warning');
       }
@@ -89,10 +93,10 @@ export const SyncLog: React.FC<SyncLogProps> = ({
   };
 
   const handleClearHistory = () => {
-    clearSyncHistory();
+    clearSyncHistory(username);
     onHistoryUpdate([]);
     setShowClearConfirm(false);
-    onShowMessage('Historique des synchronisations vidé.', 'info');
+    onShowMessage(`Historique des synchronisations vidé pour @${username}.`, 'info');
   };
 
   return (
@@ -114,12 +118,23 @@ export const SyncLog: React.FC<SyncLogProps> = ({
             <span>Historique Des Synchronisations</span>
           </h2>
           <p className="text-xs text-neutral-400">
-            Relevés officiels horodatés conservés localement avec support d'export et d'import sécurisé.
+            Relevés officiels horodatés pour <strong className="text-amber-300">@{username}</strong>, conservés localement avec support d'export et d'import sécurisé.
           </p>
         </div>
 
         {/* Action buttons */}
         <div className="flex flex-wrap items-center gap-2">
+          {onPurgeAccountData && (
+            <button
+              onClick={onPurgeAccountData}
+              title="Purger le cache et forcer un relevé neuf"
+              className="flex items-center gap-1.5 rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-1.5 text-xs font-medium text-amber-300 hover:bg-amber-900/30 transition-colors"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span>Purger l'ancien compte</span>
+            </button>
+          )}
+
           <button
             onClick={handleExportCSV}
             className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800 transition-colors"
@@ -165,7 +180,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
               <h3 className="text-base font-bold text-white">Confirmer la suppression</h3>
             </div>
             <p className="mt-3 text-xs text-neutral-300">
-              Êtes-vous certain de vouloir vider l'historique complet ({history.length} entrées) ? Cette action est irréversible. Nous vous conseillons d'effectuer un export au préalable.
+              Êtes-vous certain de vouloir vider l'historique complet ({history.length} entrées) pour @{username} ? Cette action est irréversible.
             </p>
             <div className="mt-6 flex justify-end gap-3">
               <button
@@ -190,7 +205,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
         {history.length === 0 ? (
           <div className="p-12 text-center text-xs text-neutral-400">
             <Clock className="mx-auto h-8 w-8 text-neutral-600 mb-2" />
-            <p className="font-semibold text-neutral-300">Aucune synchronisation enregistrée pour le moment.</p>
+            <p className="font-semibold text-neutral-300">Aucune synchronisation enregistrée pour @{username}.</p>
             <p className="mt-1">
               Cliquez sur le bouton "Synchroniser" en haut à droite pour relever vos statistiques Chess.com.
             </p>
@@ -269,7 +284,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                       <td className="py-3 px-4 font-sans text-[11px] text-neutral-500 whitespace-nowrap">
                         <div>{record.source}</div>
                         {record.username && (
-                          <div className="text-[10px] text-neutral-600 font-mono">@{record.username}</div>
+                          <div className="text-[10px] text-neutral-400 font-mono">@{record.username}</div>
                         )}
                       </td>
                     </tr>
