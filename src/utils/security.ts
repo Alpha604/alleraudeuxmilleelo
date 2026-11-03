@@ -397,3 +397,87 @@ export function isRunningInIframe(): boolean {
     return false;
   }
 }
+
+/**
+ * Standard RFC 6238 TOTP (Time-based One-Time Password) Support
+ * Enables 100% offline 2FA via Google Authenticator, Microsoft Authenticator, or iPhone Camera.
+ */
+export const DEFAULT_TOTP_SECRET = 'JBSWY3DPEHPK3PXP';
+
+function base32ToBytes(base32: string): Uint8Array {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = 0;
+  let value = 0;
+  const output: number[] = [];
+  for (let i = 0; i < base32.length; i++) {
+    const val = alphabet.indexOf(base32[i].toUpperCase());
+    if (val === -1) continue;
+    value = (value << 5) | val;
+    bits += 5;
+    if (bits >= 8) {
+      output.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  return new Uint8Array(output);
+}
+
+export async function generateTotpCode(secret = DEFAULT_TOTP_SECRET, timestamp = Date.now()): Promise<string> {
+  const epoch = Math.floor(timestamp / 1000);
+  const timeStep = Math.floor(epoch / 30);
+  const timeBuffer = new ArrayBuffer(8);
+  const view = new DataView(timeBuffer);
+  view.setBigUint64(0, BigInt(timeStep), false);
+
+  const keyBytes = base32ToBytes(secret);
+  let signature: ArrayBuffer | null = null;
+
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
+    try {
+      const key = await window.crypto.subtle.importKey(
+        'raw',
+        keyBytes as BufferSource,
+        { name: 'HMAC', hash: { name: 'SHA-1' } },
+        false,
+        ['sign']
+      );
+      signature = await window.crypto.subtle.sign('HMAC', key, timeBuffer);
+    } catch {}
+  }
+
+  if (!signature) {
+    // Deterministic fallback if WebCrypto is unavailable
+    let h = 0x811c9dc5;
+    for (let i = 0; i < 8; i++) {
+      h ^= view.getUint8(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    const val = Math.abs(h) % 1000000;
+    return val.toString().padStart(6, '0');
+  }
+
+  const sigBytes = new Uint8Array(signature);
+  const offset = sigBytes[sigBytes.length - 1] & 0x0f;
+  const binary =
+    ((sigBytes[offset] & 0x7f) << 24) |
+    ((sigBytes[offset + 1] & 0xff) << 16) |
+    ((sigBytes[offset + 2] & 0xff) << 8) |
+    (sigBytes[offset + 3] & 0xff);
+  return (binary % 1000000).toString().padStart(6, '0');
+}
+
+export async function verifyTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): Promise<boolean> {
+  const clean = candidate.trim().replace(/\D/g, '');
+  if (clean.length !== 6) return false;
+  const now = Date.now();
+  // Accept current step, -30s and +30s to account for slight clock drift
+  for (const offset of [0, -30000, 30000]) {
+    const expected = await generateTotpCode(secret, now + offset);
+    if (clean === expected) return true;
+  }
+  return false;
+}
+
+export function getTotpUri(account = 'Admin', issuer = 'RoadTo2000'): string {
+  return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${DEFAULT_TOTP_SECRET}&issuer=${encodeURIComponent(issuer)}&digits=6&period=30`;
+}

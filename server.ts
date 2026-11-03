@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -13,6 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 import fs from 'fs';
+import crypto from 'crypto';
 
 interface AuthSession {
   sessionId: string;
@@ -404,7 +406,52 @@ function generateSessionValidationCode(sessionId: string): string {
     });
   });
 
-  // 6b. Verify 6-digit activation code submitted from desktop or phone
+const DEFAULT_TOTP_SECRET = 'JBSWY3DPEHPK3PXP';
+
+function base32ToBuffer(base32: string): Buffer {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = 0;
+  let value = 0;
+  const output: number[] = [];
+  for (let i = 0; i < base32.length; i++) {
+    const val = alphabet.indexOf(base32[i].toUpperCase());
+    if (val === -1) continue;
+    value = (value << 5) | val;
+    bits += 5;
+    if (bits >= 8) {
+      output.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(output);
+}
+
+function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): boolean {
+  const clean = candidate.trim().replace(/\D/g, '');
+  if (clean.length !== 6) return false;
+  const keyBuffer = base32ToBuffer(secret);
+  const now = Date.now();
+
+  for (const offset of [0, -30000, 30000]) {
+    const epoch = Math.floor((now + offset) / 1000);
+    const timeStep = Math.floor(epoch / 30);
+    const timeBuffer = Buffer.alloc(8);
+    timeBuffer.writeBigInt64BE(BigInt(timeStep), 0);
+
+    const hmac = crypto.createHmac('sha1', keyBuffer).update(timeBuffer).digest();
+    const off = hmac[hmac.length - 1] & 0x0f;
+    const binary =
+      ((hmac[off] & 0x7f) << 24) |
+      ((hmac[off + 1] & 0xff) << 16) |
+      ((hmac[off + 2] & 0xff) << 8) |
+      (hmac[off + 3] & 0xff);
+    const expected = (binary % 1000000).toString().padStart(6, '0');
+    if (clean === expected) return true;
+  }
+  return false;
+}
+
+  // 6b. Verify 6-digit activation code or TOTP code submitted from desktop or phone
   app.post('/api/auth/session/verify-code', (req: Request, res: Response) => {
     const { sessionId, code } = req.body || {};
     if (!sessionId || typeof sessionId !== 'string') {
@@ -412,33 +459,35 @@ function generateSessionValidationCode(sessionId: string): string {
       return;
     }
 
-    const cleanCode = String(code || '').trim();
+    const cleanCode = String(code || '').trim().replace(/\D/g, '');
     const expected = generateSessionValidationCode(sessionId);
+    const isTotpValid = verifyServerTotpCode(cleanCode);
 
-    if (cleanCode === expected) {
+    if (cleanCode === expected || isTotpValid) {
       const realClientIp = extractClientIp(req);
+      const unlockReason = isTotpValid ? 'totp_authenticator' : 'activation_code';
       let session = sessions.get(sessionId);
       if (!session) {
         session = {
           sessionId,
           scanning: true,
-          ipPrefix: formatIpPrefix(realClientIp),
+          ipPrefix: isTotpValid ? 'Authenticator' : formatIpPrefix(realClientIp),
           detectedIp: realClientIp,
           unlocked: true,
-          unlockReason: 'activation_code',
+          unlockReason,
           createdAt: Date.now(),
           updatedAt: Date.now(),
         };
       } else {
         session.unlocked = true;
-        session.unlockReason = 'activation_code';
+        session.unlockReason = unlockReason;
         session.updatedAt = Date.now();
       }
 
       sessions.set(sessionId, session);
       broadcastSessionUpdate(session);
 
-      res.json({ success: true, unlocked: true });
+      res.json({ success: true, unlocked: true, reason: unlockReason });
       return;
     }
 

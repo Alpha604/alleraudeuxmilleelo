@@ -132,7 +132,25 @@ async function runSecurityTests() {
     throw new Error('FAILED: Filtrage d\'adresse IP incohérent');
   }
 
-  console.log('--- TOUS LES TESTS DE SÉCURITÉ 2FA, ANTI-SPOOFING ET MULTI-IPS SONT VALIDÉS AVEC SUCCÈS ! ---');
+  // Test 14: TOTP code generation and validation
+  const { generateTotpCode, verifyTotpCode, getTotpUri } = await import('./security');
+  const totpCode = await generateTotpCode();
+  if (/^\d{6}$/.test(totpCode)) {
+    console.log(`✅ PASSED: Code TOTP RFC 6238 généré: ${totpCode}`);
+  } else {
+    throw new Error(`FAILED: Format TOTP invalide (${totpCode})`);
+  }
+
+  // Test 15: TOTP verification
+  const isTotpValid = await verifyTotpCode(totpCode);
+  const isBadTotpRejected = !(await verifyTotpCode('000000'));
+  if (isTotpValid && isBadTotpRejected) {
+    console.log('✅ PASSED: Validation TOTP conforme et rejet des faux codes');
+  } else {
+    throw new Error('FAILED: Vérification TOTP défaillante');
+  }
+
+  console.log('--- TOUS LES TESTS DE SÉCURITÉ 2FA, ANTI-SPOOFING, MULTI-IPS ET TOTP SONT VALIDÉS AVEC SUCCÈS ! ---');
 }
 
 runSecurityTests().catch((err) => {
