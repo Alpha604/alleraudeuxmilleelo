@@ -112,73 +112,66 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
     } catch {}
   };
 
-  // On mount: notify server of scan start with detected IP, and check if IP is in trusted list
+  // On mount: instantly notify server of scan start with real connecting IP,
+  // and check if real IP is verified as trusted by the server (never trusting URL parameters!)
   useEffect(() => {
     let isMounted = true;
 
-    async function checkIpAndBroadcastScan() {
+    async function notifyScanAndCheckRealIp() {
       setIsCheckingIp(true);
       try {
-        const params = new URLSearchParams(window.location.search);
-        const urlTips = params.get('tips')?.split(',') || (params.get('tip') ? [params.get('tip')!] : []);
-        const storedTips = getTrustedIps();
-        const combinedPool = Array.from(new Set([...urlTips, ...storedTips])).filter(Boolean);
+        // 1. Immediately notify server with zero latency.
+        // Server inspects the real connecting TCP/HTTP request IP from headers.
+        const res = await fetch('/api/auth/session/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId }),
+        });
 
-        const currentIp = await getClientIp();
         if (!isMounted) return;
 
-        const effectiveIp = currentIp || '';
-        setDetectedIp(currentIp);
+        if (res.ok) {
+          const data = await res.json();
+          const realIp = data.ip || '';
+          setDetectedIp(realIp);
+          setIsTrustedIpMatch(Boolean(data.isTrusted));
 
-        // Notify server in real-time that phone has scanned QR code with IP prefix
-        const prefix = formatIpPrefix(effectiveIp || 'Mobile');
-
-        try {
-          await fetch('/api/auth/session/scan', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sessionId,
-              ipPrefix: prefix,
-              clientIp: effectiveIp,
-            }),
-          });
-        } catch (serverErr) {
-          console.warn('Server scan notify error:', serverErr);
-        }
-
-        try {
-          if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-            const bc = new BroadcastChannel('roadto2000_auth_channel');
-            bc.postMessage({
-              type: 'MOBILE_SCAN_STARTED',
-              sessionId,
-              ipPrefix: prefix,
-              fullIp: currentIp,
-              timestamp: Date.now(),
-            });
-            bc.close();
+          // Also broadcast locally if on same machine/browser
+          try {
+            if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+              const bc = new BroadcastChannel('roadto2000_auth_channel');
+              bc.postMessage({
+                type: 'MOBILE_SCAN_STARTED',
+                sessionId,
+                ipPrefix: data.ipPrefix || formatIpPrefix(realIp),
+                fullIp: realIp,
+                timestamp: Date.now(),
+              });
+              bc.close();
+            }
+            if (typeof window !== 'undefined' && window.localStorage) {
+              window.localStorage.setItem(
+                `roadto2000_scanning_${sessionId}`,
+                JSON.stringify({ ipPrefix: data.ipPrefix || formatIpPrefix(realIp), timestamp: Date.now() })
+              );
+            }
+          } catch {}
+        } else {
+          // Fallback if server returned error
+          const fallbackIp = await getClientIp();
+          if (isMounted) {
+            setDetectedIp(fallbackIp);
+            setIsTrustedIpMatch(false);
           }
-          if (typeof window !== 'undefined' && window.localStorage) {
-            window.localStorage.setItem(
-              `roadto2000_scanning_${sessionId}`,
-              JSON.stringify({ ipPrefix: prefix, timestamp: Date.now() })
-            );
-          }
-        } catch {}
-
-        // Check if IP is trusted
-        if (currentIp && isIpTrusted(currentIp, combinedPool)) {
-          setIsTrustedIpMatch(true);
         }
       } catch (err) {
-        console.warn('Scan start broadcast error:', err);
+        console.warn('Scan start notify error:', err);
       } finally {
         if (isMounted) setIsCheckingIp(false);
       }
     }
 
-    checkIpAndBroadcastScan();
+    notifyScanAndCheckRealIp();
 
     return () => {
       isMounted = false;

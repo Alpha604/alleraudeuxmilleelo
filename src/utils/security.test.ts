@@ -7,6 +7,7 @@ import {
   addTrustedIp,
   formatIpPrefix,
   generateSessionValidationCode,
+  getMobileAuthUrl,
   getTrustedIps,
   hashPassword,
   isIpTrusted,
@@ -116,7 +117,22 @@ async function runSecurityTests() {
     throw new Error(`FAILED: Format de préfixe IP incorrect (${p1}, ${p2})`);
   }
 
-  console.log('--- TOUS LES TESTS DE SÉCURITÉ 2FA ET MULTI-IPS SONT VALIDÉS AVEC SUCCÈS ! ---');
+  // Test 12: Anti-spoofing - getMobileAuthUrl strictly excludes &tips= query parameter
+  const mobileUrl = getMobileAuthUrl('session_xyz123', 'https://example.com');
+  if (!mobileUrl.includes('&tips=') && !mobileUrl.includes('?tips=') && mobileUrl.includes('mobile_auth=session_xyz123')) {
+    console.log('✅ PASSED: Anti-spoofing URL - Aucun paramètre d\'IP de confiance n\'est injecté dans le lien mobile');
+  } else {
+    throw new Error(`FAILED: Paramètre d'IP de confiance non sécurisé détecté dans l'URL (${mobileUrl})`);
+  }
+
+  // Test 13: Local and external IP format validation
+  if (isIpTrusted('192.168.1.50') && !isIpTrusted('203.0.113.195')) {
+    console.log('✅ PASSED: Filtrage strict des adresses non autorisées');
+  } else {
+    throw new Error('FAILED: Filtrage d\'adresse IP incohérent');
+  }
+
+  console.log('--- TOUS LES TESTS DE SÉCURITÉ 2FA, ANTI-SPOOFING ET MULTI-IPS SONT VALIDÉS AVEC SUCCÈS ! ---');
 }
 
 runSecurityTests().catch((err) => {

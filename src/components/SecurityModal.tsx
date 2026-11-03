@@ -22,6 +22,7 @@ import {
   generateSessionValidationCode,
   getMobileAuthUrl,
   getServerInfo,
+  getTrustedIps,
   setAdminSession,
 } from '../utils/security';
 
@@ -75,11 +76,14 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     let isMounted = true;
     unlockedRef.current = false;
 
-    // 1. Register session on the backend server
+    // 1. Register session on the backend server with trusted IPs list for server-side evaluation
     fetch('/api/auth/session/init', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId }),
+      body: JSON.stringify({
+        sessionId,
+        trustedIps: getTrustedIps(),
+      }),
     }).catch(() => {});
 
     // 2. Compute reachable mobile URL (use public preview ais-pre or local LAN IP)
@@ -147,7 +151,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
       }
     } catch {}
 
-    // 2. Ultra-reliable Polling every 750ms as solid guarantee across all networks & proxies
+    // 2. Ultra-reliable Polling every 400ms as solid guarantee across all networks & proxies
     const pollStatus = async () => {
       if (!isMounted || unlockedRef.current) return;
       try {
@@ -170,7 +174,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
       } catch {}
     };
 
-    pollTimer = setInterval(pollStatus, 750);
+    pollTimer = setInterval(pollStatus, 400);
 
     // 3. Local BroadcastChannel (immediate in-browser tabs)
     let bc: BroadcastChannel | null = null;

@@ -12,12 +12,16 @@ import os from 'os';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+import fs from 'fs';
+
 interface AuthSession {
   sessionId: string;
   scanning: boolean;
   ipPrefix: string;
   detectedIp: string;
   unlocked: boolean;
+  isTrusted?: boolean;
+  trustedIps?: string[];
   unlockReason?: string;
   createdAt: number;
   updatedAt: number;
@@ -25,6 +29,40 @@ interface AuthSession {
 
 // In-memory session store
 const sessions = new Map<string, AuthSession>();
+
+// Persistent server-side trusted IPs
+const TRUSTED_IPS_FILE = path.resolve(os.tmpdir(), 'roadto2000_trusted_ips.json');
+const serverTrustedIps = new Set<string>();
+
+// Load trusted IPs from disk
+function loadTrustedIpsFromDisk() {
+  try {
+    if (fs.existsSync(TRUSTED_IPS_FILE)) {
+      const raw = fs.readFileSync(TRUSTED_IPS_FILE, 'utf-8');
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        list.forEach((ip: string) => {
+          if (typeof ip === 'string' && ip.trim().length >= 7) {
+            serverTrustedIps.add(ip.trim());
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[RoadTo2000] Failed to load trusted IPs from disk:', err);
+  }
+}
+
+// Save trusted IPs to disk
+function saveTrustedIpsToDisk() {
+  try {
+    fs.writeFileSync(TRUSTED_IPS_FILE, JSON.stringify(Array.from(serverTrustedIps)), 'utf-8');
+  } catch (err) {
+    console.warn('[RoadTo2000] Failed to save trusted IPs to disk:', err);
+  }
+}
+
+loadTrustedIpsFromDisk();
 
 // Active SSE client connections per sessionId
 type SSEListener = (session: AuthSession) => void;
@@ -78,8 +116,14 @@ function formatIpPrefix(ip: string): string {
   return clean.substring(0, Math.min(clean.length, 6)) + '***';
 }
 
-// Extract real client IP from Express request
+// Extract real client IP from Express request (handles Google Cloud Run, reverse proxies, and local)
 function extractClientIp(req: Request): string {
+  const cfIp = req.headers['cf-connecting-ip'];
+  if (typeof cfIp === 'string' && cfIp.trim()) return cfIp.trim();
+
+  const realIp = req.headers['x-real-ip'];
+  if (typeof realIp === 'string' && realIp.trim()) return realIp.trim();
+
   const forwarded = req.headers['x-forwarded-for'];
   let ip = '';
   if (typeof forwarded === 'string') {
@@ -92,7 +136,35 @@ function extractClientIp(req: Request): string {
   if (ip.startsWith('::ffff:')) {
     ip = ip.replace('::ffff:', '');
   }
-  return ip;
+  return ip.trim();
+}
+
+// Verify if a client IP is trusted without trusting any client spoofing
+function isServerIpTrusted(clientIp: string, sessionIps?: string[]): boolean {
+  const clean = clientIp.trim();
+  if (!clean) return false;
+
+  const normalized = clean.startsWith('::ffff:') ? clean.replace('::ffff:', '') : clean;
+
+  const pool = new Set<string>();
+  serverTrustedIps.forEach((ip) => pool.add(ip.trim()));
+  if (Array.isArray(sessionIps)) {
+    sessionIps.forEach((ip) => {
+      if (ip && typeof ip === 'string' && ip.trim().length >= 7) {
+        pool.add(ip.trim());
+      }
+    });
+  }
+
+  for (const trusted of pool) {
+    const cleanTrusted = trusted.startsWith('::ffff:') ? trusted.replace('::ffff:', '') : trusted;
+    if (normalized === cleanTrusted) return true;
+    if (cleanTrusted.endsWith('.*')) {
+      const prefix = cleanTrusted.slice(0, -2);
+      if (normalized.startsWith(prefix)) return true;
+    }
+  }
+  return false;
 }
 
 // Find local LAN IPv4 address (e.g. 192.168.1.45)
@@ -148,6 +220,7 @@ async function startServer() {
     res.json({
       ip,
       ipPrefix: formatIpPrefix(ip),
+      isTrusted: isServerIpTrusted(ip),
     });
   });
 
@@ -160,12 +233,58 @@ async function startServer() {
     });
   });
 
-  // 3. Initialize auth session (called by desktop PC when opening 2FA modal)
+  // 3. Trusted IPs management endpoints (strictly server-stored, not from URL parameters!)
+  app.get('/api/auth/trusted-ips', (_req: Request, res: Response) => {
+    res.json({
+      trustedIps: Array.from(serverTrustedIps),
+    });
+  });
+
+  app.post('/api/auth/trusted-ips', (req: Request, res: Response) => {
+    const { ips, ip, action } = req.body || {};
+    if (Array.isArray(ips)) {
+      serverTrustedIps.clear();
+      ips.forEach((item) => {
+        if (typeof item === 'string' && item.trim().length >= 7) {
+          serverTrustedIps.add(item.trim());
+        }
+      });
+      saveTrustedIpsToDisk();
+      res.json({ success: true, count: serverTrustedIps.size });
+      return;
+    }
+
+    if (ip && typeof ip === 'string') {
+      const cleanIp = ip.trim();
+      if (action === 'remove') {
+        serverTrustedIps.delete(cleanIp);
+      } else if (cleanIp.length >= 7) {
+        serverTrustedIps.add(cleanIp);
+      }
+      saveTrustedIpsToDisk();
+      res.json({ success: true, count: serverTrustedIps.size });
+      return;
+    }
+
+    res.status(400).json({ error: 'Invalid payload' });
+  });
+
+  // 4. Initialize auth session (called by desktop PC when opening 2FA modal)
   app.post('/api/auth/session/init', (req: Request, res: Response) => {
-    const { sessionId } = req.body || {};
+    const { sessionId, trustedIps } = req.body || {};
     if (!sessionId || typeof sessionId !== 'string') {
       res.status(400).json({ error: 'sessionId required' });
       return;
+    }
+
+    // Sync any trusted IPs from desktop to server
+    if (Array.isArray(trustedIps)) {
+      trustedIps.forEach((item: string) => {
+        if (typeof item === 'string' && item.trim().length >= 7) {
+          serverTrustedIps.add(item.trim());
+        }
+      });
+      saveTrustedIpsToDisk();
     }
 
     let session = sessions.get(sessionId);
@@ -176,42 +295,51 @@ async function startServer() {
         ipPrefix: '',
         detectedIp: '',
         unlocked: false,
+        isTrusted: false,
+        trustedIps: Array.isArray(trustedIps) ? trustedIps : [],
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
       sessions.set(sessionId, session);
+    } else if (Array.isArray(trustedIps)) {
+      session.trustedIps = trustedIps;
     }
 
     res.json({ success: true, session });
   });
 
-  // 4. Smartphone reports QR code scan start (live presence detection)
+  // 5. Smartphone reports QR code scan start (live presence detection)
+  // CRITICAL: Uses actual TCP/HTTP connection IP. Never trusts URL parameters!
   app.post('/api/auth/session/scan', (req: Request, res: Response) => {
-    const { sessionId, ipPrefix: reportedPrefix, clientIp: reportedIp } = req.body || {};
+    const { sessionId } = req.body || {};
     if (!sessionId || typeof sessionId !== 'string') {
       res.status(400).json({ error: 'sessionId required' });
       return;
     }
 
-    const serverDetectedIp = extractClientIp(req);
-    const effectiveIp = reportedIp || serverDetectedIp;
-    const effectivePrefix = reportedPrefix || formatIpPrefix(effectiveIp);
+    // Extract real client IP of the connecting phone
+    const realClientIp = extractClientIp(req);
+    const prefix = formatIpPrefix(realClientIp || 'Mobile');
 
     let session = sessions.get(sessionId);
+    const isTrusted = isServerIpTrusted(realClientIp, session?.trustedIps);
+
     if (!session) {
       session = {
         sessionId,
         scanning: true,
-        ipPrefix: effectivePrefix,
-        detectedIp: effectiveIp,
+        ipPrefix: prefix,
+        detectedIp: realClientIp,
         unlocked: false,
+        isTrusted,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
     } else {
       session.scanning = true;
-      session.ipPrefix = effectivePrefix;
-      session.detectedIp = effectiveIp;
+      session.ipPrefix = prefix;
+      session.detectedIp = realClientIp;
+      session.isTrusted = isTrusted;
       session.updatedAt = Date.now();
     }
 
@@ -221,13 +349,14 @@ async function startServer() {
     res.json({
       success: true,
       sessionId,
-      ip: effectiveIp,
-      ipPrefix: effectivePrefix,
+      ip: realClientIp,
+      ipPrefix: prefix,
+      isTrusted,
       scanning: true,
     });
   });
 
-  // 5. Smartphone unlocks remote session (after typing password or trusted IP)
+  // 6. Smartphone unlocks remote session (after typing password or trusted IP)
   app.post('/api/auth/session/unlock', (req: Request, res: Response) => {
     const { sessionId, reason } = req.body || {};
     if (!sessionId || typeof sessionId !== 'string') {
@@ -235,13 +364,15 @@ async function startServer() {
       return;
     }
 
+    const realClientIp = extractClientIp(req);
     let session = sessions.get(sessionId);
+
     if (!session) {
       session = {
         sessionId,
         scanning: true,
-        ipPrefix: '',
-        detectedIp: '',
+        ipPrefix: formatIpPrefix(realClientIp),
+        detectedIp: realClientIp,
         unlocked: true,
         unlockReason: reason || 'remote',
         createdAt: Date.now(),
@@ -264,7 +395,7 @@ async function startServer() {
     });
   });
 
-  // 6. Polling endpoint for session status
+  // 7. Polling endpoint for session status
   app.get('/api/auth/session/status', (req: Request, res: Response) => {
     const sessionId = String(req.query.sessionId || '');
     if (!sessionId) {
@@ -279,6 +410,7 @@ async function startServer() {
         scanning: false,
         ipPrefix: '',
         unlocked: false,
+        isTrusted: false,
       });
       return;
     }
@@ -289,6 +421,7 @@ async function startServer() {
       ipPrefix: session.ipPrefix,
       detectedIp: session.detectedIp,
       unlocked: session.unlocked,
+      isTrusted: session.isTrusted,
       unlockReason: session.unlockReason,
       updatedAt: session.updatedAt,
     });

@@ -128,6 +128,17 @@ export function getTrustedIps(): string[] {
 export function setTrustedIps(ips: string[]): void {
   const clean = Array.from(new Set(ips.map((s) => s.trim()).filter((s) => s.length >= 7)));
   safeSet(ADMIN_TRUSTED_IPS_KEY, JSON.stringify(clean));
+
+  // Sync to backend server
+  try {
+    if (typeof fetch !== 'undefined') {
+      fetch('/api/auth/trusted-ips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ips: clean }),
+      }).catch(() => {});
+    }
+  } catch {}
 }
 
 /**
@@ -203,35 +214,31 @@ export function setTrustedIp(ip: string): void {
   }
 }
 
-/**
- * Fetches the user's current IP address via internal API endpoint with external fallbacks
- */
 export async function getClientIp(): Promise<string> {
-  // 1. First try our own local server endpoint (instantaneous, no rate limit)
+  // 1. Fast local server endpoint
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2000);
+    const timer = setTimeout(() => controller.abort(), 1200);
     const internalRes = await fetch('/api/auth/client-ip', { signal: controller.signal });
     clearTimeout(timer);
     if (internalRes.ok) {
       const data = await internalRes.json();
-      if (data.ip && typeof data.ip === 'string' && data.ip.trim().length >= 7 && data.ip !== '127.0.0.1') {
+      if (data.ip && typeof data.ip === 'string' && data.ip.trim().length >= 7) {
         return data.ip.trim();
       }
     }
   } catch {}
 
-  // 2. Fall back to public IP resolution services
+  // 2. Fast public IP fallback
   const endpoints = [
     'https://api.ipify.org?format=json',
     'https://api64.ipify.org?format=json',
-    'https://ipapi.co/json/',
   ];
 
   for (const endpoint of endpoints) {
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 3500);
+      const timer = setTimeout(() => controller.abort(), 1500);
       const res = await fetch(endpoint, { signal: controller.signal });
       clearTimeout(timer);
       if (res.ok) {
@@ -329,16 +336,17 @@ export function generateSessionValidationCode(sessionId: string): string {
 }
 
 /**
- * Generates the full URL that the smartphone opens when scanning the QR code,
- * including session ID and optional trusted IP reference for seamless zero-tap mobile unlock.
+ * Generates the clean URL that the smartphone opens when scanning the QR code.
+ * Strictly avoids putting trusted IPs in query parameters to prevent URL spoofing!
  */
 export function getMobileAuthUrl(sessionId: string, baseOrigin?: string): string {
-  if (typeof window === 'undefined') return '';
-  const origin = baseOrigin || window.location.origin;
-  const path = window.location.pathname;
-  const trustedIps = getTrustedIps();
-  const tipsParam = trustedIps.length > 0 ? `&tips=${encodeURIComponent(trustedIps.join(','))}` : '';
-  return `${origin}${path}?mobile_auth=${encodeURIComponent(sessionId)}${tipsParam}`;
+  let origin = baseOrigin || '';
+  let path = '';
+  if (typeof window !== 'undefined') {
+    origin = baseOrigin || window.location.origin;
+    path = window.location.pathname;
+  }
+  return `${origin}${path}?mobile_auth=${encodeURIComponent(sessionId)}`;
 }
 
 /**
