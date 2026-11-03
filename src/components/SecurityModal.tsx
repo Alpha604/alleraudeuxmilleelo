@@ -465,13 +465,6 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
 
                     <div className="pt-1 flex items-center justify-between text-[10px]">
                       <span className="text-neutral-500">Sécurité anti-espionnage</span>
-                      <button
-                        type="button"
-                        onClick={handleRegenerateSecret}
-                        className="text-amber-400 hover:text-amber-300 underline"
-                      >
-                        Générer une NOUVELLE clé
-                      </button>
                     </div>
                   </form>
                 )}
