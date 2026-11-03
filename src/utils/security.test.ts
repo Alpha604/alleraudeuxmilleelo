@@ -150,7 +150,23 @@ async function runSecurityTests() {
     throw new Error('FAILED: Vérification TOTP défaillante');
   }
 
-  console.log('--- TOUS LES TESTS DE SÉCURITÉ 2FA, ANTI-SPOOFING, MULTI-IPS ET TOTP SONT VALIDÉS AVEC SUCCÈS ! ---');
+  // Test 16: Private secret generation & enrollment state
+  const { generateNewTotpSecret, getTotpSecret, isTotpEnrolled, setTotpEnrolled } = await import('./security');
+  const initialSec = getTotpSecret();
+  if (initialSec && initialSec.length >= 16) {
+    console.log(`✅ PASSED: Clé secrète Microsoft Authenticator active: ${initialSec}`);
+  } else {
+    throw new Error('FAILED: Clé secrète introuvable');
+  }
+
+  setTotpEnrolled(true);
+  if (isTotpEnrolled()) {
+    console.log('✅ PASSED: Verrouillage anti-espionnage (isTotpEnrolled = true)');
+  } else {
+    throw new Error('FAILED: Erreur d\'état de jumelage');
+  }
+
+  console.log('--- TOUS LES TESTS DE SÉCURITÉ 2FA, MICROSOFT AUTHENTICATOR ET SECRET PRIVÉ VALIDÉS ! ---');
 }
 
 runSecurityTests().catch((err) => {

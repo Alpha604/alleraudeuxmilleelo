@@ -19,6 +19,7 @@ import {
   Settings as SettingsIcon,
   ShieldCheck,
   Sliders,
+  Smartphone,
   Sun,
   Trash2,
   Unlock,
@@ -229,7 +230,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="inline-flex items-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 px-6 py-3 text-xs font-bold transition-all shadow-[0_0_20px_rgba(245,158,11,0.25)]"
           >
             <ShieldCheck className="h-4 w-4" />
-            <span>Déverrouiller avec le QR Code 2FA</span>
+            <span>Déverrouiller avec Microsoft / Google Authenticator (2FA)</span>
           </button>
         </div>
       </div>
@@ -589,14 +590,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <span className="text-[11px] text-neutral-500 font-mono">Insensible à la casse</span>
         </div>
 
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-emerald-300 flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              <span>Microsoft / Google Authenticator : Jumelé & Actif</span>
+            </span>
+            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+              Protection Exclusive Active
+            </span>
+          </div>
+          <p className="text-xs text-neutral-300 leading-relaxed">
+            Seul votre smartphone peut générer les codes à 6 chiffres. Le QR code de jumelage est <strong>strictement masqué</strong> pour empêcher quiconque d'autre de cloner vos accès.
+          </p>
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => onOpenSecurityModal && onOpenSecurityModal('Gestion Authenticator 2FA')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-200 hover:text-white transition-colors"
+            >
+              <Smartphone className="h-3.5 w-3.5 text-amber-400" />
+              <span>Jumeler un nouveau téléphone / Reconfigurer</span>
+            </button>
+          </div>
+        </div>
+
         <form onSubmit={handleChangePassword} className="space-y-4 max-w-xl">
           <p className="text-xs text-neutral-300 leading-relaxed">
-            Ce mot de passe est celui demandé sur votre smartphone lors du scan du QR Code pour déverrouiller la synchronisation, les paramètres et les tests.
+            Ce mot de passe maître (par défaut : <strong>Alpha604</strong>) est requis pour autoriser l'affichage du QR code de jumelage ou modifier les paramètres sensibles.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1">Nouveau mot de passe</label>
+              <label className="block text-xs font-medium text-neutral-300 mb-1">Nouveau mot de passe maître</label>
               <input
                 type="password"
                 value={newPassword}

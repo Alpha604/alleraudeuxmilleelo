@@ -11,7 +11,6 @@ import { HistoryChart } from './components/HistoryChart';
 import { IframeEmbedGuide } from './components/IframeEmbedGuide';
 import { KpiSummaryRow } from './components/KpiSummaryRow';
 import { MilestoneCalendar } from './components/MilestoneCalendar';
-import { MobileAuthView } from './components/MobileAuthView';
 import { Navbar, NavTab } from './components/Navbar';
 import { NotificationToast, ToastMessage } from './components/NotificationToast';
 import { MonthlyObjectiveCard } from './components/MonthlyObjectiveCard';
@@ -51,13 +50,6 @@ import {
 } from './utils/storage';
 
 export default function App() {
-  // Mobile 2FA Auth Route detection (?mobile_auth=SESSION_ID)
-  const [mobileAuthSessionId, setMobileAuthSessionId] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    const params = new URLSearchParams(window.location.search);
-    return params.get('mobile_auth') || params.get('mobileAuth');
-  });
-
   // Strict Iframe & Embed Mode Detection
   const isIframe = useMemo(() => isRunningInIframe(), []);
 
@@ -473,23 +465,6 @@ export default function App() {
       pointsToNextMilestone,
     };
   }, [syncHistory, currentElo, settings.startElo, settings.targetElo, activeBestMode]);
-
-  // If user scanned QR code with mobile phone, render the dedicated Mobile Auth View!
-  if (mobileAuthSessionId) {
-    return (
-      <MobileAuthView
-        sessionId={mobileAuthSessionId}
-        onFinishMobileAuth={() => {
-          // Remove ?mobile_auth parameter from URL and load full dashboard
-          if (typeof window !== 'undefined' && window.history) {
-            window.history.replaceState({}, '', window.location.pathname);
-          }
-          setMobileAuthSessionId(null);
-          setIsAdmin(true);
-        }}
-      />
-    );
-  }
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans transition-colors dark:bg-neutral-950 dark:text-neutral-100 light:bg-neutral-100 light:text-neutral-900">

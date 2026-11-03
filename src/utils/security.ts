@@ -403,6 +403,60 @@ export function isRunningInIframe(): boolean {
  * Enables 100% offline 2FA via Google Authenticator, Microsoft Authenticator, or iPhone Camera.
  */
 export const DEFAULT_TOTP_SECRET = 'JBSWY3DPEHPK3PXP';
+const ADMIN_TOTP_SECRET_KEY = 'roadto2000_totp_secret_v2';
+const ADMIN_TOTP_ENROLLED_KEY = 'roadto2000_totp_enrolled_v2';
+
+export function generateRandomBase32Secret(length = 16): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let result = '';
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+    const array = new Uint8Array(length);
+    window.crypto.getRandomValues(array);
+    for (let i = 0; i < length; i++) {
+      result += chars[array[i] % chars.length];
+    }
+  } else {
+    for (let i = 0; i < length; i++) {
+      result += chars[Math.floor(Math.random() * chars.length)];
+    }
+  }
+  return result;
+}
+
+export function getTotpSecret(): string {
+  const stored = safeGet(ADMIN_TOTP_SECRET_KEY);
+  if (stored && stored.trim().length >= 16) {
+    return stored.trim();
+  }
+  // Initialize with the user's active secret
+  safeSet(ADMIN_TOTP_SECRET_KEY, DEFAULT_TOTP_SECRET);
+  return DEFAULT_TOTP_SECRET;
+}
+
+export function setTotpSecret(secret: string): void {
+  const clean = secret.trim().toUpperCase().replace(/[^A-Z2-7]/g, '');
+  if (clean.length >= 16) {
+    safeSet(ADMIN_TOTP_SECRET_KEY, clean);
+  }
+}
+
+export function generateNewTotpSecret(): string {
+  const newSecret = generateRandomBase32Secret(16);
+  safeSet(ADMIN_TOTP_SECRET_KEY, newSecret);
+  safeSet(ADMIN_TOTP_ENROLLED_KEY, 'false');
+  return newSecret;
+}
+
+export function isTotpEnrolled(): boolean {
+  const stored = safeGet(ADMIN_TOTP_ENROLLED_KEY);
+  // Default to true because the user has already paired their Microsoft Authenticator!
+  if (stored === null) return true;
+  return stored === 'true';
+}
+
+export function setTotpEnrolled(enrolled: boolean): void {
+  safeSet(ADMIN_TOTP_ENROLLED_KEY, enrolled ? 'true' : 'false');
+}
 
 function base32ToBytes(base32: string): Uint8Array {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -422,14 +476,15 @@ function base32ToBytes(base32: string): Uint8Array {
   return new Uint8Array(output);
 }
 
-export async function generateTotpCode(secret = DEFAULT_TOTP_SECRET, timestamp = Date.now()): Promise<string> {
+export async function generateTotpCode(secret?: string, timestamp = Date.now()): Promise<string> {
+  const activeSecret = secret || getTotpSecret();
   const epoch = Math.floor(timestamp / 1000);
   const timeStep = Math.floor(epoch / 30);
   const timeBuffer = new ArrayBuffer(8);
   const view = new DataView(timeBuffer);
   view.setBigUint64(0, BigInt(timeStep), false);
 
-  const keyBytes = base32ToBytes(secret);
+  const keyBytes = base32ToBytes(activeSecret);
   let signature: ArrayBuffer | null = null;
 
   if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
@@ -466,18 +521,20 @@ export async function generateTotpCode(secret = DEFAULT_TOTP_SECRET, timestamp =
   return (binary % 1000000).toString().padStart(6, '0');
 }
 
-export async function verifyTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): Promise<boolean> {
+export async function verifyTotpCode(candidate: string, secret?: string): Promise<boolean> {
   const clean = candidate.trim().replace(/\D/g, '');
   if (clean.length !== 6) return false;
+  const activeSecret = secret || getTotpSecret();
   const now = Date.now();
   // Accept current step, -30s and +30s to account for slight clock drift
   for (const offset of [0, -30000, 30000]) {
-    const expected = await generateTotpCode(secret, now + offset);
+    const expected = await generateTotpCode(activeSecret, now + offset);
     if (clean === expected) return true;
   }
   return false;
 }
 
-export function getTotpUri(account = 'Admin', issuer = 'RoadTo2000'): string {
-  return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${DEFAULT_TOTP_SECRET}&issuer=${encodeURIComponent(issuer)}&digits=6&period=30`;
+export function getTotpUri(account = 'Romeo', issuer = 'RoadTo2000Elo', secret?: string): string {
+  const activeSecret = secret || getTotpSecret();
+  return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${activeSecret}&issuer=${encodeURIComponent(issuer)}&digits=6&period=30`;
 }

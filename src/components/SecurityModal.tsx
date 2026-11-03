@@ -6,13 +6,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
-  Check,
   CheckCircle2,
   Copy,
+  Eye,
+  EyeOff,
   KeyRound,
   Lock,
   QrCode,
-  Radio,
+  RefreshCw,
   ShieldAlert,
   ShieldCheck,
   Smartphone,
@@ -20,13 +21,14 @@ import {
   X,
 } from 'lucide-react';
 import {
+  generateNewTotpSecret,
   generateQrCodeDataUrl,
-  generateSessionValidationCode,
-  getMobileAuthUrl,
-  getServerInfo,
+  getTotpSecret,
   getTotpUri,
-  getTrustedIps,
+  isTotpEnrolled,
   setAdminSession,
+  setTotpEnrolled,
+  verifyAdminPassword,
   verifyTotpCode,
 } from '../utils/security';
 
@@ -38,8 +40,6 @@ interface SecurityModalProps {
   onShowMessage: (msg: string, type?: 'info' | 'success' | 'warning') => void;
 }
 
-type ScanMode = 'web' | 'authenticator';
-
 export const SecurityModal: React.FC<SecurityModalProps> = ({
   isOpen,
   onClose,
@@ -47,292 +47,124 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
   actionTitle = 'Accès aux fonctions sensibles',
   onShowMessage,
 }) => {
-  const [sessionId] = useState<string>(() => `auth_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
-  const [scanMode, setScanMode] = useState<ScanMode>('web');
-  const [webQrDataUrl, setWebQrDataUrl] = useState<string>('');
-  const [totpQrDataUrl, setTotpQrDataUrl] = useState<string>('');
-  const [mobileUrl, setMobileUrl] = useState<string>('');
-  const [copiedUrl, setCopiedUrl] = useState<boolean>(false);
-  const [codeOrPassword, setCodeOrPassword] = useState<string>('');
+  const [code, setCode] = useState<string>('');
   const [isVerifying, setIsVerifying] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
 
-  // Live status of mobile device interaction
-  const [mobileScanningInfo, setMobileScanningInfo] = useState<{
-    ipPrefix: string;
-    timestamp: number;
-  } | null>(null);
+  // Enrollment / Pairing State
+  const [isEnrolled, setIsEnrolled] = useState<boolean>(() => isTotpEnrolled());
+  const [showPairingQr, setShowPairingQr] = useState<boolean>(() => !isTotpEnrolled());
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
+  const [secretKey, setSecretKey] = useState<string>(() => getTotpSecret());
+  const [copiedSecret, setCopiedSecret] = useState<boolean>(false);
 
-  // Live remote unlocking animation state on PC
-  const [remoteUnlockingState, setRemoteUnlockingState] = useState<{
-    isUnlocking: boolean;
-    ipPrefix: string;
+  // Admin password unlock for revealing QR code (anti-tamper)
+  const [adminUnlockPassword, setAdminUnlockPassword] = useState<string>('');
+  const [isAuthorizingQrReveal, setIsAuthorizingQrReveal] = useState<boolean>(false);
+  const [showAdminPasswordInput, setShowAdminPasswordInput] = useState<boolean>(false);
+  const [qrRevealError, setQrRevealError] = useState<string>('');
+
+  // Live visual unlock animation
+  const [unlockingState, setUnlockingState] = useState<{
     step: number;
     message: string;
   } | null>(null);
 
   const unlockedRef = useRef(false);
-  const remoteTriggeredRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Final successful unlock callback
+  // Generate QR code for pairing when needed
+  useEffect(() => {
+    if (!isOpen) return;
+    let isMounted = true;
+    unlockedRef.current = false;
+
+    async function loadQr() {
+      const uri = getTotpUri('Romeo', 'RoadTo2000Elo', secretKey);
+      const url = await generateQrCodeDataUrl(uri);
+      if (isMounted) setQrDataUrl(url);
+    }
+
+    loadQr();
+
+    // Auto-focus code input
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 150);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, secretKey]);
+
+  // Complete unlock callback
   const completeUnlock = React.useCallback(() => {
     if (unlockedRef.current) return;
     unlockedRef.current = true;
     setIsUnlocked(true);
     setAdminSession();
-    onShowMessage('Authentification réussie ! Session administrateur active.', 'success');
+    onShowMessage('Authentification Microsoft Authenticator réussie ! Session active.', 'success');
     setTimeout(() => {
       onSuccess();
       onClose();
-    }, 1200);
+    }, 1100);
   }, [onSuccess, onClose, onShowMessage]);
 
-  // Trigger smooth multi-step unlock animation on PC when remote unlock signal is received
-  const startRemoteUnlockSequence = React.useCallback((ipPrefix?: string) => {
-    if (remoteTriggeredRef.current || unlockedRef.current) return;
-    remoteTriggeredRef.current = true;
-
-    const deviceIp = ipPrefix || mobileScanningInfo?.ipPrefix || 'Appareil mobile';
-    setRemoteUnlockingState({
-      isUnlocking: true,
-      ipPrefix: deviceIp,
-      step: 1,
-      message: 'Signal de déverrouillage capté depuis votre smartphone...',
-    });
-
-    // Step 2: Privilege validation
-    setTimeout(() => {
-      setRemoteUnlockingState({
-        isUnlocking: true,
-        ipPrefix: deviceIp,
-        step: 2,
-        message: 'Autorisation accordée · Synchronisation de la session...',
-      });
-    }, 850);
-
-    // Step 3: PC screen unlocking
-    setTimeout(() => {
-      setRemoteUnlockingState({
-        isUnlocking: true,
-        ipPrefix: deviceIp,
-        step: 3,
-        message: 'Déverrouillage de cet ordinateur en cours...',
-      });
-    }, 1700);
-
-    // Step 4: Finalize
-    setTimeout(() => {
-      completeUnlock();
-    }, 2400);
-  }, [mobileScanningInfo?.ipPrefix, completeUnlock]);
-
-  const expectedMobileCode = generateSessionValidationCode(sessionId);
-
-  // 1. Generate QR codes & initialize server session on open
-  useEffect(() => {
-    if (!isOpen) return;
-    let isMounted = true;
-    unlockedRef.current = false;
-    remoteTriggeredRef.current = false;
-
-    // Register session on backend server with current trusted IPs list
-    fetch('/api/auth/session/init', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sessionId,
-        trustedIps: getTrustedIps(),
-      }),
-    }).catch(() => {});
-
-    // Compute reachable mobile URL (use actual origin without broken ais-pre replacement!)
-    async function setupQrCodes() {
-      let baseOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-
-      if (
-        typeof window !== 'undefined' &&
-        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-      ) {
-        const info = await getServerInfo();
-        if (info?.lanIp && info.lanIp !== '127.0.0.1') {
-          baseOrigin = `http://${info.lanIp}:${info.port || 3000}`;
-        }
-      }
-
-      const url = getMobileAuthUrl(sessionId, baseOrigin);
-      if (!isMounted) return;
-      setMobileUrl(url);
-
-      // Web Auth QR code
-      const webDataUrl = await generateQrCodeDataUrl(url);
-      if (isMounted) setWebQrDataUrl(webDataUrl);
-
-      // Universal TOTP Authenticator QR code (100% offline fallback)
-      const totpUri = getTotpUri('Admin', 'RoadTo2000');
-      const totpDataUrl = await generateQrCodeDataUrl(totpUri);
-      if (isMounted) setTotpQrDataUrl(totpDataUrl);
-    }
-
-    setupQrCodes();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [isOpen, sessionId]);
-
-  // 2. Multi-channel listener for instant mobile scan & remote unlock
-  useEffect(() => {
-    if (!isOpen) return;
-
-    let isMounted = true;
-    let sse: EventSource | null = null;
-    let pollTimer: any = null;
-
-    // A. Instant Real-Time Push via Server-Sent Events (SSE)
-    try {
-      if (typeof window !== 'undefined' && 'EventSource' in window) {
-        sse = new EventSource(`/api/auth/session/events?sessionId=${encodeURIComponent(sessionId)}`);
-        sse.onmessage = (event) => {
-          if (!isMounted) return;
-          try {
-            const data = JSON.parse(event.data);
-            if (data.scanning) {
-              setMobileScanningInfo({
-                ipPrefix: data.ipPrefix || '***',
-                timestamp: Date.now(),
-              });
-            }
-            if (data.unlocked) {
-              startRemoteUnlockSequence(data.ipPrefix);
-            }
-          } catch {}
-        };
-      }
-    } catch {}
-
-    // B. Ultra-reliable polling every 250ms across all networks & proxies
-    const pollStatus = async () => {
-      if (!isMounted || unlockedRef.current || remoteTriggeredRef.current) return;
-      try {
-        const res = await fetch(`/api/auth/session/status?sessionId=${encodeURIComponent(sessionId)}`);
-        if (res.ok && isMounted) {
-          const data = await res.json();
-          if (data.scanning) {
-            setMobileScanningInfo((prev) => {
-              if (prev && prev.ipPrefix === data.ipPrefix) return prev;
-              return {
-                ipPrefix: data.ipPrefix || '***',
-                timestamp: Date.now(),
-              };
-            });
-          }
-          if (data.unlocked) {
-            startRemoteUnlockSequence(data.ipPrefix);
-          }
-        }
-      } catch {}
-    };
-
-    pollStatus();
-    pollTimer = setInterval(pollStatus, 250);
-
-    // C. Local BroadcastChannel (cross-tab / same machine)
-    let bc: BroadcastChannel | null = null;
-    try {
-      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-        bc = new BroadcastChannel('roadto2000_auth_channel');
-        bc.onmessage = (event) => {
-          if (!isMounted) return;
-          if (event.data?.type === 'MOBILE_SCAN_STARTED' && event.data?.sessionId === sessionId) {
-            setMobileScanningInfo({
-              ipPrefix: event.data.ipPrefix || '***',
-              timestamp: Date.now(),
-            });
-          }
-          if (event.data?.type === 'MOBILE_UNLOCKED' && event.data?.sessionId === sessionId) {
-            startRemoteUnlockSequence(event.data.ipPrefix);
-          }
-        };
-      }
-    } catch {}
-
-    // D. LocalStorage event listener
-    const handleStorageEvent = (e: StorageEvent) => {
-      if (!isMounted) return;
-      if (e.key === `roadto2000_scanning_${sessionId}` && e.newValue) {
-        try {
-          const parsed = JSON.parse(e.newValue);
-          setMobileScanningInfo({
-            ipPrefix: parsed.ipPrefix || '***',
-            timestamp: parsed.timestamp || Date.now(),
-          });
-        } catch {}
-      }
-      if (e.key === `roadto2000_unlocked_${sessionId}` && e.newValue === 'true') {
-        startRemoteUnlockSequence();
-      }
-    };
-
-    window.addEventListener('storage', handleStorageEvent);
-
-    return () => {
-      isMounted = false;
-      if (pollTimer) clearInterval(pollTimer);
-      if (sse) sse.close();
-      if (bc) bc.close();
-      window.removeEventListener('storage', handleStorageEvent);
-    };
-  }, [isOpen, sessionId, startRemoteUnlockSequence]);
-
-  // Handle 6-digit code verification (Session code or TOTP Authenticator code)
+  // Verify the 6-digit TOTP code
   const handleVerify = async (e?: React.FormEvent, directCode?: string) => {
     if (e) e.preventDefault();
     setErrorMessage('');
-    const input = (directCode !== undefined ? directCode : codeOrPassword).trim().replace(/\D/g, '');
+    const input = (directCode !== undefined ? directCode : code).trim().replace(/\D/g, '');
 
     if (!input) {
-      setErrorMessage('Veuillez scanner le QR Code avec votre smartphone ou saisir le code d\'activation à 6 chiffres.');
+      setErrorMessage('Veuillez saisir le code à 6 chiffres affiché sur votre application Authenticator.');
       return;
     }
 
     if (input.length !== 6) {
-      setErrorMessage('Le code d\'activation mobile doit comporter exactement 6 chiffres.');
+      setErrorMessage('Le code doit comporter exactement 6 chiffres.');
       return;
     }
 
     setIsVerifying(true);
 
     try {
-      // 1. Check against deterministic 6-digit session validation code
-      if (input === expectedMobileCode) {
-        startRemoteUnlockSequence('Code mobile validé');
+      const isValid = await verifyTotpCode(input, secretKey);
+
+      if (isValid) {
+        // Confirm enrollment so QR code is permanently masked on future visits
+        setTotpEnrolled(true);
+        setIsEnrolled(true);
+        setShowPairingQr(false);
+
+        // Visual unlock progress sequence
+        setUnlockingState({
+          step: 1,
+          message: 'Code Microsoft Authenticator validé !',
+        });
+
+        setTimeout(() => {
+          setUnlockingState({
+            step: 2,
+            message: 'Attribution des privilèges administrateur...',
+          });
+        }, 450);
+
+        setTimeout(() => {
+          setUnlockingState({
+            step: 3,
+            message: 'Ouverture de votre session...',
+          });
+        }, 850);
+
+        setTimeout(() => {
+          completeUnlock();
+        }, 1300);
         return;
       }
 
-      // 2. Check against TOTP (Google Authenticator / Apple Passwords)
-      const isTotpMatch = await verifyTotpCode(input);
-      if (isTotpMatch) {
-        startRemoteUnlockSequence('Code Authenticator validé');
-        return;
-      }
-
-      // 3. Check with backend server verify-code endpoint
-      const serverRes = await fetch('/api/auth/session/verify-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, code: input }),
-      });
-
-      if (serverRes.ok) {
-        const data = await serverRes.json();
-        if (data.unlocked) {
-          startRemoteUnlockSequence(data.reason === 'totp_authenticator' ? 'Authenticator' : 'Code serveur');
-          return;
-        }
-      }
-
-      setErrorMessage('Code à 6 chiffres incorrect. Saisissez le code affiché sur votre smartphone ou dans votre application Authenticator.');
+      setErrorMessage('Code incorrect ou expiré. Entrez les 6 chiffres affichés en ce moment dans votre application Authenticator.');
     } catch {
       setErrorMessage('Une erreur est survenue lors de la vérification.');
     } finally {
@@ -340,9 +172,9 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     }
   };
 
-  const handleCodeInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const cleaned = e.target.value.replace(/\D/g, '').slice(0, 6);
-    setCodeOrPassword(cleaned);
+    setCode(cleaned);
     setErrorMessage('');
     // Auto-verify as soon as 6 digits are typed!
     if (cleaned.length === 6) {
@@ -350,13 +182,45 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     }
   };
 
-  const activeQrUrl = scanMode === 'web' ? webQrDataUrl : totpQrDataUrl;
+  // Authorize QR code reveal with master password (Alpha604)
+  const handleAuthorizeQrReveal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setQrRevealError('');
+    setIsAuthorizingQrReveal(true);
+
+    try {
+      const isValid = await verifyAdminPassword(adminUnlockPassword);
+      if (isValid) {
+        setShowPairingQr(true);
+        setShowAdminPasswordInput(false);
+        setAdminUnlockPassword('');
+      } else {
+        setQrRevealError('Mot de passe administrateur incorrect.');
+      }
+    } catch {
+      setQrRevealError('Erreur de vérification.');
+    } finally {
+      setIsAuthorizingQrReveal(false);
+    }
+  };
+
+  // Regenerate a brand new unique private secret (invalidates any old phone)
+  const handleRegenerateSecret = async () => {
+    if (window.confirm('Voulez-vous générer une NOUVELLE clé secrète ? Vos anciens codes Authenticator cesseront immédiatement de fonctionner et vous devrez rescanner le QR code avec votre téléphone.')) {
+      const newSec = generateNewTotpSecret();
+      setSecretKey(newSec);
+      setIsEnrolled(false);
+      setShowPairingQr(true);
+      setCode('');
+      onShowMessage('Nouvelle clé secrète générée. Scannez le nouveau QR code avec votre téléphone.', 'info');
+    }
+  };
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg rounded-2xl border border-neutral-800 bg-neutral-900 p-6 sm:p-8 shadow-2xl space-y-6">
+      <div className="relative w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-900 p-6 sm:p-8 shadow-2xl space-y-6">
         {/* Close Button */}
         <button
           onClick={onClose}
@@ -369,21 +233,21 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
         {/* Modal Header */}
         <div className="flex items-start gap-3.5 pr-8">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400">
-            <ShieldAlert className="h-6 w-6" />
+            <ShieldCheck className="h-6 w-6" />
           </div>
           <div>
             <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-              <span>Authentification 2FA Smartphone</span>
+              <span>Authentification 2FA Exclusive</span>
             </h3>
             <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-              Pour déverrouiller <strong className="text-amber-300">{actionTitle}</strong>, confirmez votre identité depuis votre smartphone.
+              Pour déverrouiller <strong className="text-amber-300">{actionTitle}</strong>, confirmez votre identité avec votre application Authenticator.
             </p>
           </div>
         </div>
 
-        {/* LIVE STATE 1: Remote Unlock in Progress Animation (PC visibly reacts!) */}
-        {remoteUnlockingState && !isUnlocked ? (
-          <div className="p-6 text-center space-y-4 bg-gradient-to-b from-amber-500/15 via-emerald-950/40 to-emerald-900/40 border border-emerald-500/40 rounded-2xl shadow-xl animate-in zoom-in-95 duration-300">
+        {/* STATE 1: Live Unlocking Sequence Animation */}
+        {unlockingState && !isUnlocked ? (
+          <div className="p-6 text-center space-y-4 bg-gradient-to-b from-amber-500/15 via-emerald-950/40 to-emerald-900/40 border border-emerald-500/40 rounded-2xl shadow-xl animate-in zoom-in-95 duration-200">
             <div className="relative mx-auto flex h-16 w-16 items-center justify-center">
               <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400/25 animate-ping" />
               <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/25 border border-emerald-500/60 text-emerald-300 shadow-[0_0_25px_rgba(16,185,129,0.4)]">
@@ -391,197 +255,131 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold uppercase tracking-wider border border-emerald-500/30">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
-                <span>Appareil Distant Connecté</span>
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold uppercase tracking-wider border border-emerald-500/30">
+                <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                <span>Code Microsoft / Google Authenticator Confirmé</span>
               </div>
-              <h4 className="text-base font-bold text-white pt-1">
-                Déverrouillage en direct par votre téléphone !
+              <h4 className="text-sm font-bold text-white pt-1">
+                {unlockingState.message}
               </h4>
-              <p className="text-xs text-neutral-300 leading-relaxed font-mono">
-                Source : <strong className="text-amber-300">{remoteUnlockingState.ipPrefix}</strong>
-              </p>
             </div>
 
-            {/* Visual Step Progress */}
-            <div className="space-y-2 pt-2 max-w-sm mx-auto">
-              <div className="h-2.5 w-full bg-neutral-950 rounded-full overflow-hidden border border-neutral-800">
-                <div
-                  className="h-full bg-gradient-to-r from-amber-500 via-emerald-400 to-emerald-300 transition-all duration-700 ease-out"
-                  style={{ width: `${(remoteUnlockingState.step / 3) * 100}%` }}
-                />
-              </div>
-              <p className="text-xs text-emerald-300/90 font-medium animate-pulse">
-                {remoteUnlockingState.message}
-              </p>
+            <div className="h-2 w-full bg-neutral-950 rounded-full overflow-hidden border border-neutral-800 max-w-xs mx-auto">
+              <div
+                className="h-full bg-gradient-to-r from-amber-500 via-emerald-400 to-emerald-300 transition-all duration-500 ease-out"
+                style={{ width: `${(unlockingState.step / 3) * 100}%` }}
+              />
             </div>
           </div>
         ) : isUnlocked ? (
-          /* LIVE STATE 2: Unlocked Success confirmation */
+          /* STATE 2: Unlocked Success State */
           <div className="p-8 text-center space-y-3 bg-emerald-950/30 border border-emerald-600/50 rounded-2xl animate-in zoom-in-95">
             <CheckCircle2 className="h-12 w-12 text-emerald-400 mx-auto animate-bounce" />
             <h4 className="text-base font-bold text-emerald-300">Session Administrateur Active !</h4>
             <p className="text-xs text-neutral-400">Application des droits d'administration en cours...</p>
           </div>
         ) : (
-          /* NORMAL STATE: QR Code, Mode Selector, Waiting status & Activation Code Form */
+          /* STATE 3: Primary 2FA Code Input (With Protected QR Code Pairing) */
           <div className="space-y-5">
-            {/* Mode Switcher: Web Mobile vs Google Authenticator */}
-            <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-neutral-950 border border-neutral-800 text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => setScanMode('web')}
-                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg transition-all ${
-                  scanMode === 'web'
-                    ? 'bg-amber-500 text-neutral-950 shadow font-bold'
-                    : 'text-neutral-400 hover:text-white'
-                }`}
-              >
-                <Smartphone className="h-3.5 w-3.5" />
-                <span>Page Web Mobile</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setScanMode('authenticator')}
-                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg transition-all ${
-                  scanMode === 'authenticator'
-                    ? 'bg-amber-500 text-neutral-950 shadow font-bold'
-                    : 'text-neutral-400 hover:text-white'
-                }`}
-              >
-                <ShieldCheck className="h-3.5 w-3.5" />
-                <span>Google Authenticator</span>
-              </button>
-            </div>
-
-            {/* Step 1: QR Code & Instructions */}
-            <div className="flex flex-col sm:flex-row items-center gap-5 rounded-xl border border-neutral-800/80 bg-neutral-950/80 p-4 sm:p-5">
-              <div className="relative shrink-0 flex items-center justify-center rounded-xl bg-white p-2.5 shadow-lg border border-neutral-700">
-                {activeQrUrl ? (
-                  <img
-                    src={activeQrUrl}
-                    alt="QR Code de connexion mobile 2FA"
-                    className="h-36 w-36 sm:h-40 sm:w-40 object-contain rounded"
-                  />
-                ) : (
-                  <div className="h-36 w-36 sm:h-40 sm:w-40 flex items-center justify-center text-neutral-400">
-                    <QrCode className="h-10 w-10 animate-pulse text-amber-500" />
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2.5 text-xs text-neutral-300">
-                <div className="flex items-center gap-2 text-amber-400 font-semibold uppercase tracking-wider text-[11px]">
-                  {scanMode === 'web' ? <Smartphone className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
-                  <span>{scanMode === 'web' ? 'Scan Direct Par Appareil Photo' : '100% Hors-Ligne Sans Connexion'}</span>
+            {/* PAIRING QR CODE SECTION (Only shown during setup or when explicitly unlocked by the owner) */}
+            {showPairingQr ? (
+              <div className="rounded-xl border border-amber-500/30 bg-neutral-950/90 p-4 space-y-3 animate-in fade-in">
+                <div className="flex items-center justify-between text-xs border-b border-neutral-800 pb-2">
+                  <span className="font-bold text-amber-400 flex items-center gap-1.5">
+                    <QrCode className="h-4 w-4" />
+                    <span>Jumelage Initial (À scanner une seule fois)</span>
+                  </span>
+                  {isEnrolled && (
+                    <button
+                      type="button"
+                      onClick={() => setShowPairingQr(false)}
+                      className="text-[11px] text-neutral-400 hover:text-white"
+                    >
+                      Masquer le QR Code
+                    </button>
+                  )}
                 </div>
 
-                {scanMode === 'web' ? (
-                  <ol className="space-y-1.5 text-neutral-300/90 list-decimal list-inside leading-relaxed text-[11px]">
-                    <li>
-                      Scannez ce QR Code avec l'<strong>appareil photo</strong> de votre téléphone.
-                    </li>
-                    <li>
-                      Si votre téléphone partage votre <strong>IP de confiance</strong>, le déverrouillage est instantané !
-                    </li>
-                    <li>
-                      Sinon, tapez votre mot de passe et cliquez sur <strong>Déverrouiller à distance</strong>.
-                    </li>
-                  </ol>
-                ) : (
-                  <ol className="space-y-1.5 text-neutral-300/90 list-decimal list-inside leading-relaxed text-[11px]">
-                    <li>
-                      Ouvrez <strong>Google Authenticator</strong>, <strong>Microsoft Authenticator</strong> ou l'<strong>Appareil Photo iPhone</strong>.
-                    </li>
-                    <li>
-                      Scannez ce QR Code pour obtenir votre code à 6 chiffres instantanément.
-                    </li>
-                    <li>
-                      Saisissez les 6 chiffres ci-dessous pour déverrouiller cet ordinateur.
-                    </li>
-                  </ol>
-                )}
-
-                {/* Real-Time Live Presence Indicator (in web mode) */}
-                {scanMode === 'web' && (
-                  mobileScanningInfo ? (
-                    <div className="pt-1.5 p-2 rounded-lg border border-amber-500/40 bg-amber-500/15 text-amber-200 animate-in fade-in space-y-0.5">
-                      <div className="flex items-center gap-2 text-[11px] font-bold text-white">
-                        <span className="relative flex h-2.5 w-2.5 shrink-0">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
-                        </span>
-                        <span>📱 Téléphone connecté en direct !</span>
-                      </div>
-                      <p className="text-[10px] text-neutral-300 leading-snug">
-                        Validation en cours avec l'IP :{' '}
-                        <strong className="font-mono text-amber-300 font-bold tracking-wider">{mobileScanningInfo.ipPrefix}</strong>
-                      </p>
-                    </div>
+                <div className="flex items-center justify-center p-2 rounded-xl bg-white shadow-lg border border-neutral-700 max-w-[200px] mx-auto">
+                  {qrDataUrl ? (
+                    <img
+                      src={qrDataUrl}
+                      alt="QR Code Microsoft Authenticator"
+                      className="h-44 w-44 object-contain rounded"
+                    />
                   ) : (
-                    <div className="pt-1 flex items-center gap-2 text-[10px] text-amber-400/90 font-mono">
-                      <Radio className="h-3 w-3 animate-pulse text-amber-400" />
-                      <span>En attente du scan par votre smartphone...</span>
+                    <div className="h-44 w-44 flex items-center justify-center text-neutral-400">
+                      <QrCode className="h-10 w-10 animate-pulse text-amber-500" />
                     </div>
-                  )
-                )}
-              </div>
-            </div>
-
-            {/* Mobile Link Helper (Strictly no simulator link on PC as requested!) */}
-            {mobileUrl && scanMode === 'web' && (
-              <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-neutral-950/90 border border-neutral-800 text-[11px]">
-                <div className="flex items-center gap-1.5 text-neutral-400 truncate">
-                  <Smartphone className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                  <span className="text-neutral-400 font-medium">Lien d'accès smartphone :</span>
-                  <span className="font-mono text-[10px] text-neutral-500 truncate">{mobileUrl.replace(/^https?:\/\//, '').split('&')[0]}</span>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (navigator?.clipboard) {
-                      navigator.clipboard.writeText(mobileUrl);
-                      setCopiedUrl(true);
-                      setTimeout(() => setCopiedUrl(false), 2000);
-                    }
-                  }}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white transition-colors shrink-0 font-medium text-[11px]"
-                >
-                  {copiedUrl ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
-                  <span>{copiedUrl ? 'Copié !' : 'Copier lien mobile'}</span>
-                </button>
+
+                <p className="text-[11px] text-neutral-300 text-center leading-relaxed">
+                  Scannez ce QR Code dans <strong>Microsoft Authenticator</strong> ou <strong>Google Authenticator</strong>.
+                  <br />
+                  <span className="text-amber-300 text-[10px]">
+                    Une fois jumelé, le QR Code sera masqué pour garantir que vous seul possédez les codes sur votre téléphone.
+                  </span>
+                </p>
+
+                {/* Secret Key in text for manual entry */}
+                <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-[11px] font-mono">
+                  <span className="text-neutral-400 truncate">Clé : <strong className="text-amber-300">{secretKey}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (navigator?.clipboard) {
+                        navigator.clipboard.writeText(secretKey);
+                        setCopiedSecret(true);
+                        setTimeout(() => setCopiedSecret(false), 2000);
+                      }
+                    }}
+                    className="text-neutral-300 hover:text-white shrink-0 p-1 rounded"
+                    title="Copier la clé secrète"
+                  >
+                    <Copy className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* MASKED PAIRING STATE: Informative Privacy Banner */
+              <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 text-xs">
+                <div className="flex items-center gap-2 text-emerald-300">
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400" />
+                  <span className="font-semibold text-[11px]">Votre téléphone est jumelé et sécurisé</span>
+                </div>
+                <span className="text-[10px] text-neutral-400 font-mono">QR Code masqué</span>
               </div>
             )}
 
-            {/* Step 2: 6-digit Activation Code Manual Input */}
-            <form onSubmit={(e) => handleVerify(e)} className="space-y-3 pt-1 border-t border-neutral-800/80">
+            {/* 6-DIGIT CODE INPUT FORM */}
+            <form onSubmit={(e) => handleVerify(e)} className="space-y-4">
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-semibold text-neutral-200">
-                    Code d'activation mobile (6 chiffres)
+                    Code à 6 chiffres Microsoft / Google Authenticator
                   </label>
-                  <span className="text-[10px] text-amber-400 font-medium">
-                    {scanMode === 'web' ? 'Affiché sur votre smartphone' : 'Affiché dans Google Authenticator'}
+                  <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
+                    <Smartphone className="h-3 w-3" />
+                    <span>Sur votre smartphone</span>
                   </span>
                 </div>
 
-                <p className="text-[11px] text-neutral-400 leading-relaxed">
-                  Saisissez les 6 chiffres affichés sur votre smartphone (validation instantanée) :
-                </p>
-
                 <div className="relative pt-1">
                   <input
+                    ref={inputRef}
                     type="text"
                     inputMode="numeric"
                     maxLength={6}
-                    value={codeOrPassword}
-                    onChange={handleCodeInputChange}
+                    value={code}
+                    onChange={handleCodeChange}
                     placeholder="••••••"
-                    className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-xl font-mono font-bold tracking-[0.4em] text-center text-amber-300 placeholder-neutral-700 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    autoFocus
+                    className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3.5 text-2xl font-mono font-bold tracking-[0.4em] text-center text-amber-300 placeholder-neutral-700 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-all shadow-inner"
                   />
                   <div className="absolute inset-y-0 right-0 flex items-center pr-3.5 pointer-events-none text-neutral-500 pt-1">
-                    <KeyRound className="h-4 w-4" />
+                    <KeyRound className="h-5 w-5" />
                   </div>
                 </div>
 
@@ -595,7 +393,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
 
               <div className="flex items-center justify-between gap-3 pt-1">
                 <span className="text-[10px] text-neutral-500 italic">
-                  Se déverrouille automatiquement dès 6 chiffres saisis
+                  Validation instantanée dès les 6 chiffres saisis
                 </span>
 
                 <div className="flex items-center gap-2">
@@ -608,15 +406,77 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                   </button>
                   <button
                     type="submit"
-                    disabled={isVerifying || codeOrPassword.trim().length !== 6}
+                    disabled={isVerifying || code.trim().length !== 6}
                     className="flex items-center gap-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 px-4 py-2 text-xs font-bold transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] disabled:opacity-40"
                   >
                     <Lock className="h-3.5 w-3.5" />
-                    <span>{isVerifying ? 'Vérification...' : 'Valider le code'}</span>
+                    <span>{isVerifying ? 'Vérification...' : 'Valider'}</span>
                   </button>
                 </div>
               </div>
             </form>
+
+            {/* RE-PAIRING / PRIVACY OPTIONS (Protected to ensure ONLY the owner can re-pair) */}
+            {!showPairingQr && (
+              <div className="pt-2 border-t border-neutral-800 text-center space-y-2">
+                {!showAdminPasswordInput ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminPasswordInput(true)}
+                    className="text-[11px] text-neutral-400 hover:text-amber-300 underline transition-colors"
+                  >
+                    Changer de smartphone / Afficher le QR Code de jumelage
+                  </button>
+                ) : (
+                  <form onSubmit={handleAuthorizeQrReveal} className="p-3 rounded-xl bg-neutral-950 border border-neutral-800 space-y-2.5 text-left animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-neutral-300">
+                        Entrez votre mot de passe pour révéler le QR Code
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowAdminPasswordInput(false)}
+                        className="text-[10px] text-neutral-500 hover:text-neutral-300"
+                      >
+                        Fermer
+                      </button>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={adminUnlockPassword}
+                        onChange={(e) => setAdminUnlockPassword(e.target.value)}
+                        placeholder="Mot de passe"
+                        className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:border-amber-500 focus:outline-none"
+                      />
+                      <button
+                        type="submit"
+                        disabled={isAuthorizingQrReveal || !adminUnlockPassword}
+                        className="rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 px-3 py-1.5 text-xs font-bold transition-all disabled:opacity-40"
+                      >
+                        {isAuthorizingQrReveal ? '...' : 'Révéler'}
+                      </button>
+                    </div>
+
+                    {qrRevealError && (
+                      <p className="text-[10px] text-rose-400 font-medium">{qrRevealError}</p>
+                    )}
+
+                    <div className="pt-1 flex items-center justify-between text-[10px]">
+                      <span className="text-neutral-500">Sécurité anti-espionnage</span>
+                      <button
+                        type="button"
+                        onClick={handleRegenerateSecret}
+                        className="text-amber-400 hover:text-amber-300 underline"
+                      >
+                        Générer une NOUVELLE clé
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
