@@ -356,6 +356,15 @@ async function startServer() {
     });
   });
 
+// Deterministic 6-digit session activation code generator
+function generateSessionValidationCode(sessionId: string): string {
+  let sum = 0;
+  for (let i = 0; i < sessionId.length; i++) {
+    sum = (sum * 31 + sessionId.charCodeAt(i)) % 900000;
+  }
+  return (100000 + (sum % 900000)).toString();
+}
+
   // 6. Smartphone unlocks remote session (after typing password or trusted IP)
   app.post('/api/auth/session/unlock', (req: Request, res: Response) => {
     const { sessionId, reason } = req.body || {};
@@ -395,6 +404,47 @@ async function startServer() {
     });
   });
 
+  // 6b. Verify 6-digit activation code submitted from desktop or phone
+  app.post('/api/auth/session/verify-code', (req: Request, res: Response) => {
+    const { sessionId, code } = req.body || {};
+    if (!sessionId || typeof sessionId !== 'string') {
+      res.status(400).json({ error: 'sessionId required' });
+      return;
+    }
+
+    const cleanCode = String(code || '').trim();
+    const expected = generateSessionValidationCode(sessionId);
+
+    if (cleanCode === expected) {
+      const realClientIp = extractClientIp(req);
+      let session = sessions.get(sessionId);
+      if (!session) {
+        session = {
+          sessionId,
+          scanning: true,
+          ipPrefix: formatIpPrefix(realClientIp),
+          detectedIp: realClientIp,
+          unlocked: true,
+          unlockReason: 'activation_code',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+      } else {
+        session.unlocked = true;
+        session.unlockReason = 'activation_code';
+        session.updatedAt = Date.now();
+      }
+
+      sessions.set(sessionId, session);
+      broadcastSessionUpdate(session);
+
+      res.json({ success: true, unlocked: true });
+      return;
+    }
+
+    res.status(401).json({ success: false, error: 'Code d\'activation incorrect' });
+  });
+
   // 7. Polling endpoint for session status
   app.get('/api/auth/session/status', (req: Request, res: Response) => {
     const sessionId = String(req.query.sessionId || '');
@@ -427,7 +477,7 @@ async function startServer() {
     });
   });
 
-  // 7. Server-Sent Events (SSE) stream for instant real-time push to desktop
+  // 7b. Server-Sent Events (SSE) stream for instant real-time push to desktop
   app.get('/api/auth/session/events', (req: Request, res: Response) => {
     const sessionId = String(req.query.sessionId || '');
     if (!sessionId) {
@@ -453,12 +503,22 @@ async function startServer() {
     res.write(`data: ${JSON.stringify(current)}\n\n`);
 
     const listener: SSEListener = (data) => {
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
+      try {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      } catch {}
     };
 
     addSessionListener(sessionId, listener);
 
+    // Keepalive ping every 10s to prevent proxy connection drops
+    const keepAliveTimer = setInterval(() => {
+      try {
+        res.write(': keepalive\n\n');
+      } catch {}
+    }, 10000);
+
     req.on('close', () => {
+      clearInterval(keepAliveTimer);
       removeSessionListener(sessionId, listener);
     });
   });

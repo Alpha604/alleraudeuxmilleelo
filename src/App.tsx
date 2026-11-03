@@ -55,7 +55,7 @@ export default function App() {
   const [mobileAuthSessionId, setMobileAuthSessionId] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     const params = new URLSearchParams(window.location.search);
-    return params.get('mobile_auth');
+    return params.get('mobile_auth') || params.get('mobileAuth');
   });
 
   // Strict Iframe & Embed Mode Detection

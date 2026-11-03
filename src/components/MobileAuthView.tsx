@@ -51,7 +51,9 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
   const [isCheckingIp, setIsCheckingIp] = useState<boolean>(true);
   const [hasSentUnlock, setHasSentUnlock] = useState<boolean>(false);
 
-  // Common unlock execution function
+  const [resentSuccess, setResentSuccess] = useState<boolean>(false);
+
+  // Common unlock execution function with burst retry guarantee
   const executeUnlock = async (reason: 'password' | 'trusted_ip') => {
     const code = generateSessionValidationCode(sessionId);
     setGeneratedCode(code);
@@ -65,15 +67,23 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
     setAdminSession();
 
     // 2. Transmit unlock to server to unlock PC in real-time across devices!
-    try {
-      await fetch('/api/auth/session/unlock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, reason }),
-      });
-    } catch (e) {
-      console.warn('Server remote unlock error:', e);
-    }
+    const sendServerUnlock = async () => {
+      try {
+        await fetch('/api/auth/session/unlock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, reason }),
+        });
+      } catch (e) {
+        console.warn('Server remote unlock error:', e);
+      }
+    };
+
+    // Burst transmissions to guarantee arrival across mobile cellular latency
+    sendServerUnlock();
+    setTimeout(sendServerUnlock, 400);
+    setTimeout(sendServerUnlock, 1200);
+    setTimeout(sendServerUnlock, 2500);
 
     // 3. Transmit unlock to desktop via localStorage and BroadcastChannel (same-machine fallback)
     try {
@@ -92,13 +102,21 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
 
   // Re-broadcast remote unlock signal
   const handleResendUnlock = async () => {
-    try {
-      await fetch('/api/auth/session/unlock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, reason: 'resend' }),
-      });
-    } catch {}
+    setResentSuccess(true);
+    setTimeout(() => setResentSuccess(false), 2000);
+
+    const sendResend = async () => {
+      try {
+        await fetch('/api/auth/session/unlock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, reason: 'resend' }),
+        });
+      } catch {}
+    };
+
+    sendResend();
+    setTimeout(sendResend, 500);
 
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
@@ -116,6 +134,7 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
   // and check if real IP is verified as trusted by the server (never trusting URL parameters!)
   useEffect(() => {
     let isMounted = true;
+    let heartbeatTimer: any = null;
 
     async function notifyScanAndCheckRealIp() {
       setIsCheckingIp(true);
@@ -173,8 +192,19 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
 
     notifyScanAndCheckRealIp();
 
+    // Keepalive presence heartbeat every 4 seconds
+    heartbeatTimer = setInterval(() => {
+      if (!isMounted) return;
+      fetch('/api/auth/session/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      }).catch(() => {});
+    }, 4000);
+
     return () => {
       isMounted = false;
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
     };
   }, [sessionId]);
 
@@ -282,10 +312,23 @@ export const MobileAuthView: React.FC<MobileAuthViewProps> = ({
                 <button
                   type="button"
                   onClick={handleResendUnlock}
-                  className="w-full flex items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 py-2.5 text-xs font-semibold transition-colors"
+                  className={`w-full flex items-center justify-center gap-2 rounded-xl border py-2.5 text-xs font-semibold transition-all ${
+                    resentSuccess
+                      ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300'
+                      : 'border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300'
+                  }`}
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  <span>Renvoyer le déverrouillage à distance</span>
+                  {resentSuccess ? (
+                    <>
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                      <span>Signal de déverrouillage réémis avec succès !</span>
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      <span>Renvoyer le déverrouillage à distance</span>
+                    </>
+                  )}
                 </button>
 
                 <button
