@@ -41,9 +41,9 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
   startDateStr = DEFAULT_START_DATE,
   targetDateStr = DEFAULT_TARGET_DATE,
 }) => {
-  // Calendar view month state (start at October 2026 or current date)
-  const [viewDate, setViewDate] = useState<Date>(() => new Date(2026, 9, 31)); // Oct 2026
-  const [selectedDate, setSelectedDate] = useState<Date>(() => new Date(2026, 9, 31));
+  // Calendar view month state (start at current date)
+  const [viewDate, setViewDate] = useState<Date>(() => new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
 
   const monthNames = [
     'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
@@ -56,25 +56,26 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
 
   // Find monthly milestone for current viewed month
   const currentMonthMilestone = useMemo(() => {
-    return milestones.find((m) => m.monthKey === currentMonthKey) || {
-      monthKey: currentMonthKey,
-      label: `${monthNames[month]} ${year}`,
-      targetElo: Math.round(
-        calculateLinearElo(
-          new Date(year, month + 1, 0, 23, 59, 59),
-          startDateStr,
-          targetDateStr,
-          startElo,
-          targetElo
-        )
-      ),
-    };
+    return (
+      milestones.find((m) => m.monthKey === currentMonthKey) || {
+        monthKey: currentMonthKey,
+        label: `${monthNames[month]} ${year}`,
+        targetElo: Math.round(
+          calculateLinearElo(
+            new Date(year, month + 1, 0, 23, 59, 59),
+            startDateStr,
+            targetDateStr,
+            startElo,
+            targetElo
+          )
+        ),
+      }
+    );
   }, [milestones, currentMonthKey, month, year, startDateStr, targetDateStr, startElo, targetElo]);
 
   // Days in current month grid
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDayIndex = new Date(year, month, 1).getDay(); // 0 is Sunday
-  // Convert to Monday = 0
   const mondayOffset = (firstDayIndex + 6) % 7;
 
   // Real data by day map
@@ -133,18 +134,18 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-neutral-100 dark:text-neutral-100 light:text-neutral-900 flex items-center gap-2">
+          <h2 className="text-xl font-bold text-neutral-100 dark:text-neutral-100 light:text-neutral-900 flex items-center gap-2.5">
             <CalendarIcon className="h-5 w-5 text-amber-400" />
             <span>Calendrier Des Paliers & Trajectoire Temporelle</span>
           </h2>
-          <p className="text-xs text-neutral-400">
-            Sélectionnez une date pour consulter l'Elo théorique requis et vérifier votre avancement.
+          <p className="text-xs text-neutral-400 mt-1">
+            Explorez chaque journée du calendrier pour comparer votre Elo au niveau théorique planifié.
           </p>
         </div>
 
         {/* Milestone reached celebration badge */}
         {currentElo >= currentMonthMilestone.targetElo && (
-          <div className="inline-flex items-center gap-2 rounded-lg bg-amber-500/15 border border-amber-500/30 px-3 py-1.5 text-xs font-semibold text-amber-300">
+          <div className="inline-flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/30 px-3.5 py-1.5 text-xs font-semibold text-amber-300">
             <Sparkles className="h-4 w-4 text-amber-400" />
             <span>Palier de {monthNames[month]} validé ({currentElo} ≥ {currentMonthMilestone.targetElo}) !</span>
           </div>
@@ -153,19 +154,19 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Interactive Calendar Grid */}
-        <div className="lg:col-span-7 rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/90 light:border-neutral-200 light:bg-white">
+        <div className="lg:col-span-7 rounded-3xl border border-neutral-800 bg-[#0c0e14] p-6 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-[#0c0e14] light:border-neutral-200 light:bg-white">
           {/* Calendar Month Navigation */}
           <div className="flex items-center justify-between pb-4 border-b border-neutral-800/80 dark:border-neutral-800/80 light:border-neutral-200">
-            <div className="flex items-center gap-2">
-              <span className="font-display text-base font-bold text-neutral-100 dark:text-neutral-100 light:text-neutral-900 capitalize">
+            <div className="flex items-center gap-3">
+              <span className="font-display text-lg font-bold text-neutral-100 dark:text-neutral-100 light:text-neutral-900 capitalize">
                 {monthNames[month]} {year}
               </span>
-              <span className="text-xs font-mono text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">
+              <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg">
                 Cible : {currentMonthMilestone.targetElo} Elo
               </span>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               <button
                 onClick={prevMonth}
                 className="h-8 w-8 rounded-lg border border-neutral-800 bg-neutral-950 flex items-center justify-center text-neutral-400 hover:text-white transition-colors"
@@ -184,7 +185,7 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
           </div>
 
           {/* Day of Week Headers */}
-          <div className="mt-4 grid grid-cols-7 text-center text-xs font-medium text-neutral-400">
+          <div className="mt-4 grid grid-cols-7 text-center text-xs font-semibold text-neutral-400">
             <div>Lun</div>
             <div>Mar</div>
             <div>Mer</div>
@@ -195,10 +196,10 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
           </div>
 
           {/* Calendar Days */}
-          <div className="mt-2 grid grid-cols-7 gap-1">
+          <div className="mt-2.5 grid grid-cols-7 gap-1.5">
             {/* Blank leading days */}
             {Array.from({ length: mondayOffset }).map((_, i) => (
-              <div key={`empty-${i}`} className="h-16 rounded-lg opacity-10 bg-neutral-950" />
+              <div key={`empty-${i}`} className="h-16 rounded-xl opacity-10 bg-neutral-950" />
             ))}
 
             {/* Days in Month */}
@@ -220,9 +221,9 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
                 <button
                   key={day}
                   onClick={() => setSelectedDate(dateObj)}
-                  className={`h-16 flex flex-col justify-between p-1.5 rounded-lg border text-left transition-all ${
+                  className={`h-16 flex flex-col justify-between p-2 rounded-xl border text-left transition-all ${
                     isSelected
-                      ? 'border-amber-500 bg-amber-500/15 ring-1 ring-amber-500'
+                      ? 'border-amber-500 bg-amber-500/15 ring-2 ring-amber-500/50 shadow-md'
                       : 'border-neutral-800/60 bg-neutral-950/60 hover:border-neutral-700 hover:bg-neutral-800/40'
                   }`}
                 >
@@ -235,12 +236,12 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
                       {day}
                     </span>
                     {realElo && (
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" title={`Sync: ${realElo}`} />
+                      <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" title={`Sync: ${realElo}`} />
                     )}
                   </div>
 
-                  <div className="font-mono text-[10px] text-neutral-400 flex flex-col">
-                    <span className="text-neutral-400">{theoreticalElo}</span>
+                  <div className="font-mono text-[10px] text-neutral-400 flex flex-col leading-tight">
+                    <span className="text-neutral-500">{theoreticalElo}</span>
                     {realElo ? (
                       <span className="text-amber-400 font-bold">{realElo}</span>
                     ) : null}
@@ -253,34 +254,34 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
 
         {/* Right: Selected Date Detail Panel */}
         <div className="lg:col-span-5 space-y-4">
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/90 light:border-neutral-200 light:bg-white">
+          <div className="rounded-3xl border border-neutral-800 bg-[#0c0e14] p-6 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-[#0c0e14] light:border-neutral-200 light:bg-white">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400 border-b border-neutral-800 pb-3">
               <Clock className="h-4 w-4 text-amber-400" />
               <span>Détails De La Date Sélectionnée</span>
             </div>
 
-            <h3 className="mt-3 font-display text-base font-bold text-neutral-100 capitalize">
+            <h3 className="mt-4 font-display text-base font-bold text-neutral-100 capitalize">
               {selectedDateMetrics.dateFormatted}
             </h3>
 
             <div className="mt-5 space-y-3">
-              <div className="flex items-center justify-between rounded-lg bg-neutral-950 p-3 border border-neutral-800/80">
+              <div className="flex items-center justify-between rounded-xl bg-neutral-950 p-3.5 border border-neutral-800/80">
                 <span className="text-xs text-neutral-400">Elo théorique cible :</span>
                 <span className="font-mono text-lg font-bold text-neutral-100">
                   {selectedDateMetrics.theoretical}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between rounded-lg bg-neutral-950 p-3 border border-neutral-800/80">
-                <span className="text-xs text-neutral-400">Elo réel enregistré ce jour :</span>
+              <div className="flex items-center justify-between rounded-xl bg-neutral-950 p-3.5 border border-neutral-800/80">
+                <span className="text-xs text-neutral-400">Elo réel enregistré :</span>
                 <span className="font-mono text-lg font-bold text-amber-400">
                   {selectedDateMetrics.realOnDate !== null
                     ? selectedDateMetrics.realOnDate
-                    : 'Aucun (Elo actuel: ' + currentElo + ')'}
+                    : 'Aucun relevé (Actuel : ' + currentElo + ')'}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between rounded-lg bg-neutral-950 p-3 border border-neutral-800/80">
+              <div className="flex items-center justify-between rounded-xl bg-neutral-950 p-3.5 border border-neutral-800/80">
                 <span className="text-xs text-neutral-400">Écart à la cible :</span>
                 <span
                   className={`font-mono text-base font-bold ${
@@ -291,19 +292,19 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
                 </span>
               </div>
 
-              <div className="flex items-center justify-between rounded-lg bg-neutral-950 p-3 border border-neutral-800/80">
-                <span className="text-xs text-neutral-400">Cible de fin de mois :</span>
+              <div className="flex items-center justify-between rounded-xl bg-neutral-950 p-3.5 border border-neutral-800/80">
+                <span className="text-xs text-neutral-400">Cible fin de mois :</span>
                 <span className="font-mono text-base font-bold text-neutral-300">
                   {currentMonthMilestone.targetElo} Elo
                 </span>
               </div>
             </div>
 
-            <div className="mt-5 rounded-lg border border-neutral-800 bg-neutral-950/60 p-3 text-xs text-neutral-400">
+            <div className="mt-5 rounded-xl border border-neutral-800 bg-neutral-950/60 p-3.5 text-xs text-neutral-400">
               {selectedDateMetrics.status === 'ahead' && (
                 <div className="text-emerald-400 flex items-center gap-1.5 font-medium">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  <span>En avance de {selectedDateMetrics.diff} pts par rapport à la courbe idéale !</span>
+                  <span>En avance de {selectedDateMetrics.diff} pts sur la trajectoire théorique !</span>
                 </div>
               )}
               {selectedDateMetrics.status === 'on_track' && (
@@ -315,25 +316,25 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
               {selectedDateMetrics.status === 'behind' && (
                 <div className="text-rose-400 flex items-center gap-1.5 font-medium">
                   <Clock className="h-4 w-4 shrink-0" />
-                  <span>Retard de {Math.abs(selectedDateMetrics.diff)} pts à combler pour cette échéance.</span>
+                  <span>Retard de {Math.abs(selectedDateMetrics.diff)} pts par rapport à la courbe.</span>
                 </div>
               )}
             </div>
           </div>
 
           {/* Quick list of Project Milestones */}
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/90 light:border-neutral-200 light:bg-white">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-400 border-b border-neutral-800 pb-2">
+          <div className="rounded-3xl border border-neutral-800 bg-[#0c0e14] p-6 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-[#0c0e14] light:border-neutral-200 light:bg-white">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-400 border-b border-neutral-800 pb-3">
               Paliers Clés Du Projet
             </h4>
 
-            <div className="mt-3 space-y-2 max-h-48 overflow-y-auto pr-1">
+            <div className="mt-3.5 space-y-2 max-h-52 overflow-y-auto pr-1">
               {milestones.map((m) => {
                 const isPassed = currentElo >= m.targetElo;
                 return (
                   <div
                     key={m.monthKey}
-                    className={`flex items-center justify-between text-xs p-2 rounded-lg border ${
+                    className={`flex items-center justify-between text-xs p-2.5 rounded-xl border transition-all ${
                       isPassed
                         ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
                         : 'border-neutral-800 bg-neutral-950/40 text-neutral-400'
@@ -341,9 +342,9 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
                   >
                     <div className="flex items-center gap-2">
                       {isPassed ? (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                        <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
                       ) : (
-                        <Clock className="h-3.5 w-3.5 text-neutral-500 shrink-0" />
+                        <Clock className="h-4 w-4 text-neutral-500 shrink-0" />
                       )}
                       <span>{m.label}</span>
                     </div>
