@@ -617,7 +617,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <form onSubmit={handleChangePassword} className="space-y-4 max-w-xl">
           <p className="text-xs text-neutral-300 leading-relaxed">
-            Ce mot de passe maître (par défaut : <strong>Alpha604</strong>) est requis pour autoriser l'affichage du QR code de jumelage ou modifier les paramètres sensibles.
+            Ce mot de passe maître confidentiel est requis pour autoriser l'affichage du QR code de jumelage ou modifier les paramètres sensibles.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

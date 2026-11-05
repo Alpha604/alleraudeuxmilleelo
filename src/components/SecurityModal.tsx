@@ -182,7 +182,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     }
   };
 
-  // Authorize QR code reveal with master password (Alpha604)
+  // Authorize QR code reveal with master password
   const handleAuthorizeQrReveal = async (e: React.FormEvent) => {
     e.preventDefault();
     setQrRevealError('');
