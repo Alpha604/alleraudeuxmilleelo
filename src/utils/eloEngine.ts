@@ -17,6 +17,13 @@ export const DEFAULT_TARGET_DATE = '2027-12-31T23:59:59';
 export const DEFAULT_START_ELO = 1500;
 export const DEFAULT_TARGET_ELO = 2000;
 
+export const MODE_START_ELOS: Record<string, number> = {
+  blitz: 1458,
+  rapid: 1289,
+  bullet: 1500,
+  auto: 1458,
+};
+
 /**
  * Calculates progress percentage between startElo and targetElo.
  * - If currentElo < startElo: returns 0% (never negative).

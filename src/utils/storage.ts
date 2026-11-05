@@ -205,7 +205,21 @@ export function getStoredSyncHistory(username?: string): SyncRecord[] {
       return true;
     });
 
-    return filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const sorted = filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    // Strictly 1 sync per calendar day: keep newest sync of each day
+    const seenDays = new Set<string>();
+    const onePerDay: SyncRecord[] = [];
+    for (const r of sorted) {
+      const d = new Date(r.timestamp);
+      const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (!seenDays.has(dayKey)) {
+        seenDays.add(dayKey);
+        onePerDay.push(r);
+      }
+    }
+
+    return onePerDay;
   } catch (e) {
     console.error('Failed to parse history:', e);
     return [];
@@ -219,7 +233,8 @@ export function saveStoredSyncHistory(history: SyncRecord[], username?: string):
 }
 
 /**
- * Adds a new sync record with duplicate detection, strictly bound to the username.
+ * Adds a new sync record with single-record-per-day enforcement.
+ * When resyncing on the same day, the older sync of today is automatically replaced.
  */
 export function addSyncRecord(
   data: Omit<SyncRecord, 'id'>,
@@ -228,22 +243,31 @@ export function addSyncRecord(
 ): { record: SyncRecord; isDuplicate: boolean; history: SyncRecord[] } {
   const targetUser = (username || data.username || getStoredSettings().username).trim().toLowerCase();
   const history = getStoredSyncHistory(targetUser);
-  const latest = history[0];
 
-  const nowMs = new Date(data.timestamp).getTime();
+  const syncDate = new Date(data.timestamp);
+  const dayKey = `${syncDate.getFullYear()}-${String(syncDate.getMonth() + 1).padStart(2, '0')}-${String(syncDate.getDate()).padStart(2, '0')}`;
+
+  // Find any existing sync from the same calendar day
+  const existingSameDay = history.find((r) => {
+    const d = new Date(r.timestamp);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === dayKey;
+  });
+
+  const nowMs = syncDate.getTime();
   const TEN_MINUTES_MS = 10 * 60 * 1000;
 
+  // Duplicate detection if ratings haven't changed within 10 minutes
   if (
     !force &&
-    latest &&
-    latest.bullet === data.bullet &&
-    latest.blitz === data.blitz &&
-    latest.rapid === data.rapid &&
-    latest.bestRating === data.bestRating &&
-    nowMs - new Date(latest.timestamp).getTime() < TEN_MINUTES_MS
+    existingSameDay &&
+    existingSameDay.bullet === data.bullet &&
+    existingSameDay.blitz === data.blitz &&
+    existingSameDay.rapid === data.rapid &&
+    existingSameDay.bestRating === data.bestRating &&
+    nowMs - new Date(existingSameDay.timestamp).getTime() < TEN_MINUTES_MS
   ) {
     return {
-      record: latest,
+      record: existingSameDay,
       isDuplicate: true,
       history,
     };
@@ -257,7 +281,13 @@ export function addSyncRecord(
 
   setLastSyncedUser(targetUser);
 
-  const updated = [newRecord, ...history].slice(0, 500); // Keep last 500 records per user
+  // Remove any earlier sync of the exact same day (prevents cluttering and keeps max 1 per day)
+  const historyWithoutToday = history.filter((r) => {
+    const d = new Date(r.timestamp);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` !== dayKey;
+  });
+
+  const updated = [newRecord, ...historyWithoutToday].slice(0, 500); // Keep max 500 records
   saveStoredSyncHistory(updated, targetUser);
 
   return {

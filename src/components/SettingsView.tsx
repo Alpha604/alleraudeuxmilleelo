@@ -29,7 +29,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { AppSettings, GameMode, TrajectoryModel } from '../types/chess';
-import { DEFAULT_SETTINGS } from '../utils/storage';
+import { DEFAULT_SETTINGS, getStoredSyncHistory } from '../utils/storage';
+import { SecurePurgeModal } from './SecurePurgeModal';
 import {
   addTrustedIp,
   getClientIp,
@@ -62,7 +63,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 }) => {
   const [form, setForm] = useState<AppSettings>(settings);
   const [isSaved, setIsSaved] = useState(false);
-  const [showPurgeModal, setShowPurgeModal] = useState(false);
+  const [secureModalOpen, setSecureModalOpen] = useState(false);
+  const [secureModalAction, setSecureModalAction] = useState<'purge' | 'reset'>('purge');
 
   // Change password state
   const [newPassword, setNewPassword] = useState('');
@@ -98,19 +100,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const handleReset = () => {
     if (isIframe) return;
-    if (!isAdmin) {
-      if (onOpenSecurityModal) onOpenSecurityModal('Réinitialisation des paramètres');
-      return;
-    }
-    setForm(DEFAULT_SETTINGS);
-    onSettingsUpdate(DEFAULT_SETTINGS);
-    onShowMessage('Paramètres réinitialisés aux valeurs officielles du projet (alpharomeo1500, 1500 → 2000 Elo).', 'info');
+    setSecureModalAction('reset');
+    setSecureModalOpen(true);
   };
 
-  const handleExecutePurge = () => {
-    setShowPurgeModal(false);
-    if (onPurgeAccountData) {
-      onPurgeAccountData();
+  const handleInitiatePurge = () => {
+    if (isIframe) return;
+    setSecureModalAction('purge');
+    setSecureModalOpen(true);
+  };
+
+  const handleExecuteSecureAction = () => {
+    if (secureModalAction === 'reset') {
+      setForm(DEFAULT_SETTINGS);
+      onSettingsUpdate(DEFAULT_SETTINGS);
+      onShowMessage('Paramètres réinitialisés avec succès aux valeurs officielles après double validation A2F.', 'success');
+    } else {
+      if (onPurgeAccountData) {
+        onPurgeAccountData();
+      }
+      onShowMessage(`Cache de @${form.username} purgé avec succès après double validation A2F.`, 'success');
     }
   };
 
@@ -548,7 +557,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             <button
               type="button"
-              onClick={() => setShowPurgeModal(true)}
+              onClick={handleInitiatePurge}
               className="flex items-center gap-2 rounded-lg border border-rose-800 bg-rose-950/60 hover:bg-rose-900 text-rose-200 px-4 py-2 text-xs font-bold transition-all shrink-0 active:scale-95"
             >
               <RefreshCw className="h-3.5 w-3.5" />
@@ -783,36 +792,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* Confirmation Modal for Hard Purge */}
-      {showPurgeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-rose-900/60 bg-neutral-900 p-6 shadow-2xl">
-            <div className="flex items-center gap-3 text-rose-400">
-              <AlertTriangle className="h-6 w-6" />
-              <h3 className="text-base font-bold text-white">Confirmer la purge du cache</h3>
-            </div>
-            <p className="mt-3 text-xs text-neutral-300 leading-relaxed">
-              Êtes-vous certain de vouloir purger le cache local ? Toutes les anciennes données enregistrées pour <strong>@{form.username}</strong> et les anciens comptes seront effacées. L'application se re-synchronisera immédiatement avec l'API officielle de Chess.com.
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowPurgeModal(false)}
-                className="px-4 py-2 text-xs font-medium text-neutral-400 hover:text-white"
-              >
-                Annuler
-              </button>
-              <button
-                type="button"
-                onClick={handleExecutePurge}
-                className="rounded-lg bg-rose-600 hover:bg-rose-500 px-4 py-2 text-xs font-bold text-white transition-colors"
-              >
-                Confirmer la purge
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Secure Purge / Reset Modal with Mandatory Backup & Double 2FA */}
+      <SecurePurgeModal
+        isOpen={secureModalOpen}
+        onClose={() => setSecureModalOpen(false)}
+        onConfirm={handleExecuteSecureAction}
+        actionType={secureModalAction}
+        username={form.username}
+        settings={form}
+        syncHistory={getStoredSyncHistory(form.username)}
+      />
     </div>
   );
 };

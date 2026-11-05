@@ -77,6 +77,13 @@ function formatDateToKey(d: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+export const MODE_START_ELOS: Record<ModeFilter, number> = {
+  blitz: 1458,
+  rapid: 1289,
+  bullet: 1500,
+  auto: 1458,
+};
+
 export const HistoryChart: React.FC<HistoryChartProps> = ({
   syncHistory,
   startElo = 1500,
@@ -87,6 +94,11 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   // 1. Controls & Filter States
   const [selectedMode, setSelectedMode] = useState<ModeFilter>('auto');
   const [activePreset, setActivePreset] = useState<QuickPreset>('progress');
+
+  // Mode-specific starting Elo requested by user (Blitz: 1458, Rapid: 1289)
+  const effectiveStartElo = useMemo(() => {
+    return MODE_START_ELOS[selectedMode] ?? startElo;
+  }, [selectedMode, startElo]);
   
   // Visual layer toggles
   const [showTargetLine, setShowTargetLine] = useState<boolean>(true);
@@ -132,7 +144,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     if (mode === 'blitz' && record.blitz !== null) return record.blitz;
     if (mode === 'rapid' && record.rapid !== null) return record.rapid;
     if (mode === 'bullet' && record.bullet !== null) return record.bullet;
-    return record.bestRating ?? startElo;
+    return record.bestRating ?? effectiveStartElo;
   };
 
   // 2. Full Unified Daily Timeline with CARRY-FORWARD (Plateau)
@@ -140,12 +152,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     // Map of days with direct syncs
     const dailySyncMap = new Map<string, { rating: number; mode: string; timestamp: number }>();
 
-    // Initial base point on project start date
+    // Initial base point on project start date with mode-specific start Elo
     const startObj = new Date(projectStartTime);
     startObj.setHours(0, 0, 0, 0);
     const startKey = formatDateToKey(startObj);
     dailySyncMap.set(startKey, {
-      rating: startElo,
+      rating: effectiveStartElo,
       mode: selectedMode === 'auto' ? 'Base Départ' : selectedMode.toUpperCase(),
       timestamp: startObj.getTime(),
     });
@@ -170,7 +182,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     const endBoundary = new Date(projectEndTime);
     endBoundary.setHours(0, 0, 0, 0);
 
-    let lastKnownElo = startElo;
+    let lastKnownElo = effectiveStartElo;
     let lastKnownMode = selectedMode === 'auto' ? 'Départ' : selectedMode.toUpperCase();
     let prevElo: number | null = null;
 
@@ -204,7 +216,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
       }
 
       const targetVal = Math.round(
-        calculateLinearElo(timestamp, startDateStr, targetDateStr, startElo, targetElo) * 10
+        calculateLinearElo(timestamp, startDateStr, targetDateStr, effectiveStartElo, targetElo) * 10
       ) / 10;
 
       const diff = realElo !== null ? Math.round(realElo - targetVal) : null;
@@ -348,21 +360,23 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   // Current real Elo
   const currentRealElo = useMemo(() => {
     const played = allChartData.filter((p) => p.realElo !== null);
-    return played.length > 0 ? played[played.length - 1].realElo! : startElo;
-  }, [allChartData, startElo]);
+    return played.length > 0 ? played[played.length - 1].realElo! : effectiveStartElo;
+  }, [allChartData, effectiveStartElo]);
 
   const targetToday = Math.round(
-    calculateLinearElo(todayObj.getTime(), startDateStr, targetDateStr, startElo, targetElo)
+    calculateLinearElo(todayObj.getTime(), startDateStr, targetDateStr, effectiveStartElo, targetElo)
   );
   const diffVsTarget = currentRealElo - targetToday;
 
   // Dynamic Y-axis scale based on data
   const { yMin, yMax, yTicks } = useMemo(() => {
     const elos = visibleRealPoints.map((p) => p.realElo!);
-    const minRating = Math.min(startElo, ...elos);
+    const minRating = Math.min(effectiveStartElo, ...elos);
     const maxRating = Math.max(targetElo, ...elos);
 
-    const calcYMin = Math.floor(Math.min(1400, minRating - 50) / 100) * 100;
+    // Rapid mode started at 1289 Elo: scale starts at 1200 Elo
+    const minThreshold = selectedMode === 'rapid' ? 1200 : 1400;
+    const calcYMin = Math.floor(Math.min(minThreshold, minRating - 50) / 100) * 100;
     const calcYMax = Math.ceil(Math.max(2050, maxRating + 50) / 100) * 100;
 
     const ticks: number[] = [];
@@ -370,7 +384,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
       ticks.push(y);
     }
     return { yMin: calcYMin, yMax: calcYMax, yTicks: ticks };
-  }, [visibleRealPoints, startElo, targetElo]);
+  }, [visibleRealPoints, effectiveStartElo, targetElo, selectedMode]);
 
   // Visible XAxis ticks
   const visibleTickKeys = useMemo(() => {
@@ -1052,14 +1066,14 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 />
               )}
 
-              {/* Departure 1500 Line */}
+              {/* Departure Line (Mode specific: Blitz 1458, Rapid 1289) */}
               <ReferenceLine
-                y={startElo}
+                y={effectiveStartElo}
                 stroke="#ffffff"
                 strokeDasharray="4 4"
                 strokeOpacity={0.4}
                 label={{
-                  value: `Départ ${startElo} Elo`,
+                  value: `Départ ${effectiveStartElo} Elo (${selectedMode.toUpperCase()})`,
                   fill: '#ffffff',
                   fontSize: 10,
                   position: 'insideTopLeft',
