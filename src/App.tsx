@@ -467,7 +467,12 @@ export default function App() {
   }, [syncHistory, currentElo, settings.startElo, settings.targetElo, activeBestMode]);
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans transition-colors dark:bg-neutral-950 dark:text-neutral-100 light:bg-neutral-100 light:text-neutral-900">
+    <div className="min-h-screen bg-[#07090e] text-neutral-100 flex flex-col font-sans transition-colors relative selection:bg-amber-500/25 selection:text-amber-200">
+      {/* Subtle Ambient Radial Lighting for deep tournament presence */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-gradient-to-b from-indigo-900/15 via-amber-500/[0.04] to-transparent blur-3xl opacity-70" />
+        <div className="absolute top-[600px] right-0 w-[500px] h-[500px] bg-emerald-500/[0.03] blur-3xl rounded-full" />
+      </div>
       {/* Top Bar Navigation */}
       <Navbar
         currentTab={currentTab}
@@ -603,25 +608,25 @@ export default function App() {
       )}
 
       {/* Editorial Clean Footer */}
-      <footer className="border-t border-neutral-800/80 bg-neutral-950/90 py-6 text-center text-xs text-neutral-500 transition-colors dark:border-neutral-800/80 dark:bg-neutral-950/90 light:border-neutral-200 light:bg-neutral-50">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <footer className="relative z-10 border-t border-white/[0.06] bg-[#070a10]/90 py-6 text-center text-xs text-neutral-400 transition-colors backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-neutral-400">Road to 2000 Elo</span>
-            <span aria-hidden="true">·</span>
-            <span>Programme officiel de performance sportive</span>
+            <span className="font-bold text-white tracking-wide">ROAD TO 2000 ELO</span>
+            <span aria-hidden="true" className="text-neutral-600">·</span>
+            <span>Programme Officiel de Performance Échiquéenne</span>
             {isIframe && (
               <>
-                <span aria-hidden="true">·</span>
+                <span aria-hidden="true" className="text-neutral-600">·</span>
                 <span className="text-amber-400 font-semibold">[Mode Iframe Consultation Seule]</span>
               </>
             )}
           </div>
           <div className="flex items-center gap-2 text-[11px] font-mono text-neutral-400">
             <span>Joueur : @{settings.username}</span>
-            <span aria-hidden="true">·</span>
+            <span aria-hidden="true" className="text-neutral-600">·</span>
             <span>Échéance : 31/12/2027</span>
-            <span aria-hidden="true">·</span>
-            <span>Fuseau : Europe/Paris</span>
+            <span aria-hidden="true" className="text-neutral-600">·</span>
+            <span>Europe/Paris</span>
           </div>
         </div>
       </footer>

@@ -257,11 +257,11 @@ export const SyncLog: React.FC<SyncLogProps> = ({
       )}
 
       {/* History Table */}
-      <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/90 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/90 light:border-neutral-200 light:bg-white">
+      <div className="overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0c1019]/90 shadow-[0_8px_30px_rgba(0,0,0,0.4)] backdrop-blur-xl">
         {history.length === 0 ? (
           <div className="p-12 text-center text-xs text-neutral-400">
             <Clock className="mx-auto h-8 w-8 text-neutral-600 mb-2" />
-            <p className="font-semibold text-neutral-300">Aucune synchronisation enregistrée pour @{username}.</p>
+            <p className="font-semibold text-white">Aucune synchronisation enregistrée pour @{username}.</p>
             <p className="mt-1">
               Les statistiques sont synchronisées périodiquement depuis l'API officielle Chess.com.
             </p>
@@ -270,13 +270,13 @@ export const SyncLog: React.FC<SyncLogProps> = ({
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="border-b border-neutral-800 bg-neutral-950/80 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                  <th className="py-3.5 px-4">Date & Heure (Paris)</th>
-                  <th className="py-3.5 px-4 text-right">Bullet</th>
-                  <th className="py-3.5 px-4 text-right">Blitz</th>
-                  <th className="py-3.5 px-4 text-right">Rapide</th>
-                  <th className="py-3.5 px-4 text-center">Meilleur Relevé</th>
-                  <th className="py-3.5 px-4">Source</th>
+                <tr className="border-b border-white/[0.06] bg-neutral-950/80 text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+                  <th className="py-4 px-5">Date & Heure (Paris)</th>
+                  <th className="py-4 px-5 text-right">Bullet</th>
+                  <th className="py-4 px-5 text-right">Blitz</th>
+                  <th className="py-4 px-5 text-right">Rapide</th>
+                  <th className="py-4 px-5 text-center">Meilleur Relevé</th>
+                  <th className="py-4 px-5">Source</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800/60 font-mono">

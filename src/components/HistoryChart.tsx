@@ -11,12 +11,9 @@ import {
   Compass,
   Layers,
   Milestone,
-  RotateCcw,
-  Sparkles,
   Target,
   TrendingDown,
   TrendingUp,
-  Trophy,
   Zap,
 } from 'lucide-react';
 import { SyncRecord } from '../types/chess';
@@ -147,20 +144,6 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     return list;
   }, [cadenceMode, sortedRecords]);
 
-  const bulletPointsData = useMemo(() => {
-    if (cadenceMode !== 'multi') return [];
-    const list: { t: number; elo: number }[] = [];
-    sortedRecords.forEach((record) => {
-      if (record.bullet !== null && record.bullet !== undefined) {
-        list.push({
-          t: new Date(record.timestamp).getTime(),
-          elo: record.bullet,
-        });
-      }
-    });
-    return list;
-  }, [cadenceMode, sortedRecords]);
-
   // Dynamic Elo bounds
   const visibleEloBounds = useMemo(() => {
     const relevantReal = realPointsData.map((p) => p.elo);
@@ -260,13 +243,6 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
       .join(' ');
   }, [rapidPointsData, getX, getY]);
 
-  const bulletLinePath = useMemo(() => {
-    if (bulletPointsData.length < 2) return '';
-    return bulletPointsData
-      .map((p, i) => `${i === 0 ? 'M' : 'L'} ${getX(p.t).toFixed(1)},${getY(p.elo).toFixed(1)}`)
-      .join(' ');
-  }, [bulletPointsData, getX, getY]);
-
   // Abscissa (X-Axis) Ticks
   const xTicks = useMemo(() => {
     const ticksCount = 7;
@@ -320,10 +296,10 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     return ticks;
   }, [visibleEloBounds]);
 
-  // Level bands definition (1500-1600, 1600-1700, 1700-1800, 1800-1900, 1900-2000)
+  // Level bands definition
   const levelBands = useMemo(() => {
     return [
-      { from: 1900, to: 2000, color: 'rgba(245, 158, 11, 0.07)', label: 'Zone Candidat Maître' },
+      { from: 1900, to: 2000, color: 'rgba(245, 158, 11, 0.08)', label: 'Zone Candidat Maître' },
       { from: 1800, to: 1900, color: 'rgba(168, 85, 247, 0.05)', label: 'Zone Expert' },
       { from: 1700, to: 1800, color: 'rgba(59, 130, 246, 0.05)', label: 'Zone Avancé' },
       { from: 1600, to: 1700, color: 'rgba(20, 184, 166, 0.05)', label: 'Zone Intermédiaire' },
@@ -424,20 +400,18 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   );
   const currentDiffVsTarget = currentRealElo - targetToday;
 
-  // Monthly required velocity
   const daysLeft = Math.max(1, Math.ceil((projectEndTime - Date.now()) / 86400000));
   const pointsRemaining = Math.max(0, targetElo - currentRealElo);
   const requiredPtsPerMonth = Math.round((pointsRemaining / (daysLeft / 30.4375)) * 10) / 10;
 
   return (
     <div className="space-y-6">
-      {/* 1. Executive Performance Dashboard Header */}
+      {/* 1. Tactical Command Bar (4 high-density metric chips) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Current Rating */}
-        <div className="rounded-2xl border border-neutral-800 bg-[#0e1117] p-5 shadow-lg">
+        <div className="rounded-3xl border border-white/[0.08] bg-[#0c1019]/80 p-5 backdrop-blur-xl shadow-lg">
           <div className="flex items-center justify-between text-xs text-neutral-400">
-            <span className="font-semibold uppercase tracking-wider">Classement Réel</span>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+            <span className="font-bold uppercase tracking-wider">Classement Actuel</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
               {currentBestMode}
             </span>
           </div>
@@ -448,18 +422,17 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             <span className="text-xs font-mono text-neutral-400">Elo</span>
           </div>
           <div className="mt-1 text-xs text-neutral-400 font-mono">
-            {trajectoryDelta >= 0 ? `+${trajectoryDelta}` : trajectoryDelta} pts depuis le départ (1500)
+            {trajectoryDelta >= 0 ? `+${trajectoryDelta}` : trajectoryDelta} pts depuis la base (1500)
           </div>
         </div>
 
-        {/* Card 2: Today's Target */}
-        <div className="rounded-2xl border border-neutral-800 bg-[#0e1117] p-5 shadow-lg">
+        <div className="rounded-3xl border border-white/[0.08] bg-[#0c1019]/80 p-5 backdrop-blur-xl shadow-lg">
           <div className="flex items-center justify-between text-xs text-neutral-400">
-            <span className="font-semibold uppercase tracking-wider">Cible Aujourd'hui</span>
+            <span className="font-bold uppercase tracking-wider">Cible Aujourd'hui</span>
             <Target className="h-4 w-4 text-amber-400" />
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="font-mono text-4xl font-black text-neutral-200 tabular-nums">
+            <span className="font-mono text-4xl font-black text-white tabular-nums">
               {targetToday}
             </span>
             <span className="text-xs font-mono text-neutral-400">Elo</span>
@@ -469,10 +442,9 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
           </div>
         </div>
 
-        {/* Card 3: Trajectory Pace (Advance/Delay) */}
-        <div className="rounded-2xl border border-neutral-800 bg-[#0e1117] p-5 shadow-lg">
+        <div className="rounded-3xl border border-white/[0.08] bg-[#0c1019]/80 p-5 backdrop-blur-xl shadow-lg">
           <div className="flex items-center justify-between text-xs text-neutral-400">
-            <span className="font-semibold uppercase tracking-wider">Statut Rythme</span>
+            <span className="font-bold uppercase tracking-wider">Statut Rythme</span>
             {currentDiffVsTarget >= 0 ? (
               <TrendingUp className="h-4 w-4 text-emerald-400" />
             ) : (
@@ -489,19 +461,18 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             </span>
             <span className="text-xs font-mono text-neutral-400">pts</span>
           </div>
-          <div className="mt-1 text-xs font-semibold">
+          <div className="mt-1 text-xs font-bold">
             {currentDiffVsTarget >= 0 ? (
               <span className="text-emerald-400">En avance sur le planning ✓</span>
             ) : (
-              <span className="text-rose-400">Léger retard à combler</span>
+              <span className="text-rose-400">Retard temporaire à combler</span>
             )}
           </div>
         </div>
 
-        {/* Card 4: Required Velocity */}
-        <div className="rounded-2xl border border-neutral-800 bg-[#0e1117] p-5 shadow-lg">
+        <div className="rounded-3xl border border-white/[0.08] bg-[#0c1019]/80 p-5 backdrop-blur-xl shadow-lg">
           <div className="flex items-center justify-between text-xs text-neutral-400">
-            <span className="font-semibold uppercase tracking-wider">Vitesse Requise</span>
+            <span className="font-bold uppercase tracking-wider">Cadence Requise</span>
             <Zap className="h-4 w-4 text-amber-400" />
           </div>
           <div className="mt-3 flex items-baseline gap-2">
@@ -511,86 +482,50 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             <span className="text-xs font-mono text-neutral-400">pts/mois</span>
           </div>
           <div className="mt-1 text-xs text-neutral-400 font-mono">
-            {pointsRemaining} pts restants sur {daysLeft} jours
+            {pointsRemaining} pts restants · {daysLeft} jours
           </div>
         </div>
       </div>
 
-      {/* 2. Interactive Controls Strip (Presets + Cadences + Bands Toggle) - ABSOLUTELY NO MOUSE WHEEL */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-neutral-950 p-3 rounded-2xl border border-neutral-800/80">
-        {/* Preset Timeframes */}
+      {/* 2. Interactive Toolbars (Preset Buttons - ABSOLUTELY NO MOUSE WHEEL) */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-[#0c1019]/80 p-3 rounded-2xl border border-white/[0.08] backdrop-blur-xl">
+        {/* Preset Timeframe buttons */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-semibold text-neutral-400 mr-2 flex items-center gap-1.5">
+          <span className="text-xs font-bold text-neutral-400 mr-2 flex items-center gap-1.5">
             <Calendar className="h-3.5 w-3.5 text-amber-400" />
             <span>Période :</span>
           </span>
-          <button
-            type="button"
-            onClick={() => setTimeframe('full')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              timeframe === 'full'
-                ? 'bg-amber-500 text-neutral-950 font-bold shadow'
-                : 'text-neutral-400 hover:text-white bg-neutral-900 border border-neutral-800'
-            }`}
-          >
-            Tout le projet (2026-2027)
-          </button>
-          <button
-            type="button"
-            onClick={() => setTimeframe('1year')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              timeframe === '1year'
-                ? 'bg-amber-500 text-neutral-950 font-bold shadow'
-                : 'text-neutral-400 hover:text-white bg-neutral-900 border border-neutral-800'
-            }`}
-          >
-            1 An
-          </button>
-          <button
-            type="button"
-            onClick={() => setTimeframe('6months')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              timeframe === '6months'
-                ? 'bg-amber-500 text-neutral-950 font-bold shadow'
-                : 'text-neutral-400 hover:text-white bg-neutral-900 border border-neutral-800'
-            }`}
-          >
-            6 Mois
-          </button>
-          <button
-            type="button"
-            onClick={() => setTimeframe('3months')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              timeframe === '3months'
-                ? 'bg-amber-500 text-neutral-950 font-bold shadow'
-                : 'text-neutral-400 hover:text-white bg-neutral-900 border border-neutral-800'
-            }`}
-          >
-            3 Mois
-          </button>
-          <button
-            type="button"
-            onClick={() => setTimeframe('30days')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              timeframe === '30days'
-                ? 'bg-amber-500 text-neutral-950 font-bold shadow'
-                : 'text-neutral-400 hover:text-white bg-neutral-900 border border-neutral-800'
-            }`}
-          >
-            30 Jours
-          </button>
+          {[
+            { id: 'full', label: 'Tout le projet (2026-2027)' },
+            { id: '1year', label: '1 An' },
+            { id: '6months', label: '6 Mois' },
+            { id: '3months', label: '3 Mois' },
+            { id: '30days', label: '30 Jours' },
+          ].map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setTimeframe(p.id as TimeframePreset)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                timeframe === p.id
+                  ? 'bg-amber-500 text-neutral-950 shadow-[0_2px_10px_rgba(245,158,11,0.4)]'
+                  : 'text-neutral-400 hover:text-white bg-neutral-900 border border-white/[0.06]'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
         </div>
 
-        {/* Mode Selector & Bands Toggle */}
+        {/* Cadence Mode & Bands Toggle */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Cadence Mode */}
-          <div className="inline-flex rounded-lg bg-neutral-900 p-0.5 border border-neutral-800 text-xs">
+          <div className="inline-flex rounded-xl bg-neutral-900 p-0.5 border border-white/[0.08] text-xs">
             <button
               type="button"
               onClick={() => setCadenceMode('best')}
-              className={`px-2.5 py-1 rounded-md transition-colors ${
+              className={`px-3 py-1 rounded-lg transition-colors font-bold ${
                 cadenceMode === 'best'
-                  ? 'bg-neutral-800 text-amber-300 font-semibold'
+                  ? 'bg-neutral-800 text-amber-300'
                   : 'text-neutral-400 hover:text-white'
               }`}
             >
@@ -599,9 +534,9 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             <button
               type="button"
               onClick={() => setCadenceMode('multi')}
-              className={`px-2.5 py-1 rounded-md transition-colors ${
+              className={`px-3 py-1 rounded-lg transition-colors font-bold ${
                 cadenceMode === 'multi'
-                  ? 'bg-neutral-800 text-amber-300 font-semibold'
+                  ? 'bg-neutral-800 text-amber-300'
                   : 'text-neutral-400 hover:text-white'
               }`}
             >
@@ -609,14 +544,13 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             </button>
           </div>
 
-          {/* Zones Bands Toggle */}
           <button
             type="button"
             onClick={() => setShowLevelBands((prev) => !prev)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs border font-bold transition-colors ${
               showLevelBands
-                ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 font-medium'
-                : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-white'
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                : 'border-white/[0.08] bg-neutral-900 text-neutral-400 hover:text-white'
             }`}
             title="Activer/désactiver les bandes colorées de niveaux FIDE"
           >
@@ -626,40 +560,34 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
         </div>
       </div>
 
-      {/* 3. Main Chart Viewport Card */}
-      <div className="relative rounded-3xl border border-neutral-800 bg-[#090b10] p-4 sm:p-6 shadow-2xl overflow-hidden">
+      {/* 3. Main Chart Canvas Card */}
+      <div className="relative rounded-3xl border border-white/[0.08] bg-[#0c1019]/90 p-4 sm:p-6 shadow-[0_16px_40px_rgba(0,0,0,0.5)] backdrop-blur-2xl overflow-hidden">
         {/* Subtle Legend Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-400 pb-3 mb-2 border-b border-neutral-800/60 font-mono">
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-400 pb-3 mb-2 border-b border-white/[0.06] font-mono">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <span className="h-0.5 w-4 bg-amber-400 rounded-full" />
-              <span className="text-amber-300 font-semibold">Classement Réel ({currentBestMode})</span>
+              <span className="text-amber-300 font-bold">Classement Réel ({currentBestMode})</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="h-0.5 w-4 border-b-2 border-dashed border-neutral-400" />
               <span className="text-neutral-400">Objectif Linéaire (1500 → 2000)</span>
             </div>
             {cadenceMode === 'multi' && (
-              <>
-                <div className="flex items-center gap-2">
-                  <span className="h-0.5 w-4 bg-sky-400 rounded-full" />
-                  <span className="text-sky-300">Rapide</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="h-0.5 w-4 bg-amber-200 rounded-full" />
-                  <span className="text-amber-200">Bullet</span>
-                </div>
-              </>
+              <div className="flex items-center gap-2">
+                <span className="h-0.5 w-4 bg-sky-400 rounded-full" />
+                <span className="text-sky-300 font-bold">Rapide</span>
+              </div>
             )}
           </div>
 
-          <div className="text-[11px] text-neutral-500 flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5" />
-            <span>Glissez le curseur pour explorer les dates et points clés</span>
+          <div className="text-[11px] text-neutral-400 flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5 text-amber-400" />
+            <span>Survolez la courbe pour inspecter les valeurs en direct</span>
           </div>
         </div>
 
-        {/* SVG Canvas - NO onWheel handler (Page scrolling works naturally) */}
+        {/* SVG Canvas - NO onWheel handler (Fluid page scroll guaranteed) */}
         <svg
           ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
@@ -669,7 +597,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
         >
           <defs>
             <linearGradient id={`goldGrad-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.25" />
+              <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.30" />
               <stop offset="60%" stopColor="#f59e0b" stopOpacity="0.06" />
               <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.00" />
             </linearGradient>
@@ -679,7 +607,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             </clipPath>
           </defs>
 
-          {/* Optional Level Bands (Shaded Horizontal Background Zones) */}
+          {/* Optional Level Bands */}
           {showLevelBands && (
             <g clipPath={`url(#chartArea-${gradientId})`}>
               {levelBands.map((band) => {
@@ -701,7 +629,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             </g>
           )}
 
-          {/* Horizontal Level Guidelines & Left Y-Axis Values */}
+          {/* Horizontal Level Guidelines */}
           {yTicks.map((tick) => {
             const y = getY(tick.elo);
             const isTarget = tick.elo === targetElo;
@@ -716,9 +644,9 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                   y2={y}
                   stroke={
                     isTarget
-                      ? 'rgba(245, 158, 11, 0.45)'
+                      ? 'rgba(245, 158, 11, 0.50)'
                       : isStart
-                      ? 'rgba(255, 255, 255, 0.22)'
+                      ? 'rgba(255, 255, 255, 0.25)'
                       : 'rgba(255, 255, 255, 0.06)'
                   }
                   strokeDasharray={isTarget || isStart ? '5 4' : undefined}
@@ -734,7 +662,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                     isTarget
                       ? 'fill-amber-400 font-bold'
                       : isStart
-                      ? 'fill-neutral-200 font-semibold'
+                      ? 'fill-white font-bold'
                       : 'fill-neutral-500'
                   }`}
                 >
@@ -776,7 +704,6 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                   stroke="rgba(255, 255, 255, 0.04)"
                 />
 
-                {/* Axis Tick Mark */}
                 <line
                   x1={x}
                   y1={height - padding.bottom}
@@ -786,7 +713,6 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                   strokeWidth="1.2"
                 />
 
-                {/* Abscissa Date Label */}
                 <text
                   x={x}
                   y={height - padding.bottom + 20}
@@ -819,7 +745,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             strokeWidth="1.5"
           />
 
-          {/* Today vertical marker line */}
+          {/* Today marker */}
           {showTodayMarker && (
             <g pointerEvents="none">
               <line
@@ -853,7 +779,6 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
 
           {/* Clipped content inside chart boundaries */}
           <g clipPath={`url(#chartArea-${gradientId})`}>
-            {/* Area gradient under real curve */}
             {realAreaPath && (
               <path d={realAreaPath} fill={`url(#goldGrad-${gradientId})`} />
             )}
@@ -870,18 +795,6 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               opacity="0.75"
             />
 
-            {/* Multi-Cadence: Bullet Path */}
-            {bulletLinePath && (
-              <path
-                d={bulletLinePath}
-                fill="none"
-                stroke="#fef08a"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                opacity="0.75"
-              />
-            )}
-
             {/* Multi-Cadence: Rapid Path */}
             {rapidLinePath && (
               <path
@@ -890,17 +803,17 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 stroke="#38bdf8"
                 strokeWidth="2"
                 strokeLinecap="round"
-                opacity="0.8"
+                opacity="0.85"
               />
             )}
 
-            {/* Real Progress Smooth Curve (Best Mode) */}
+            {/* Real Progress Smooth Curve */}
             {realLinePath && (
               <path
                 d={realLinePath}
                 fill="none"
                 stroke="#f59e0b"
-                strokeWidth="3.2"
+                strokeWidth="3.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
@@ -915,19 +828,19 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                     <circle
                       cx={pt.x}
                       cy={pt.y}
-                      r="9"
+                      r="10"
                       fill="none"
                       stroke="#f59e0b"
                       strokeWidth="1.5"
-                      opacity="0.6"
+                      opacity="0.7"
                       className="animate-ping"
                     />
                   )}
                   <circle
                     cx={pt.x}
                     cy={pt.y}
-                    r={isLast ? 5.5 : 4}
-                    fill="#090b10"
+                    r={isLast ? 6 : 4}
+                    fill="#0c1019"
                     stroke="#f59e0b"
                     strokeWidth="2.5"
                   />
@@ -939,7 +852,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
           {/* Destination Milestone Beacon (Target Pin at 2000 Elo) */}
           {targetLine.x2 <= width - padding.right + 10 && (
             <g transform={`translate(${targetLine.x2}, ${targetLine.y2})`}>
-              <circle r="6" fill="#f59e0b" opacity="0.3" className="animate-ping" />
+              <circle r="6" fill="#f59e0b" opacity="0.4" className="animate-ping" />
               <circle r="4.5" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.5" />
             </g>
           )}
@@ -961,7 +874,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 cx={hoverData.x}
                 cy={hoverData.yTarget}
                 r="4.5"
-                fill="#090b10"
+                fill="#0c1019"
                 stroke="#a1a1aa"
                 strokeWidth="2"
               />
@@ -989,14 +902,14 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                   y="0"
                   width="235"
                   height="105"
-                  rx="10"
-                  fill="#12151c"
-                  stroke="rgba(245, 158, 11, 0.4)"
+                  rx="12"
+                  fill="#121826"
+                  stroke="rgba(245, 158, 11, 0.5)"
                   strokeWidth="1.2"
-                  filter="drop-shadow(0 10px 20px rgba(0,0,0,0.6))"
+                  filter="drop-shadow(0 12px 24px rgba(0,0,0,0.7))"
                 />
 
-                <text x="14" y="20" fill="#f4f4f5" fontSize="11" fontWeight="bold" className="capitalize">
+                <text x="14" y="20" fill="#ffffff" fontSize="11" fontWeight="bold" className="capitalize">
                   {hoverData.dateFormatted}
                 </text>
 
@@ -1049,25 +962,25 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
           )}
         </svg>
 
-        {/* 4. Bottom Milestone Plateau Stepper */}
-        <div className="mt-5 pt-4 border-t border-neutral-800/80">
+        {/* 4. Bottom Stepper Plateaux */}
+        <div className="mt-6 pt-4 border-t border-white/[0.06]">
           <div className="flex items-center justify-between text-xs text-neutral-400 mb-3">
-            <span className="font-semibold text-neutral-300 flex items-center gap-1.5">
+            <span className="font-bold text-white flex items-center gap-1.5">
               <Milestone className="h-4 w-4 text-amber-400" />
-              <span>Plateaux De Progression Vers 2000 Elo</span>
+              <span>Plateaux De Progression Vers Les 2000 Elo</span>
             </span>
             <span className="font-mono text-neutral-400 text-[11px]">
               Échéance officielle : 31/12/2027
             </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {[
               { elo: 1600, label: 'Club', pct: '20%' },
               { elo: 1700, label: 'Intermédiaire', pct: '40%' },
               { elo: 1800, label: 'Avancé', pct: '60%' },
               { elo: 1900, label: 'Expert', pct: '80%' },
-              { elo: 2000, label: 'Maître C.', pct: '100%' },
+              { elo: 2000, label: 'Candidat Maître', pct: '100%' },
             ].map((m) => {
               const isPassed = currentRealElo >= m.elo;
               const isCurrentTarget = !isPassed && currentRealElo >= m.elo - 100;
@@ -1075,26 +988,26 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               return (
                 <div
                   key={m.elo}
-                  className={`rounded-xl p-3 border transition-all ${
+                  className={`rounded-2xl p-3.5 border transition-all ${
                     isPassed
-                      ? 'bg-emerald-950/25 border-emerald-500/40 text-emerald-300'
+                      ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
                       : isCurrentTarget
                       ? 'bg-amber-500/10 border-amber-500/40 text-amber-300 ring-1 ring-amber-500/30'
-                      : 'bg-neutral-950/60 border-neutral-800 text-neutral-400'
+                      : 'bg-neutral-950/60 border-white/[0.06] text-neutral-400'
                   }`}
                 >
                   <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-bold font-mono">{m.elo} Elo</span>
+                    <span className="font-bold font-mono text-white">{m.elo} Elo</span>
                     {isPassed ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                     ) : (
                       <span className="font-mono text-[10px] text-neutral-500">{m.pct}</span>
                     )}
                   </div>
-                  <div className="mt-1 text-xs font-semibold">{m.label}</div>
+                  <div className="mt-1 text-xs font-bold">{m.label}</div>
                   <div className="mt-0.5 text-[10px] text-neutral-500">
                     {isPassed ? (
-                      <span className="text-emerald-400 font-medium">Validé ✓</span>
+                      <span className="text-emerald-400 font-bold">Validé ✓</span>
                     ) : (
                       <span>{m.elo - currentRealElo} pts restants</span>
                     )}

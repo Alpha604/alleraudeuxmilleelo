@@ -13,90 +13,98 @@ interface MonthlyObjectiveCardProps {
 
 export const MonthlyObjectiveCard: React.FC<MonthlyObjectiveCardProps> = ({ objective }) => {
   const statusLabels = {
-    ahead: { label: 'En avance', color: 'text-emerald-400' },
-    on_track: { label: 'Dans le rythme', color: 'text-amber-400' },
-    behind: { label: 'En retard', color: 'text-rose-400' },
-    goal_reached: { label: 'Objectif Atteint', color: 'text-emerald-400' },
+    ahead: { label: 'En Avance', color: 'text-emerald-400', badgeClass: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300' },
+    on_track: { label: 'Dans le Tempo', color: 'text-amber-400', badgeClass: 'bg-amber-500/15 border-amber-500/30 text-amber-300' },
+    behind: { label: 'En Retard', color: 'text-rose-400', badgeClass: 'bg-rose-500/15 border-rose-500/30 text-rose-300' },
+    goal_reached: { label: 'Objectif Atteint', color: 'text-emerald-400', badgeClass: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' },
   };
 
   const status = statusLabels[objective.status];
 
   return (
-    <div className="flex flex-col justify-between rounded-3xl border border-neutral-800 bg-[#0e1117] p-6 sm:p-7 shadow-xl backdrop-blur-sm transition-all dark:border-neutral-800 dark:bg-[#0e1117] light:border-neutral-200 light:bg-white">
+    <div className="relative flex flex-col justify-between overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0c1019]/80 p-6 sm:p-7 shadow-[0_8px_30px_rgba(0,0,0,0.4)] backdrop-blur-xl">
       <div>
-        <div className="flex items-center justify-between gap-3 border-b border-neutral-800/80 pb-4 dark:border-neutral-800/80 light:border-neutral-200">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-amber-400" />
-            <span className="text-xs font-bold uppercase tracking-wider text-neutral-300 dark:text-neutral-300 light:text-neutral-700">
-              Objectif Du Mois
-            </span>
+        <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] pb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+              <Calendar className="h-4 w-4" />
+            </div>
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-white">
+                Objectif Mensuel
+              </span>
+              <p className="text-[11px] capitalize text-neutral-400">Palier de {objective.monthName}</p>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5 text-xs font-semibold">
-            <TrendingUp className={`h-4 w-4 ${status.color}`} />
-            <span className={status.color}>{status.label}</span>
+
+          <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold ${status.badgeClass}`}>
+            <TrendingUp className="h-4 w-4" />
+            <span>{status.label}</span>
           </div>
         </div>
 
-        <p className="mt-3 text-xs capitalize text-neutral-400">
-          Palier pour {objective.monthName}
-        </p>
-
-        <div className="mt-5 grid grid-cols-2 gap-4 border-b border-neutral-800/80 pb-5 dark:border-neutral-800/80 light:border-neutral-200">
-          <div>
-            <span className="text-[11px] text-neutral-400">Cible fin de mois</span>
-            <div className="mt-1 font-mono text-3xl font-black text-neutral-200 dark:text-neutral-200 light:text-neutral-900 tabular-nums">
+        {/* Core Comparison Display */}
+        <div className="mt-6 grid grid-cols-2 gap-4 border-b border-white/[0.06] pb-6">
+          <div className="space-y-1">
+            <span className="text-[11px] uppercase tracking-wider font-semibold text-neutral-400">
+              Cible fin de mois
+            </span>
+            <div className="font-mono text-4xl font-black text-white tabular-nums">
               {objective.targetElo}
             </div>
             <span className="text-[10px] text-neutral-500">Au dernier jour du mois</span>
           </div>
 
-          <div>
-            <span className="text-[11px] text-neutral-400">Progression restante</span>
-            <div className="mt-1 font-mono text-3xl font-black text-amber-400 tabular-nums">
+          <div className="space-y-1">
+            <span className="text-[11px] uppercase tracking-wider font-semibold text-neutral-400">
+              Progression requise
+            </span>
+            <div className="font-mono text-4xl font-black text-amber-400 tabular-nums">
               {objective.pointsToTarget}
-              <span className="text-xs font-normal text-neutral-500 ml-1">pts</span>
+              <span className="text-xs font-normal text-neutral-400 ml-1">pts</span>
             </div>
-            <div className="text-[10px] text-neutral-500">
-              {objective.daysRemainingInMonth} jours restants ce mois
+            <div className="text-[10px] text-neutral-400 font-mono">
+              Sur {objective.daysRemainingInMonth} jours restants ce mois
             </div>
           </div>
         </div>
 
-        <div className="mt-5 space-y-2.5 text-xs">
-          <div className="flex items-center justify-between text-neutral-300 dark:text-neutral-300 light:text-neutral-700">
+        {/* Detailed Metrics */}
+        <div className="mt-5 space-y-3 text-xs">
+          <div className="flex items-center justify-between">
             <span className="text-neutral-400">Écart au palier mensuel :</span>
-            <span className="font-mono font-semibold">
+            <span className="font-mono font-bold">
               {objective.diff >= 0 ? (
-                <span className="text-emerald-400">+{objective.diff} pts (Déjà validé)</span>
+                <span className="text-emerald-400">+{objective.diff} pts (Déjà sécurisé ✓)</span>
               ) : (
                 <span className="text-rose-400">{objective.diff} pts</span>
               )}
             </span>
           </div>
 
-          <div className="flex items-center justify-between text-neutral-300 dark:text-neutral-300 light:text-neutral-700">
-            <span className="text-neutral-400">Statut calendrier :</span>
-            <span className={`font-semibold ${status.color}`}>
+          <div className="flex items-center justify-between">
+            <span className="text-neutral-400">Rythme d'avancement mensuel :</span>
+            <span className={`font-bold ${status.color}`}>
               {status.label}
             </span>
           </div>
 
-          <div className="flex items-center justify-between text-neutral-300 dark:text-neutral-300 light:text-neutral-700">
-            <span className="text-neutral-400">Recalcul automatique :</span>
-            <span className="text-neutral-400 font-mono text-[11px]">Le 1er de chaque mois</span>
+          <div className="flex items-center justify-between">
+            <span className="text-neutral-400">Actualisation des calculs :</span>
+            <span className="text-neutral-400 font-mono">Chaque 1er du mois à minuit</span>
           </div>
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl bg-neutral-950/70 p-3.5 text-xs text-neutral-400 border border-neutral-800/80 dark:bg-neutral-950/70 dark:border-neutral-800/80 light:bg-neutral-50 light:border-neutral-200">
+      <div className="mt-6 rounded-2xl bg-neutral-950/60 p-3.5 text-xs text-neutral-400 border border-white/[0.04]">
         {objective.diff >= 0 ? (
-          <span className="text-emerald-400 flex items-center gap-1.5 font-medium">
+          <span className="text-emerald-400 flex items-center gap-1.5 font-bold">
             <CheckCircle2 className="h-4 w-4 shrink-0" />
-            Le palier prévu pour la fin du mois en cours est déjà sécurisé !
+            Le palier pour la fin du mois est d'ores et déjà validé !
           </span>
         ) : (
           <span>
-            {objective.pointsToTarget} points à accumuler sur les {objective.daysRemainingInMonth} prochains jours pour valider l'étape.
+            {objective.pointsToTarget} points à remporter sur les {objective.daysRemainingInMonth} prochains jours pour honorer l'objectif.
           </span>
         )}
       </div>
