@@ -467,11 +467,11 @@ export default function App() {
   }, [syncHistory, currentElo, settings.startElo, settings.targetElo, activeBestMode]);
 
   return (
-    <div className="min-h-screen bg-[#07090e] text-neutral-100 flex flex-col font-sans transition-colors relative selection:bg-amber-500/25 selection:text-amber-200">
-      {/* Subtle Ambient Radial Lighting for deep tournament presence */}
+    <div className="min-h-screen bg-[#07090e] text-neutral-100 flex flex-col font-sans transition-colors relative selection:bg-[#facc15]/30 selection:text-white">
+      {/* Subtle Ambient Lighting in deep carbon and yellow tones */}
       <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-gradient-to-b from-indigo-900/15 via-amber-500/[0.04] to-transparent blur-3xl opacity-70" />
-        <div className="absolute top-[600px] right-0 w-[500px] h-[500px] bg-emerald-500/[0.03] blur-3xl rounded-full" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[450px] bg-gradient-to-b from-white/[0.04] via-[#facc15]/[0.03] to-transparent blur-3xl opacity-70" />
+        <div className="absolute top-[600px] right-0 w-[500px] h-[500px] bg-[#10b981]/[0.02] blur-3xl rounded-full" />
       </div>
       {/* Top Bar Navigation */}
       <Navbar
@@ -617,7 +617,7 @@ export default function App() {
             {isIframe && (
               <>
                 <span aria-hidden="true" className="text-neutral-600">·</span>
-                <span className="text-amber-400 font-semibold">[Mode Iframe Consultation Seule]</span>
+                <span className="text-[#facc15] font-bold">[Mode Iframe Consultation Seule]</span>
               </>
             )}
           </div>

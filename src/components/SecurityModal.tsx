@@ -232,7 +232,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
 
         {/* Modal Header */}
         <div className="flex items-start gap-3.5 pr-8">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#facc15]/30 bg-[#facc15]/10 text-[#facc15]">
             <ShieldCheck className="h-6 w-6" />
           </div>
           <div>
@@ -240,7 +240,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
               <span>Authentification 2FA Exclusive</span>
             </h3>
             <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-              Pour déverrouiller <strong className="text-amber-300">{actionTitle}</strong>, confirmez votre identité avec votre application Authenticator.
+              Pour déverrouiller <strong className="text-[#facc15]">{actionTitle}</strong>, confirmez votre identité avec votre application Authenticator.
             </p>
           </div>
         </div>
@@ -360,7 +360,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                   <label className="block text-xs font-semibold text-neutral-200">
                     Code à 6 chiffres Microsoft / Google Authenticator
                   </label>
-                  <span className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
+                  <span className="text-[10px] text-[#facc15] font-medium flex items-center gap-1">
                     <Smartphone className="h-3 w-3" />
                     <span>Sur votre smartphone</span>
                   </span>
@@ -376,7 +376,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                     onChange={handleCodeChange}
                     placeholder="••••••"
                     autoFocus
-                    className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3.5 text-2xl font-mono font-bold tracking-[0.4em] text-center text-amber-300 placeholder-neutral-700 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 transition-all shadow-inner"
+                    className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3.5 text-2xl font-mono font-bold tracking-[0.4em] text-center text-[#facc15] placeholder-neutral-700 focus:border-[#facc15] focus:outline-none focus:ring-1 focus:ring-[#facc15] transition-all shadow-inner"
                   />
                   <div className="absolute inset-y-0 right-0 flex items-center pr-3.5 pointer-events-none text-neutral-500 pt-1">
                     <KeyRound className="h-5 w-5" />
@@ -384,7 +384,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                 </div>
 
                 {errorMessage && (
-                  <div className="flex items-start gap-1.5 text-xs text-rose-400 font-medium pt-1 leading-snug">
+                  <div className="flex items-start gap-1.5 text-xs text-[#ef4444] font-medium pt-1 leading-snug">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                     <span>{errorMessage}</span>
                   </div>
@@ -392,7 +392,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
               </div>
 
               <div className="flex items-center justify-between gap-3 pt-1">
-                <span className="text-[10px] text-neutral-500 italic">
+                <span className="text-[10px] text-neutral-400 italic">
                   Validation instantanée dès les 6 chiffres saisis
                 </span>
 
@@ -407,7 +407,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                   <button
                     type="submit"
                     disabled={isVerifying || code.trim().length !== 6}
-                    className="flex items-center gap-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 px-4 py-2 text-xs font-bold transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] disabled:opacity-40"
+                    className="flex items-center gap-2 rounded-xl bg-[#facc15] hover:bg-[#eab308] text-black px-4 py-2 text-xs font-bold transition-all shadow-[0_0_15px_rgba(250,204,21,0.25)] disabled:opacity-40"
                   >
                     <Lock className="h-3.5 w-3.5" />
                     <span>{isVerifying ? 'Vérification...' : 'Valider'}</span>
@@ -416,14 +416,14 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
               </div>
             </form>
 
-            {/* RE-PAIRING / PRIVACY OPTIONS (Protected to ensure ONLY the owner can re-pair) */}
+            {/* RE-PAIRING / PRIVACY OPTIONS */}
             {!showPairingQr && (
               <div className="pt-2 border-t border-neutral-800 text-center space-y-2">
                 {!showAdminPasswordInput ? (
                   <button
                     type="button"
                     onClick={() => setShowAdminPasswordInput(true)}
-                    className="text-[11px] text-neutral-400 hover:text-amber-300 underline transition-colors"
+                    className="text-[11px] text-neutral-400 hover:text-[#facc15] underline transition-colors"
                   >
                     Changer de smartphone / Afficher le QR Code de jumelage
                   </button>

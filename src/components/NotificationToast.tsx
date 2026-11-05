@@ -25,15 +25,15 @@ export const NotificationToast: React.FC<NotificationToastProps> = ({ toasts, on
     <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
       {toasts.map((toast) => {
         const icons = {
-          success: <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />,
-          warning: <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />,
-          info: <Info className="h-4 w-4 text-cyan-400 shrink-0" />,
+          success: <CheckCircle2 className="h-4 w-4 text-[#10b981] shrink-0" />,
+          warning: <AlertCircle className="h-4 w-4 text-[#ef4444] shrink-0" />,
+          info: <Info className="h-4 w-4 text-[#facc15] shrink-0" />,
         };
 
         const borders = {
-          success: 'border-emerald-500/40 bg-neutral-950/95 text-neutral-100',
-          warning: 'border-amber-500/40 bg-neutral-950/95 text-neutral-100',
-          info: 'border-neutral-700 bg-neutral-950/95 text-neutral-100',
+          success: 'border-[#10b981]/40 bg-[#0c0f14]/95 text-white',
+          warning: 'border-[#ef4444]/40 bg-[#0c0f14]/95 text-white',
+          info: 'border-[#facc15]/40 bg-[#0c0f14]/95 text-white',
         };
 
         const type = toast.type || 'info';

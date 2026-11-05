@@ -3,17 +3,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useId, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import {
   Calendar,
   CheckCircle2,
   Clock,
   Compass,
-  Layers,
   Milestone,
   Target,
   TrendingDown,
   TrendingUp,
+  Trophy,
   Zap,
 } from 'lucide-react';
 import { SyncRecord } from '../types/chess';
@@ -27,8 +38,17 @@ interface HistoryChartProps {
   targetDateStr: string;
 }
 
-type TimeframePreset = 'full' | '1year' | '6months' | '3months' | '30days';
-type CadenceViewMode = 'best' | 'multi';
+type TimeframePreset = 'full' | '1year' | '6months' | '30days';
+
+interface ChartPoint {
+  dayKey: string;
+  dateLabel: string;
+  timestamp: number;
+  realElo: number | null;
+  targetElo: number;
+  mode?: string;
+  isRealPoint: boolean;
+}
 
 export const HistoryChart: React.FC<HistoryChartProps> = ({
   syncHistory,
@@ -37,15 +57,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   startDateStr = DEFAULT_START_DATE,
   targetDateStr = DEFAULT_TARGET_DATE,
 }) => {
-  const gradientId = useId();
-  const svgRef = useRef<SVGSVGElement>(null);
-
-  // Timeframe & Display Controls (NO WHEEL)
   const [timeframe, setTimeframe] = useState<TimeframePreset>('full');
-  const [cadenceMode, setCadenceMode] = useState<CadenceViewMode>('best');
-  const [showLevelBands, setShowLevelBands] = useState<boolean>(true);
 
-  // Absolute Project Boundaries
   const projectStartTime = useMemo(
     () => new Date(startDateStr || DEFAULT_START_DATE).getTime(),
     [startDateStr]
@@ -55,922 +68,407 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     [targetDateStr]
   );
 
-  // Chronologically sorted real sync records
+  // Chronologically sorted records
   const sortedRecords = useMemo(() => {
     return [...syncHistory].sort(
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
   }, [syncHistory]);
 
-  const latestSync = sortedRecords.length > 0 ? sortedRecords[sortedRecords.length - 1] : null;
-  const currentRealElo = latestSync ? latestSync.bestRating : startElo;
-  const currentBestMode = latestSync ? latestSync.bestMode : 'blitz';
+  const latestRecord = sortedRecords.length > 0 ? sortedRecords[sortedRecords.length - 1] : null;
+  const currentRealElo = latestRecord ? latestRecord.bestRating : startElo;
+  const currentBestMode = latestRecord ? latestRecord.bestMode : 'blitz';
 
-  // Compute active visible time range based on selected preset button
-  const visibleTimeRange = useMemo(() => {
-    const now = Date.now();
+  // Strict 1 point per day aggregation (Latest sync of each calendar day)
+  const chartData = useMemo(() => {
+    const dailyMap = new Map<string, { timestamp: number; realElo: number; mode: string }>();
 
-    switch (timeframe) {
-      case '30days': {
-        const span = 30 * 86400000;
-        const start = Math.max(projectStartTime, now - 15 * 86400000);
-        return { start, end: start + span };
-      }
-      case '3months': {
-        const span = 90 * 86400000;
-        const start = Math.max(projectStartTime, now - 30 * 86400000);
-        return { start, end: start + span };
-      }
-      case '6months': {
-        const span = 180 * 86400000;
-        const start = Math.max(projectStartTime, now - 45 * 86400000);
-        return { start, end: start + span };
-      }
-      case '1year': {
-        const span = 365 * 86400000;
-        return { start: projectStartTime, end: Math.min(projectEndTime, projectStartTime + span) };
-      }
-      case 'full':
-      default:
-        return { start: projectStartTime, end: projectEndTime };
-    }
-  }, [timeframe, projectStartTime, projectEndTime]);
-
-  // Real progression data series (Best Mode)
-  const realPointsData = useMemo(() => {
-    const list: { t: number; elo: number; mode: string }[] = [
-      {
-        t: projectStartTime,
-        elo: startElo,
-        mode: 'Base 1500',
-      },
-    ];
-
-    sortedRecords.forEach((record) => {
-      const t = new Date(record.timestamp).getTime();
-      if (t >= projectStartTime) {
-        list.push({
-          t,
-          elo: record.bestRating,
-          mode: record.bestMode,
-        });
-      }
+    // Initial base point on project start date
+    const startD = new Date(projectStartTime);
+    const startKey = `${startD.getFullYear()}-${String(startD.getMonth() + 1).padStart(2, '0')}-${String(startD.getDate()).padStart(2, '0')}`;
+    dailyMap.set(startKey, {
+      timestamp: projectStartTime,
+      realElo: startElo,
+      mode: 'Base départ',
     });
 
-    const now = Date.now();
-    if (list.length === 1 && now > projectStartTime) {
-      list.push({
-        t: Math.min(now, projectEndTime),
-        elo: currentRealElo,
-        mode: currentBestMode,
+    // Populate daily records (last sync of each day wins)
+    sortedRecords.forEach((record) => {
+      const d = new Date(record.timestamp);
+      const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      dailyMap.set(dayKey, {
+        timestamp: d.getTime(),
+        realElo: record.bestRating,
+        mode: record.bestMode,
       });
+    });
+
+    // Determine window start and end depending on timeframe
+    const now = Date.now();
+    let windowStart = projectStartTime;
+    let windowEnd = projectEndTime;
+
+    if (timeframe === '30days') {
+      windowStart = Math.max(projectStartTime, now - 30 * 86400000);
+      windowEnd = Math.min(projectEndTime, now + 5 * 86400000);
+    } else if (timeframe === '6months') {
+      windowStart = Math.max(projectStartTime, now - 180 * 86400000);
+      windowEnd = Math.min(projectEndTime, now + 15 * 86400000);
+    } else if (timeframe === '1year') {
+      windowStart = Math.max(projectStartTime, now - 365 * 86400000);
+      windowEnd = Math.min(projectEndTime, now + 30 * 86400000);
     }
 
-    return list;
-  }, [projectStartTime, projectEndTime, startElo, sortedRecords, currentRealElo, currentBestMode]);
+    // Build timeline points: include real daily points + regular trajectory checkpoints
+    const points: ChartPoint[] = [];
+    const stepDays = timeframe === '30days' ? 1 : timeframe === '6months' ? 5 : 14;
+    const stepMs = stepDays * 86400000;
 
-  // Multi-cadence data series
-  const rapidPointsData = useMemo(() => {
-    if (cadenceMode !== 'multi') return [];
-    const list: { t: number; elo: number }[] = [];
-    sortedRecords.forEach((record) => {
-      if (record.rapid !== null && record.rapid !== undefined) {
-        list.push({
-          t: new Date(record.timestamp).getTime(),
-          elo: record.rapid,
-        });
-      }
-    });
-    return list;
-  }, [cadenceMode, sortedRecords]);
-
-  // Dynamic Elo bounds
-  const visibleEloBounds = useMemo(() => {
-    const relevantReal = realPointsData.map((p) => p.elo);
-    const minVal = Math.min(startElo - 20, ...relevantReal);
-    const maxVal = Math.max(targetElo + 30, ...relevantReal);
-    const min = Math.max(1300, Math.floor(minVal / 50) * 50 - 50);
-    const max = Math.min(2500, Math.ceil(maxVal / 50) * 50 + 50);
-    return { min, max };
-  }, [realPointsData, startElo, targetElo]);
-
-  // Canvas Geometry
-  const width = 1000;
-  const height = 460;
-  const padding = { top: 35, right: 145, bottom: 50, left: 65 };
-  const innerWidth = width - padding.left - padding.right;
-  const innerHeight = height - padding.top - padding.bottom;
-
-  // Coordinate conversion
-  const getX = useCallback(
-    (t: number) => {
-      const ratio = (t - visibleTimeRange.start) / (visibleTimeRange.end - visibleTimeRange.start || 1);
-      return padding.left + ratio * innerWidth;
-    },
-    [visibleTimeRange, innerWidth, padding.left]
-  );
-
-  const getY = useCallback(
-    (elo: number) => {
-      const ratio = (elo - visibleEloBounds.min) / (visibleEloBounds.max - visibleEloBounds.min || 1);
-      return padding.top + innerHeight - ratio * innerHeight;
-    },
-    [visibleEloBounds, innerHeight, padding.top]
-  );
-
-  const getTimeFromX = useCallback(
-    (svgX: number) => {
-      const ratio = (svgX - padding.left) / innerWidth;
-      return visibleTimeRange.start + ratio * (visibleTimeRange.end - visibleTimeRange.start);
-    },
-    [visibleTimeRange, innerWidth, padding.left]
-  );
-
-  // Target Linear Trajectory Line
-  const targetLine = useMemo(() => {
-    return {
-      x1: getX(projectStartTime),
-      y1: getY(startElo),
-      x2: getX(projectEndTime),
-      y2: getY(targetElo),
-    };
-  }, [projectStartTime, projectEndTime, startElo, targetElo, getX, getY]);
-
-  // Real Line Coordinates
-  const realLinePoints = useMemo(() => {
-    return realPointsData.map((pt) => ({
-      x: getX(pt.t),
-      y: getY(pt.elo),
-      t: pt.t,
-      elo: pt.elo,
-      mode: pt.mode,
+    // Collect all real points inside or near window
+    const realDatesList = Array.from(dailyMap.entries()).map(([dayKey, val]) => ({
+      dayKey,
+      ...val,
     }));
-  }, [realPointsData, getX, getY]);
 
-  // Smooth SVG Path using cubic spline
-  const realLinePath = useMemo(() => {
-    if (realLinePoints.length < 2) return '';
-    let d = `M ${realLinePoints[0].x.toFixed(1)},${realLinePoints[0].y.toFixed(1)}`;
-    for (let i = 0; i < realLinePoints.length - 1; i++) {
-      const p0 = realLinePoints[i === 0 ? 0 : i - 1];
-      const p1 = realLinePoints[i];
-      const p2 = realLinePoints[i + 1];
-      const p3 = realLinePoints[i + 2 < realLinePoints.length ? i + 2 : i + 1];
+    // Merge real points and trajectory samples
+    const timestampsSet = new Set<number>();
 
-      const tension = 0.25;
-      const cp1x = p1.x + (p2.x - p0.x) * tension;
-      const cp1y = p1.y + (p2.y - p0.y) * tension;
-      const cp2x = p2.x - (p3.x - p1.x) * tension;
-      const cp2y = p2.y - (p3.y - p1.y) * tension;
-
-      d += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
-    }
-    return d;
-  }, [realLinePoints]);
-
-  const realAreaPath = useMemo(() => {
-    if (realLinePoints.length < 2 || !realLinePath) return '';
-    const first = realLinePoints[0];
-    const last = realLinePoints[realLinePoints.length - 1];
-    const baseY = getY(visibleEloBounds.min);
-    return `${realLinePath} L ${last.x.toFixed(1)},${baseY} L ${first.x.toFixed(1)},${baseY} Z`;
-  }, [realLinePoints, realLinePath, getY, visibleEloBounds.min]);
-
-  const rapidLinePath = useMemo(() => {
-    if (rapidPointsData.length < 2) return '';
-    return rapidPointsData
-      .map((p, i) => `${i === 0 ? 'M' : 'L'} ${getX(p.t).toFixed(1)},${getY(p.elo).toFixed(1)}`)
-      .join(' ');
-  }, [rapidPointsData, getX, getY]);
-
-  // Abscissa (X-Axis) Ticks
-  const xTicks = useMemo(() => {
-    const ticksCount = 7;
-    const ticks: { t: number; label: string; sub?: string }[] = [];
-    const span = visibleTimeRange.end - visibleTimeRange.start;
-    const step = span / (ticksCount - 1);
-
-    for (let i = 0; i < ticksCount; i++) {
-      const t = visibleTimeRange.start + i * step;
-      const d = new Date(t);
-
-      if (span > 180 * 86400000) {
-        const monthName = d.toLocaleDateString('fr-FR', { month: 'short' });
-        ticks.push({
-          t,
-          label: monthName.charAt(0).toUpperCase() + monthName.slice(1),
-          sub: String(d.getFullYear()),
-        });
-      } else {
-        ticks.push({
-          t,
-          label: d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }),
-          sub: d.toLocaleDateString('fr-FR', { weekday: 'short' }),
-        });
+    // 1. Add all real points within range
+    realDatesList.forEach((rp) => {
+      if (rp.timestamp >= windowStart - 86400000 && rp.timestamp <= windowEnd + 86400000) {
+        timestampsSet.add(rp.timestamp);
       }
-    }
-    return ticks;
-  }, [visibleTimeRange]);
-
-  // Ordinate (Y-Axis) Ticks
-  const yTicks = useMemo(() => {
-    const ticks: { elo: number; label: string; badge?: string }[] = [];
-    const step = 100;
-    const first = Math.ceil(visibleEloBounds.min / step) * step;
-
-    for (let e = first; e <= visibleEloBounds.max; e += step) {
-      let badge: string | undefined;
-      if (e === 2000) badge = 'Cible 2000 Elo 🏆';
-      else if (e === 1900) badge = 'Palier 1900 (Expert)';
-      else if (e === 1800) badge = 'Palier 1800 (Avancé)';
-      else if (e === 1700) badge = 'Palier 1700 (Intermédiaire)';
-      else if (e === 1600) badge = 'Palier 1600 (Club)';
-      else if (e === 1500) badge = 'Base 1500 Elo (Départ)';
-
-      ticks.push({
-        elo: e,
-        label: String(e),
-        badge,
-      });
-    }
-    return ticks;
-  }, [visibleEloBounds]);
-
-  // Level bands definition
-  const levelBands = useMemo(() => {
-    return [
-      { from: 1900, to: 2000, color: 'rgba(245, 158, 11, 0.08)', label: 'Zone Candidat Maître' },
-      { from: 1800, to: 1900, color: 'rgba(168, 85, 247, 0.05)', label: 'Zone Expert' },
-      { from: 1700, to: 1800, color: 'rgba(59, 130, 246, 0.05)', label: 'Zone Avancé' },
-      { from: 1600, to: 1700, color: 'rgba(20, 184, 166, 0.05)', label: 'Zone Intermédiaire' },
-      { from: 1500, to: 1600, color: 'rgba(16, 185, 129, 0.05)', label: 'Zone Joueur de Club' },
-    ];
-  }, []);
-
-  // Today marker
-  const todayMs = Date.now();
-  const todayX = getX(todayMs);
-  const showTodayMarker = todayMs >= visibleTimeRange.start && todayMs <= visibleTimeRange.end;
-
-  // Hover Scrubbing State
-  const [hoverData, setHoverData] = useState<{
-    x: number;
-    yReal: number;
-    yTarget: number;
-    t: number;
-    dateFormatted: string;
-    targetElo: number;
-    realElo: number | null;
-    diff: number | null;
-    daysRemaining: number;
-    projectPercent: number;
-  } | null>(null);
-
-  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!svgRef.current) return;
-    const rect = svgRef.current.getBoundingClientRect();
-    const svgX = (e.clientX - rect.left) * (width / rect.width);
-
-    if (svgX < padding.left || svgX > width - padding.right) {
-      setHoverData(null);
-      return;
-    }
-
-    const t = getTimeFromX(svgX);
-    const targetAtDate = Math.round(
-      calculateLinearElo(t, startDateStr, targetDateStr, startElo, targetElo)
-    );
-    const yTarget = getY(targetAtDate);
-
-    let realAtDate: number | null = null;
-    let yReal = yTarget;
-
-    const lastRealT = realLinePoints.length > 0 ? realLinePoints[realLinePoints.length - 1].t : projectStartTime;
-    if (t <= lastRealT + 86400000 * 3) {
-      for (let i = 0; i < realLinePoints.length - 1; i++) {
-        const p1 = realLinePoints[i];
-        const p2 = realLinePoints[i + 1];
-        if (t >= p1.t && t <= p2.t) {
-          const r = (t - p1.t) / (p2.t - p1.t || 1);
-          realAtDate = Math.round(p1.elo + r * (p2.elo - p1.elo));
-          yReal = getY(realAtDate);
-          break;
-        }
-      }
-      if (realAtDate === null && realLinePoints.length > 0) {
-        realAtDate = currentRealElo;
-        yReal = getY(currentRealElo);
-      }
-    }
-
-    const diff = realAtDate !== null ? realAtDate - targetAtDate : null;
-    const daysRemaining = Math.max(0, Math.ceil((projectEndTime - t) / 86400000));
-    const projectPercent = Math.max(
-      0,
-      Math.min(100, Math.round(((t - projectStartTime) / (projectEndTime - projectStartTime)) * 100))
-    );
-
-    setHoverData({
-      x: svgX,
-      yReal,
-      yTarget,
-      t,
-      dateFormatted: new Date(t).toLocaleDateString('fr-FR', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      }),
-      targetElo: targetAtDate,
-      realElo: realAtDate,
-      diff,
-      daysRemaining,
-      projectPercent,
     });
-  };
 
-  const handleMouseLeave = () => {
-    setHoverData(null);
-  };
+    // 2. Add regular checkpoint timestamps for the linear target curve
+    for (let t = windowStart; t <= windowEnd; t += stepMs) {
+      timestampsSet.add(t);
+    }
+    timestampsSet.add(windowEnd);
 
-  // Trajectory Delta calculation
-  const trajectoryDelta = currentRealElo - startElo;
+    // Sort all timestamps
+    const sortedTimestamps = Array.from(timestampsSet).sort((a, b) => a - b);
+
+    // Build final points array
+    sortedTimestamps.forEach((t) => {
+      const d = new Date(t);
+      const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const targetAtDate = Math.round(
+        calculateLinearElo(t, startDateStr, targetDateStr, startElo, targetElo)
+      );
+
+      const realInfo = dailyMap.get(dayKey);
+      const isReal = realInfo !== undefined;
+
+      const dateLabel = d.toLocaleDateString('fr-FR', {
+        day: 'numeric',
+        month: timeframe === '30days' ? 'numeric' : 'short',
+      });
+
+      points.push({
+        dayKey,
+        dateLabel,
+        timestamp: t,
+        realElo: isReal ? realInfo.realElo : null,
+        targetElo: targetAtDate,
+        mode: realInfo?.mode,
+        isRealPoint: isReal,
+      });
+    });
+
+    return points;
+  }, [
+    sortedRecords,
+    projectStartTime,
+    projectEndTime,
+    startElo,
+    targetElo,
+    startDateStr,
+    targetDateStr,
+    timeframe,
+  ]);
+
+  // Target for today
   const targetToday = Math.round(
     calculateLinearElo(Date.now(), startDateStr, targetDateStr, startElo, targetElo)
   );
-  const currentDiffVsTarget = currentRealElo - targetToday;
+  const diffVsTarget = currentRealElo - targetToday;
+  const deltaFromStart = currentRealElo - startElo;
 
-  const daysLeft = Math.max(1, Math.ceil((projectEndTime - Date.now()) / 86400000));
-  const pointsRemaining = Math.max(0, targetElo - currentRealElo);
-  const requiredPtsPerMonth = Math.round((pointsRemaining / (daysLeft / 30.4375)) * 10) / 10;
+  // Custom Tooltip component for Recharts
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload || !payload.length) return null;
+
+    const pt = payload[0]?.payload as ChartPoint;
+    const realVal = payload.find((p: any) => p.dataKey === 'realElo')?.value;
+    const targetVal = payload.find((p: any) => p.dataKey === 'targetElo')?.value;
+    const diff = realVal !== undefined && realVal !== null ? realVal - targetVal : null;
+
+    const fullDate = new Date(pt.timestamp).toLocaleDateString('fr-FR', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+
+    return (
+      <div className="rounded-2xl border border-neutral-700 bg-[#0d1117] p-4 text-xs shadow-2xl space-y-2 backdrop-blur-md">
+        <div className="font-bold text-white capitalize border-b border-neutral-800 pb-1.5 flex items-center justify-between gap-4">
+          <span>{fullDate}</span>
+          {pt.mode && (
+            <span className="text-[10px] font-mono text-amber-400 uppercase bg-amber-500/10 px-2 py-0.5 rounded">
+              {pt.mode}
+            </span>
+          )}
+        </div>
+
+        <div className="space-y-1.5 font-mono">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-neutral-400 flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-white" />
+              <span>Cible Théorique :</span>
+            </span>
+            <span className="font-bold text-white">{targetVal} Elo</span>
+          </div>
+
+          {realVal !== undefined && realVal !== null && (
+            <>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-neutral-400 flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-[#facc15]" />
+                  <span>Votre Classement :</span>
+                </span>
+                <span className="font-bold text-[#facc15]">{realVal} Elo</span>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 pt-1 border-t border-neutral-800">
+                <span className="text-neutral-400">Écart à la cible :</span>
+                <span
+                  className={`font-bold ${
+                    diff !== null && diff >= 0 ? 'text-[#10b981]' : 'text-[#ef4444]'
+                  }`}
+                >
+                  {diff !== null && diff >= 0 ? `+${diff} pts (En Avance)` : `${diff} pts (Retard)`}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
-      {/* 1. Tactical Command Bar (4 high-density metric chips) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="rounded-3xl border border-white/[0.08] bg-[#0c1019]/80 p-5 backdrop-blur-xl shadow-lg">
-          <div className="flex items-center justify-between text-xs text-neutral-400">
-            <span className="font-bold uppercase tracking-wider">Classement Actuel</span>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
-              {currentBestMode}
+      {/* 1. Header with Recharts / Open-Source Badge & Color Indicator */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-[#0d1117] border border-neutral-800 p-5 rounded-3xl shadow-xl">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-black text-white flex items-center gap-2">
+              <Compass className="h-5 w-5 text-[#facc15]" />
+              <span>Graphique Officiel Recharts (GitHub Open-Source)</span>
+            </h2>
+            <span className="text-[10px] font-mono bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-full border border-neutral-700">
+              1 point / jour max
             </span>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="font-mono text-4xl font-black text-white tabular-nums">
-              {currentRealElo}
-            </span>
-            <span className="text-xs font-mono text-neutral-400">Elo</span>
-          </div>
-          <div className="mt-1 text-xs text-neutral-400 font-mono">
-            {trajectoryDelta >= 0 ? `+${trajectoryDelta}` : trajectoryDelta} pts depuis la base (1500)
-          </div>
+          <p className="text-xs text-neutral-400 mt-1">
+            Visualisation précise du classement réel face à la courbe théorique vers 2000 Elo.
+          </p>
         </div>
 
-        <div className="rounded-3xl border border-white/[0.08] bg-[#0c1019]/80 p-5 backdrop-blur-xl shadow-lg">
-          <div className="flex items-center justify-between text-xs text-neutral-400">
-            <span className="font-bold uppercase tracking-wider">Cible Aujourd'hui</span>
-            <Target className="h-4 w-4 text-amber-400" />
+        {/* Tactical Quick Status Chips (Noir/Blanc, Vert, Rouge, Jaune) */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs font-mono">
+            <span className="text-neutral-400">Actuel :</span>
+            <span className="font-bold text-[#facc15]">{currentRealElo} Elo</span>
           </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="font-mono text-4xl font-black text-white tabular-nums">
-              {targetToday}
-            </span>
-            <span className="text-xs font-mono text-neutral-400">Elo</span>
-          </div>
-          <div className="mt-1 text-xs text-neutral-400 font-mono">
-            Trajectoire idéale 1500 → 2000
-          </div>
-        </div>
 
-        <div className="rounded-3xl border border-white/[0.08] bg-[#0c1019]/80 p-5 backdrop-blur-xl shadow-lg">
-          <div className="flex items-center justify-between text-xs text-neutral-400">
-            <span className="font-bold uppercase tracking-wider">Statut Rythme</span>
-            {currentDiffVsTarget >= 0 ? (
-              <TrendingUp className="h-4 w-4 text-emerald-400" />
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs font-mono">
+            <span className="text-neutral-400">Cible :</span>
+            <span className="font-bold text-white">{targetToday} Elo</span>
+          </div>
+
+          <div
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border ${
+              diffVsTarget >= 0
+                ? 'bg-[#10b981]/15 text-[#10b981] border-[#10b981]/30'
+                : 'bg-[#ef4444]/15 text-[#ef4444] border-[#ef4444]/30'
+            }`}
+          >
+            {diffVsTarget >= 0 ? (
+              <>
+                <TrendingUp className="h-3.5 w-3.5" />
+                <span>+{diffVsTarget} pts (En Avance)</span>
+              </>
             ) : (
-              <TrendingDown className="h-4 w-4 text-rose-400" />
+              <>
+                <TrendingDown className="h-3.5 w-3.5" />
+                <span>{diffVsTarget} pts (Retard)</span>
+              </>
             )}
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span
-              className={`font-mono text-4xl font-black tabular-nums ${
-                currentDiffVsTarget >= 0 ? 'text-emerald-400' : 'text-rose-400'
-              }`}
-            >
-              {currentDiffVsTarget >= 0 ? `+${currentDiffVsTarget}` : currentDiffVsTarget}
-            </span>
-            <span className="text-xs font-mono text-neutral-400">pts</span>
-          </div>
-          <div className="mt-1 text-xs font-bold">
-            {currentDiffVsTarget >= 0 ? (
-              <span className="text-emerald-400">En avance sur le planning ✓</span>
-            ) : (
-              <span className="text-rose-400">Retard temporaire à combler</span>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-white/[0.08] bg-[#0c1019]/80 p-5 backdrop-blur-xl shadow-lg">
-          <div className="flex items-center justify-between text-xs text-neutral-400">
-            <span className="font-bold uppercase tracking-wider">Cadence Requise</span>
-            <Zap className="h-4 w-4 text-amber-400" />
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="font-mono text-4xl font-black text-amber-400 tabular-nums">
-              +{requiredPtsPerMonth}
-            </span>
-            <span className="text-xs font-mono text-neutral-400">pts/mois</span>
-          </div>
-          <div className="mt-1 text-xs text-neutral-400 font-mono">
-            {pointsRemaining} pts restants · {daysLeft} jours
           </div>
         </div>
       </div>
 
-      {/* 2. Interactive Toolbars (Preset Buttons - ABSOLUTELY NO MOUSE WHEEL) */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-[#0c1019]/80 p-3 rounded-2xl border border-white/[0.08] backdrop-blur-xl">
-        {/* Preset Timeframe buttons */}
-        <div className="flex flex-wrap items-center gap-1.5">
+      {/* 2. Interactive Period Toolbar (1 Clic, Zéro Molette) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0d1117] border border-neutral-800 p-3 rounded-2xl">
+        <div className="flex items-center gap-1.5">
           <span className="text-xs font-bold text-neutral-400 mr-2 flex items-center gap-1.5">
-            <Calendar className="h-3.5 w-3.5 text-amber-400" />
-            <span>Période :</span>
+            <Calendar className="h-3.5 w-3.5 text-[#facc15]" />
+            <span>Échelle :</span>
           </span>
           {[
-            { id: 'full', label: 'Tout le projet (2026-2027)' },
+            { id: 'full', label: 'Tout le projet' },
             { id: '1year', label: '1 An' },
             { id: '6months', label: '6 Mois' },
-            { id: '3months', label: '3 Mois' },
             { id: '30days', label: '30 Jours' },
-          ].map((p) => (
+          ].map((btn) => (
             <button
-              key={p.id}
-              type="button"
-              onClick={() => setTimeframe(p.id as TimeframePreset)}
+              key={btn.id}
+              onClick={() => setTimeframe(btn.id as TimeframePreset)}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                timeframe === p.id
-                  ? 'bg-amber-500 text-neutral-950 shadow-[0_2px_10px_rgba(245,158,11,0.4)]'
-                  : 'text-neutral-400 hover:text-white bg-neutral-900 border border-white/[0.06]'
+                timeframe === btn.id
+                  ? 'bg-[#facc15] text-black shadow-md'
+                  : 'bg-neutral-900 text-neutral-300 hover:text-white border border-neutral-800'
               }`}
             >
-              {p.label}
+              {btn.label}
             </button>
           ))}
         </div>
 
-        {/* Cadence Mode & Bands Toggle */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-xl bg-neutral-900 p-0.5 border border-white/[0.08] text-xs">
-            <button
-              type="button"
-              onClick={() => setCadenceMode('best')}
-              className={`px-3 py-1 rounded-lg transition-colors font-bold ${
-                cadenceMode === 'best'
-                  ? 'bg-neutral-800 text-amber-300'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Mode Principal
-            </button>
-            <button
-              type="button"
-              onClick={() => setCadenceMode('multi')}
-              className={`px-3 py-1 rounded-lg transition-colors font-bold ${
-                cadenceMode === 'multi'
-                  ? 'bg-neutral-800 text-amber-300'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              Multi-Cadences
-            </button>
+        {/* Legend pills (Noir, Blanc, Jaune, Vert) */}
+        <div className="flex items-center gap-4 text-xs font-mono">
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#facc15]" />
+            <span className="text-[#facc15] font-bold">Réel (1 pt / jour)</span>
           </div>
-
-          <button
-            type="button"
-            onClick={() => setShowLevelBands((prev) => !prev)}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs border font-bold transition-colors ${
-              showLevelBands
-                ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
-                : 'border-white/[0.08] bg-neutral-900 text-neutral-400 hover:text-white'
-            }`}
-            title="Activer/désactiver les bandes colorées de niveaux FIDE"
-          >
-            <Layers className="h-3.5 w-3.5" />
-            <span>Paliers FIDE</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-4 border-b-2 border-dashed border-white" />
+            <span className="text-white">Cible 1500 → 2000</span>
+          </div>
         </div>
       </div>
 
-      {/* 3. Main Chart Canvas Card */}
-      <div className="relative rounded-3xl border border-white/[0.08] bg-[#0c1019]/90 p-4 sm:p-6 shadow-[0_16px_40px_rgba(0,0,0,0.5)] backdrop-blur-2xl overflow-hidden">
-        {/* Subtle Legend Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-400 pb-3 mb-2 border-b border-white/[0.06] font-mono">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="h-0.5 w-4 bg-amber-400 rounded-full" />
-              <span className="text-amber-300 font-bold">Classement Réel ({currentBestMode})</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="h-0.5 w-4 border-b-2 border-dashed border-neutral-400" />
-              <span className="text-neutral-400">Objectif Linéaire (1500 → 2000)</span>
-            </div>
-            {cadenceMode === 'multi' && (
-              <div className="flex items-center gap-2">
-                <span className="h-0.5 w-4 bg-sky-400 rounded-full" />
-                <span className="text-sky-300 font-bold">Rapide</span>
-              </div>
-            )}
-          </div>
+      {/* 3. Recharts LineChart Component (Installed from GitHub, responsive, no wheel scroll capture) */}
+      <div className="rounded-3xl border border-neutral-800 bg-[#0c0f14] p-4 sm:p-6 shadow-2xl">
+        <div className="h-[420px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={chartData}
+              margin={{ top: 20, right: 30, left: 10, bottom: 25 }}
+            >
+              {/* Subtle dark Cartesian Grid */}
+              <CartesianGrid stroke="#1e2633" strokeDasharray="3 3" vertical={false} />
 
-          <div className="text-[11px] text-neutral-400 flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5 text-amber-400" />
-            <span>Survolez la courbe pour inspecter les valeurs en direct</span>
-          </div>
+              {/* X Axis (Dates) */}
+              <XAxis
+                dataKey="dateLabel"
+                stroke="#64748b"
+                tick={{ fill: '#94a3b8', fontSize: 11, fontFamily: 'monospace' }}
+                tickLine={{ stroke: '#334155' }}
+                dy={10}
+              />
+
+              {/* Y Axis (Elo Ratings: 1400 to 2100) */}
+              <YAxis
+                domain={[1400, 2100]}
+                stroke="#64748b"
+                tick={{ fill: '#94a3b8', fontSize: 11, fontFamily: 'monospace' }}
+                tickLine={{ stroke: '#334155' }}
+                ticks={[1500, 1600, 1700, 1800, 1900, 2000]}
+                dx={-5}
+              />
+
+              {/* Reference Lines for Departure 1500 and Target 2000 */}
+              <ReferenceLine
+                y={1500}
+                stroke="#ffffff"
+                strokeDasharray="4 4"
+                strokeOpacity={0.4}
+                label={{
+                  value: 'Départ 1500',
+                  fill: '#ffffff',
+                  fontSize: 10,
+                  position: 'insideTopLeft',
+                }}
+              />
+              <ReferenceLine
+                y={2000}
+                stroke="#facc15"
+                strokeDasharray="5 5"
+                strokeWidth={1.5}
+                label={{
+                  value: 'Objectif 2000 Elo 🏆',
+                  fill: '#facc15',
+                  fontSize: 11,
+                  fontWeight: 'bold',
+                  position: 'insideTopLeft',
+                }}
+              />
+
+              {/* Recharts Custom Tooltip */}
+              <Tooltip content={<CustomTooltip />} />
+
+              {/* Target Elo Line (Dashed White) */}
+              <Line
+                type="monotone"
+                dataKey="targetElo"
+                name="Cible Théorique"
+                stroke="#e2e8f0"
+                strokeWidth={1.8}
+                strokeDasharray="5 5"
+                dot={false}
+                activeDot={false}
+                isAnimationActive={false}
+              />
+
+              {/* Real Elo Line (Vivid Yellow #facc15, connectNulls for continuity between synced days) */}
+              <Line
+                type="monotone"
+                dataKey="realElo"
+                name="Votre Elo Réel"
+                stroke="#facc15"
+                strokeWidth={3}
+                connectNulls={true}
+                /* Points pas trop gros: radius 3px discret et élégant */
+                dot={(props: any) => {
+                  const { cx, cy, payload } = props;
+                  if (!payload.isRealPoint || cx === undefined || cy === undefined) return null;
+                  return (
+                    <circle
+                      key={`dot-${cx}-${cy}`}
+                      cx={cx}
+                      cy={cy}
+                      r={3}
+                      fill="#facc15"
+                      stroke="#0c0f14"
+                      strokeWidth={1.5}
+                    />
+                  );
+                }}
+                activeDot={{
+                  r: 5,
+                  fill: '#facc15',
+                  stroke: '#ffffff',
+                  strokeWidth: 2,
+                }}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
 
-        {/* SVG Canvas - NO onWheel handler (Fluid page scroll guaranteed) */}
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${width} ${height}`}
-          className="w-full h-auto overflow-visible cursor-crosshair select-none"
-          onMouseMove={handleMouseMove}
-          onMouseLeave={handleMouseLeave}
-        >
-          <defs>
-            <linearGradient id={`goldGrad-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.30" />
-              <stop offset="60%" stopColor="#f59e0b" stopOpacity="0.06" />
-              <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.00" />
-            </linearGradient>
-
-            <clipPath id={`chartArea-${gradientId}`}>
-              <rect x={padding.left} y={padding.top} width={innerWidth} height={innerHeight} />
-            </clipPath>
-          </defs>
-
-          {/* Optional Level Bands */}
-          {showLevelBands && (
-            <g clipPath={`url(#chartArea-${gradientId})`}>
-              {levelBands.map((band) => {
-                const yTop = getY(band.to);
-                const yBottom = getY(band.from);
-                const h = Math.max(0, yBottom - yTop);
-
-                return (
-                  <rect
-                    key={band.from}
-                    x={padding.left}
-                    y={yTop}
-                    width={innerWidth}
-                    height={h}
-                    fill={band.color}
-                  />
-                );
-              })}
-            </g>
-          )}
-
-          {/* Horizontal Level Guidelines */}
-          {yTicks.map((tick) => {
-            const y = getY(tick.elo);
-            const isTarget = tick.elo === targetElo;
-            const isStart = tick.elo === startElo;
-
-            return (
-              <g key={tick.elo}>
-                <line
-                  x1={padding.left}
-                  y1={y}
-                  x2={width - padding.right}
-                  y2={y}
-                  stroke={
-                    isTarget
-                      ? 'rgba(245, 158, 11, 0.50)'
-                      : isStart
-                      ? 'rgba(255, 255, 255, 0.25)'
-                      : 'rgba(255, 255, 255, 0.06)'
-                  }
-                  strokeDasharray={isTarget || isStart ? '5 4' : undefined}
-                  strokeWidth={isTarget ? 1.5 : 1}
-                />
-
-                {/* Left Elo Value */}
-                <text
-                  x={padding.left - 12}
-                  y={y + 4}
-                  textAnchor="end"
-                  className={`font-mono text-[11px] ${
-                    isTarget
-                      ? 'fill-amber-400 font-bold'
-                      : isStart
-                      ? 'fill-white font-bold'
-                      : 'fill-neutral-500'
-                  }`}
-                >
-                  {tick.label}
-                </text>
-
-                {/* Right Milestone Badge Label */}
-                {tick.badge && (
-                  <text
-                    x={width - padding.right + 12}
-                    y={y + 4}
-                    className={`font-mono text-[10px] ${
-                      isTarget
-                        ? 'fill-amber-400 font-bold'
-                        : isStart
-                        ? 'fill-neutral-300 font-medium'
-                        : 'fill-neutral-500'
-                    }`}
-                  >
-                    {tick.badge}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-
-          {/* Vertical Date Grid Lines & Abscissa Labels */}
-          {xTicks.map((tick, i) => {
-            const x = getX(tick.t);
-            if (x < padding.left - 5 || x > width - padding.right + 5) return null;
-
-            return (
-              <g key={i}>
-                <line
-                  x1={x}
-                  y1={padding.top}
-                  x2={x}
-                  y2={height - padding.bottom}
-                  stroke="rgba(255, 255, 255, 0.04)"
-                />
-
-                <line
-                  x1={x}
-                  y1={height - padding.bottom}
-                  x2={x}
-                  y2={height - padding.bottom + 6}
-                  stroke="rgba(255, 255, 255, 0.20)"
-                  strokeWidth="1.2"
-                />
-
-                <text
-                  x={x}
-                  y={height - padding.bottom + 20}
-                  textAnchor="middle"
-                  className="font-mono text-[11px] fill-neutral-300 font-medium"
-                >
-                  {tick.label}
-                </text>
-                {tick.sub && (
-                  <text
-                    x={x}
-                    y={height - padding.bottom + 33}
-                    textAnchor="middle"
-                    className="font-mono text-[9px] fill-neutral-500"
-                  >
-                    {tick.sub}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-
-          {/* Abscissa baseline */}
-          <line
-            x1={padding.left}
-            y1={height - padding.bottom}
-            x2={width - padding.right}
-            y2={height - padding.bottom}
-            stroke="rgba(255, 255, 255, 0.15)"
-            strokeWidth="1.5"
-          />
-
-          {/* Today marker */}
-          {showTodayMarker && (
-            <g pointerEvents="none">
-              <line
-                x1={todayX}
-                y1={padding.top}
-                x2={todayX}
-                y2={height - padding.bottom}
-                stroke="#d97706"
-                strokeWidth="1.5"
-                strokeDasharray="4 4"
-                opacity="0.8"
-              />
-              <rect
-                x={todayX - 35}
-                y={padding.top - 20}
-                width="70"
-                height="18"
-                rx="4"
-                fill="#d97706"
-              />
-              <text
-                x={todayX}
-                y={padding.top - 7}
-                textAnchor="middle"
-                className="font-mono text-[9px] fill-neutral-950 font-bold uppercase tracking-wider"
-              >
-                Aujourd'hui
-              </text>
-            </g>
-          )}
-
-          {/* Clipped content inside chart boundaries */}
-          <g clipPath={`url(#chartArea-${gradientId})`}>
-            {realAreaPath && (
-              <path d={realAreaPath} fill={`url(#goldGrad-${gradientId})`} />
-            )}
-
-            {/* Target Trajectory Line (1500 to 2000 Elo) */}
-            <line
-              x1={targetLine.x1}
-              y1={targetLine.y1}
-              x2={targetLine.x2}
-              y2={targetLine.y2}
-              stroke="#a1a1aa"
-              strokeWidth="2"
-              strokeDasharray="6 5"
-              opacity="0.75"
-            />
-
-            {/* Multi-Cadence: Rapid Path */}
-            {rapidLinePath && (
-              <path
-                d={rapidLinePath}
-                fill="none"
-                stroke="#38bdf8"
-                strokeWidth="2"
-                strokeLinecap="round"
-                opacity="0.85"
-              />
-            )}
-
-            {/* Real Progress Smooth Curve */}
-            {realLinePath && (
-              <path
-                d={realLinePath}
-                fill="none"
-                stroke="#f59e0b"
-                strokeWidth="3.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            )}
-
-            {/* Real Data Points */}
-            {realLinePoints.map((pt, i) => {
-              const isLast = i === realLinePoints.length - 1;
-              return (
-                <g key={i}>
-                  {isLast && (
-                    <circle
-                      cx={pt.x}
-                      cy={pt.y}
-                      r="10"
-                      fill="none"
-                      stroke="#f59e0b"
-                      strokeWidth="1.5"
-                      opacity="0.7"
-                      className="animate-ping"
-                    />
-                  )}
-                  <circle
-                    cx={pt.x}
-                    cy={pt.y}
-                    r={isLast ? 6 : 4}
-                    fill="#0c1019"
-                    stroke="#f59e0b"
-                    strokeWidth="2.5"
-                  />
-                </g>
-              );
-            })}
-          </g>
-
-          {/* Destination Milestone Beacon (Target Pin at 2000 Elo) */}
-          {targetLine.x2 <= width - padding.right + 10 && (
-            <g transform={`translate(${targetLine.x2}, ${targetLine.y2})`}>
-              <circle r="6" fill="#f59e0b" opacity="0.4" className="animate-ping" />
-              <circle r="4.5" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.5" />
-            </g>
-          )}
-
-          {/* Interactive Hover Crosshair & Glass Tooltip */}
-          {hoverData && (
-            <g pointerEvents="none">
-              <line
-                x1={hoverData.x}
-                y1={padding.top}
-                x2={hoverData.x}
-                y2={height - padding.bottom}
-                stroke="rgba(245, 158, 11, 0.45)"
-                strokeWidth="1.2"
-                strokeDasharray="3 3"
-              />
-
-              <circle
-                cx={hoverData.x}
-                cy={hoverData.yTarget}
-                r="4.5"
-                fill="#0c1019"
-                stroke="#a1a1aa"
-                strokeWidth="2"
-              />
-
-              {hoverData.realElo !== null && (
-                <circle
-                  cx={hoverData.x}
-                  cy={hoverData.yReal}
-                  r="5.5"
-                  fill="#f59e0b"
-                  stroke="#ffffff"
-                  strokeWidth="2"
-                />
-              )}
-
-              {/* Floating Tooltip Box */}
-              <g
-                transform={`translate(${Math.max(
-                  padding.left + 5,
-                  Math.min(width - padding.right - 235, hoverData.x - 117)
-                )}, ${Math.max(padding.top + 5, Math.min(height - 165, hoverData.yReal - 120))})`}
-              >
-                <rect
-                  x="0"
-                  y="0"
-                  width="235"
-                  height="105"
-                  rx="12"
-                  fill="#121826"
-                  stroke="rgba(245, 158, 11, 0.5)"
-                  strokeWidth="1.2"
-                  filter="drop-shadow(0 12px 24px rgba(0,0,0,0.7))"
-                />
-
-                <text x="14" y="20" fill="#ffffff" fontSize="11" fontWeight="bold" className="capitalize">
-                  {hoverData.dateFormatted}
-                </text>
-
-                <line x1="14" y1="28" x2="221" y2="28" stroke="rgba(255,255,255,0.08)" />
-
-                <text x="14" y="47" fill="#a1a1aa" fontSize="10">
-                  Cible théorique :
-                </text>
-                <text x="221" y="47" fill="#e4e4e7" fontSize="11" fontWeight="bold" textAnchor="end" fontFamily="monospace">
-                  {hoverData.targetElo} Elo
-                </text>
-
-                {hoverData.realElo !== null ? (
-                  <>
-                    <text x="14" y="66" fill="#a1a1aa" fontSize="10">
-                      Votre classement :
-                    </text>
-                    <text x="221" y="66" fill="#f59e0b" fontSize="12" fontWeight="bold" textAnchor="end" fontFamily="monospace">
-                      {hoverData.realElo} Elo
-                    </text>
-
-                    <text x="14" y="83" fill="#a1a1aa" fontSize="10">
-                      Écart à l'objectif :
-                    </text>
-                    <text
-                      x="221"
-                      y="83"
-                      fill={hoverData.diff !== null && hoverData.diff >= 0 ? '#34d399' : '#f87171'}
-                      fontSize="11"
-                      fontWeight="bold"
-                      textAnchor="end"
-                      fontFamily="monospace"
-                    >
-                      {hoverData.diff !== null && hoverData.diff >= 0
-                        ? `+${hoverData.diff} pts (Avance)`
-                        : `${hoverData.diff} pts (Retard)`}
-                    </text>
-                  </>
-                ) : (
-                  <text x="14" y="68" fill="#71717a" fontSize="10" fontStyle="italic">
-                    Trajectoire prévisionnelle vers 2000 Elo
-                  </text>
-                )}
-
-                <text x="14" y="97" fill="#71717a" fontSize="9" fontFamily="monospace">
-                  {hoverData.daysRemaining} j restants · {hoverData.projectPercent}% du projet
-                </text>
-              </g>
-            </g>
-          )}
-        </svg>
-
-        {/* 4. Bottom Stepper Plateaux */}
-        <div className="mt-6 pt-4 border-t border-white/[0.06]">
+        {/* 4. Bottom Stepper Paliers (Noir/Blanc, Vert, Jaune) */}
+        <div className="mt-6 pt-5 border-t border-neutral-800">
           <div className="flex items-center justify-between text-xs text-neutral-400 mb-3">
             <span className="font-bold text-white flex items-center gap-1.5">
-              <Milestone className="h-4 w-4 text-amber-400" />
-              <span>Plateaux De Progression Vers Les 2000 Elo</span>
+              <Milestone className="h-4 w-4 text-[#facc15]" />
+              <span>Paliers Du Projet Échiquéen (Tranches de 100 Elo)</span>
             </span>
             <span className="font-mono text-neutral-400 text-[11px]">
-              Échéance officielle : 31/12/2027
+              Échéance : 31/12/2027
             </span>
           </div>
 
@@ -990,24 +488,24 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                   key={m.elo}
                   className={`rounded-2xl p-3.5 border transition-all ${
                     isPassed
-                      ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
+                      ? 'bg-[#10b981]/15 border-[#10b981]/40 text-[#10b981]'
                       : isCurrentTarget
-                      ? 'bg-amber-500/10 border-amber-500/40 text-amber-300 ring-1 ring-amber-500/30'
-                      : 'bg-neutral-950/60 border-white/[0.06] text-neutral-400'
+                      ? 'bg-[#facc15]/10 border-[#facc15]/40 text-[#facc15] ring-1 ring-[#facc15]/30'
+                      : 'bg-neutral-900/60 border-neutral-800 text-neutral-400'
                   }`}
                 >
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="font-bold font-mono text-white">{m.elo} Elo</span>
                     {isPassed ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                      <CheckCircle2 className="h-4 w-4 text-[#10b981]" />
                     ) : (
                       <span className="font-mono text-[10px] text-neutral-500">{m.pct}</span>
                     )}
                   </div>
                   <div className="mt-1 text-xs font-bold">{m.label}</div>
-                  <div className="mt-0.5 text-[10px] text-neutral-500">
+                  <div className="mt-0.5 text-[10px] text-neutral-400">
                     {isPassed ? (
-                      <span className="text-emerald-400 font-bold">Validé ✓</span>
+                      <span className="text-[#10b981] font-bold">Validé ✓</span>
                     ) : (
                       <span>{m.elo - currentRealElo} pts restants</span>
                     )}

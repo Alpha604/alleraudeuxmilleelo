@@ -158,70 +158,67 @@ export const SyncLog: React.FC<SyncLogProps> = ({
       {/* Header and Toolbar */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-neutral-100 dark:text-neutral-100 light:text-neutral-900 flex items-center gap-2">
-            <History className="h-5 w-5 text-amber-400" />
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <History className="h-5 w-5 text-[#facc15]" />
             <span>Historique Des Synchronisations</span>
           </h2>
-          <p className="text-xs text-neutral-400">
-            Relevés officiels horodatés pour <strong className="text-amber-300">@{username}</strong>
+          <p className="text-xs text-neutral-400 mt-1">
+            Relevés officiels horodatés pour <strong className="text-[#facc15]">@{username}</strong>
             {isIframe && ' (Mode consultation en lecture seule)'}.
           </p>
         </div>
 
-        {/* Action buttons */}
+        {/* Action buttons (Noir/Blanc, Vert, Rouge, Jaune) */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Purge Button (Hidden in iframe, locked when not admin) */}
           {!isIframe && onPurgeAccountData && (
             <button
               onClick={handleTriggerPurge}
               title={isAdmin ? "Purger le cache et forcer un relevé neuf" : "Action protégée par 2FA"}
-              className="flex items-center gap-1.5 rounded-lg border border-amber-900/40 bg-amber-950/20 px-3 py-1.5 text-xs font-medium text-amber-300 hover:bg-amber-900/30 transition-colors"
+              className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-neutral-800 transition-colors"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               <span>Purger l'ancien compte</span>
-              {!isAdmin && <Lock className="h-2.5 w-2.5 text-amber-400" />}
+              {!isAdmin && <Lock className="h-2.5 w-2.5 text-[#facc15]" />}
             </button>
           )}
 
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800 transition-colors"
+            className="flex items-center gap-1.5 rounded-xl border border-[#10b981]/40 bg-[#10b981]/15 px-3 py-1.5 text-xs font-bold text-[#10b981] hover:bg-[#10b981]/25 transition-colors"
           >
-            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-400" />
+            <FileSpreadsheet className="h-3.5 w-3.5" />
             <span>Export CSV</span>
           </button>
 
           <button
             onClick={handleExportJSON}
-            className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800 transition-colors"
+            className="flex items-center gap-1.5 rounded-xl border border-[#facc15]/40 bg-[#facc15]/10 px-3 py-1.5 text-xs font-bold text-[#facc15] hover:bg-[#facc15]/20 transition-colors"
           >
-            <FileJson className="h-3.5 w-3.5 text-amber-400" />
+            <FileJson className="h-3.5 w-3.5" />
             <span>Export JSON</span>
           </button>
 
-          {/* Import Button (Hidden in iframe) */}
           {!isIframe && (
             <button
               onClick={handleTriggerImport}
               title={isAdmin ? "Importer un fichier d'historique" : "Import protégé par 2FA"}
-              className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:text-white hover:bg-neutral-800 transition-colors"
+              className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-neutral-800 transition-colors"
             >
-              <Upload className="h-3.5 w-3.5 text-cyan-400" />
+              <Upload className="h-3.5 w-3.5" />
               <span>Importer</span>
-              {!isAdmin && <Lock className="h-2.5 w-2.5 text-amber-400" />}
+              {!isAdmin && <Lock className="h-2.5 w-2.5 text-[#facc15]" />}
             </button>
           )}
 
-          {/* Clear Button (Hidden in iframe) */}
           {!isIframe && history.length > 0 && (
             <button
               onClick={handleTriggerClear}
               title={isAdmin ? "Vider l'historique" : "Action protégée par 2FA"}
-              className="flex items-center gap-1.5 rounded-lg border border-rose-900/40 bg-rose-950/20 px-3 py-1.5 text-xs font-medium text-rose-300 hover:bg-rose-900/30 transition-colors"
+              className="flex items-center gap-1.5 rounded-xl border border-[#ef4444]/40 bg-[#ef4444]/15 px-3 py-1.5 text-xs font-bold text-[#ef4444] hover:bg-[#ef4444]/25 transition-colors"
             >
               <Trash2 className="h-3.5 w-3.5" />
               <span>Vider</span>
-              {!isAdmin && <Lock className="h-2.5 w-2.5 text-rose-400" />}
+              {!isAdmin && <Lock className="h-2.5 w-2.5 text-[#ef4444]" />}
             </button>
           )}
         </div>
@@ -302,7 +299,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
 
                       <td className="py-3 px-4 text-right tabular-nums">
                         {record.bullet ? (
-                          <span className={record.bestMode === 'bullet' ? 'text-amber-400 font-bold' : ''}>
+                          <span className={record.bestMode === 'bullet' ? 'text-[#facc15] font-bold' : 'text-neutral-300'}>
                             {record.bullet}
                           </span>
                         ) : (
@@ -312,7 +309,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
 
                       <td className="py-3 px-4 text-right tabular-nums">
                         {record.blitz ? (
-                          <span className={record.bestMode === 'blitz' ? 'text-amber-400 font-bold' : ''}>
+                          <span className={record.bestMode === 'blitz' ? 'text-[#facc15] font-bold' : 'text-neutral-300'}>
                             {record.blitz}
                           </span>
                         ) : (
@@ -322,7 +319,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
 
                       <td className="py-3 px-4 text-right tabular-nums">
                         {record.rapid ? (
-                          <span className={record.bestMode === 'rapid' ? 'text-amber-400 font-bold' : ''}>
+                          <span className={record.bestMode === 'rapid' ? 'text-[#facc15] font-bold' : 'text-neutral-300'}>
                             {record.rapid}
                           </span>
                         ) : (
@@ -331,16 +328,16 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                       </td>
 
                       <td className="py-3 px-4 text-center">
-                        <span className="inline-flex items-center gap-1.5 rounded bg-amber-500/10 px-2 py-0.5 text-[11px] font-bold text-amber-300 border border-amber-500/20">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#facc15]/10 px-2.5 py-0.5 text-xs font-bold text-[#facc15] border border-[#facc15]/30">
                           <span>{record.bestRating}</span>
-                          <span className="text-[10px] uppercase font-sans text-amber-400/80">({record.bestMode})</span>
+                          <span className="text-[10px] uppercase font-sans text-neutral-400">({record.bestMode})</span>
                         </span>
                       </td>
 
-                      <td className="py-3 px-4 font-sans text-[11px] text-neutral-500 whitespace-nowrap">
+                      <td className="py-3 px-4 font-sans text-[11px] text-neutral-400 whitespace-nowrap">
                         <div>{record.source}</div>
                         {record.username && (
-                          <div className="text-[10px] text-neutral-400 font-mono">@{record.username}</div>
+                          <div className="text-[10px] text-neutral-300 font-mono">@{record.username}</div>
                         )}
                       </td>
                     </tr>
