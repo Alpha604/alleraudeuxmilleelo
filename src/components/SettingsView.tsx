@@ -200,9 +200,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   if (isIframe) {
     return (
       <div className="max-w-4xl mx-auto space-y-6">
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-8 text-center space-y-3">
-          <Lock className="h-10 w-10 text-amber-400 mx-auto" />
-          <h3 className="text-base font-bold text-amber-300">Mode Iframe Sécurisé (Lecture Seule)</h3>
+        <div className="rounded-2xl border border-[#facc15]/30 bg-[#facc15]/10 p-8 text-center space-y-3">
+          <Lock className="h-10 w-10 text-[#facc15] mx-auto" />
+          <h3 className="text-base font-bold text-[#facc15]">Mode Iframe Sécurisé (Lecture Seule)</h3>
           <p className="text-xs text-neutral-300 max-w-xl mx-auto leading-relaxed">
             Cette intégration fonctionne en mode consultation restreinte. La modification des paramètres, le changement de pseudo, l'effacement de données et les synchronisations manuelles sont formellement bloqués dans un contexte iframe.
           </p>
@@ -215,8 +215,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   if (!isAdmin) {
     return (
       <div className="max-w-4xl mx-auto space-y-6">
-        <div className="rounded-2xl border border-amber-500/40 bg-neutral-900/90 p-8 text-center space-y-5 shadow-2xl">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-400">
+        <div className="rounded-2xl border border-[#facc15]/40 bg-neutral-900/90 p-8 text-center space-y-5 shadow-2xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[#facc15]/30 bg-[#facc15]/10 text-[#facc15]">
             <Lock className="h-7 w-7" />
           </div>
           <div className="space-y-1.5">
@@ -227,7 +227,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
           <button
             onClick={() => onOpenSecurityModal && onOpenSecurityModal('Accès aux Paramètres')}
-            className="inline-flex items-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 px-6 py-3 text-xs font-bold transition-all shadow-[0_0_20px_rgba(245,158,11,0.25)]"
+            className="inline-flex items-center gap-2 rounded-xl bg-[#facc15] hover:bg-[#eab308] text-black px-6 py-3 text-xs font-bold transition-all shadow-[0_0_20px_rgba(250,204,21,0.25)]"
           >
             <ShieldCheck className="h-4 w-4" />
             <span>Déverrouiller avec Microsoft / Google Authenticator (2FA)</span>
@@ -243,7 +243,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-neutral-100 dark:text-neutral-100 light:text-neutral-900 flex items-center gap-2">
-            <SettingsIcon className="h-5 w-5 text-amber-400" />
+            <SettingsIcon className="h-5 w-5 text-[#facc15]" />
             <span>Paramètres Personnalisables Du Projet</span>
             <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
               <ShieldCheck className="h-3 w-3" />
@@ -280,7 +280,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Section 1: Profil & Objectifs Principaux */}
         <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/90 light:border-neutral-200 light:bg-white space-y-4">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400 border-b border-neutral-800 pb-3">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15] border-b border-neutral-800 pb-3">
             <User className="h-4 w-4" />
             <span>Identité & Objectifs Du Projet</span>
           </div>
@@ -295,7 +295,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 value={form.username}
                 onChange={(e) => setForm({ ...form, username: e.target.value })}
                 required
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
               />
               <span className="text-[11px] text-neutral-400 mt-1 block">
                 Par défaut : <strong className="text-neutral-200">alpharomeo1500</strong>. Changer de pseudo isole et purge automatiquement les données de l'ancien compte pour éviter toute valeur faussée.
@@ -309,7 +309,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <select
                 value={form.selectedMode}
                 onChange={(e) => setForm({ ...form, selectedMode: e.target.value as 'auto' | GameMode })}
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
               >
                 <option value="auto">Automatique (Meilleur parmi Blitz, Rapid, Bullet)</option>
                 <option value="bullet">Fixer sur Bullet uniquement</option>
@@ -332,7 +332,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 value={form.startElo}
                 onChange={(e) => setForm({ ...form, startElo: Number(e.target.value) })}
                 required
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-amber-500 focus:outline-none font-mono"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none font-mono"
               />
               <span className="text-[11px] text-neutral-500 mt-1 block">
                 Fixé à 1500 Elo pour le projet "Road to 2000".
@@ -350,7 +350,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 value={form.targetElo}
                 onChange={(e) => setForm({ ...form, targetElo: Number(e.target.value) })}
                 required
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-amber-500 focus:outline-none font-mono"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none font-mono"
               />
               <span className="text-[11px] text-neutral-500 mt-1 block">
                 Fixé à 2000 Elo pour l'accomplissement final.
@@ -366,7 +366,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 value={form.startDate}
                 onChange={(e) => setForm({ ...form, startDate: e.target.value })}
                 required
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
               />
               <span className="text-[11px] text-neutral-500 mt-1 block">
                 Date de référence : 31 octobre 2026.
@@ -382,7 +382,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 value={form.targetDate.substring(0, 16)}
                 onChange={(e) => setForm({ ...form, targetDate: `${e.target.value}:59` })}
                 required
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
               />
               <span className="text-[11px] text-neutral-500 mt-1 block">
                 Date limite : 31 décembre 2027 à 23h59 (Europe/Paris).
@@ -393,7 +393,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* Section 2: Algorithme de trajectoire & Synchronisation */}
         <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/90 light:border-neutral-200 light:bg-white space-y-4">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400 border-b border-neutral-800 pb-3">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15] border-b border-neutral-800 pb-3">
             <Sliders className="h-4 w-4" />
             <span>Moteur De Calcul & Synchronisation</span>
           </div>
@@ -406,7 +406,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <select
                 value={form.trajectoryModel}
                 onChange={(e) => setForm({ ...form, trajectoryModel: e.target.value as TrajectoryModel })}
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
               >
                 <option value="linear">1. Progression Linéaire (Recommandé - Simple et transparent)</option>
                 <option value="milestones">2. Paliers Mensuels Step Trajectory</option>
@@ -424,7 +424,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <select
                 value={form.autoSyncMinutes}
                 onChange={(e) => setForm({ ...form, autoSyncMinutes: Number(e.target.value) })}
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
               >
                 <option value="0">Manuel uniquement (Aucun appel périodique)</option>
                 <option value="5">Toutes les 5 minutes</option>
@@ -441,7 +441,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         {/* Section 3: Thème & Notifications */}
         <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/90 light:border-neutral-200 light:bg-white space-y-4">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400 border-b border-neutral-800 pb-3">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15] border-b border-neutral-800 pb-3">
             <Bell className="h-4 w-4" />
             <span>Thème Visuel & Notifications De Performance</span>
           </div>
@@ -457,7 +457,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onClick={() => setForm({ ...form, theme: 'dark' })}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${
                     form.theme === 'dark'
-                      ? 'border-amber-500 bg-amber-500/15 text-amber-300'
+                      ? 'border-[#facc15] bg-[#facc15]/15 text-[#facc15]'
                       : 'border-neutral-800 bg-neutral-950 text-neutral-400'
                   }`}
                 >
@@ -469,7 +469,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onClick={() => setForm({ ...form, theme: 'light' })}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${
                     form.theme === 'light'
-                      ? 'border-amber-500 bg-amber-500/15 text-amber-300'
+                      ? 'border-[#facc15] bg-[#facc15]/15 text-[#facc15]'
                       : 'border-neutral-800 bg-neutral-950 text-neutral-400'
                   }`}
                 >
@@ -494,7 +494,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         notifications: { ...form.notifications, newPeak: e.target.checked },
                       })
                     }
-                    className="rounded border-neutral-700 bg-neutral-950 text-amber-500"
+                    className="rounded border-neutral-700 bg-neutral-950 text-[#facc15]"
                   />
                   <span>Alerter lors d'un nouveau record Elo personnel</span>
                 </label>
@@ -508,7 +508,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         notifications: { ...form.notifications, milestoneReached: e.target.checked },
                       })
                     }
-                    className="rounded border-neutral-700 bg-neutral-950 text-amber-500"
+                    className="rounded border-neutral-700 bg-neutral-950 text-[#facc15]"
                   />
                   <span>Notifier lors du franchissement d'un palier mensuel</span>
                 </label>
@@ -522,7 +522,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         notifications: { ...form.notifications, significantDelay: e.target.checked },
                       })
                     }
-                    className="rounded border-neutral-700 bg-neutral-950 text-amber-500"
+                    className="rounded border-neutral-700 bg-neutral-950 text-[#facc15]"
                   />
                   <span>Signaler un écart important sur la trajectoire théorique</span>
                 </label>
@@ -572,7 +572,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           <button
             type="submit"
-            className="flex items-center gap-2 rounded-lg bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-neutral-950 px-5 py-2 text-xs font-bold transition-all shadow-[0_0_15px_rgba(245,158,11,0.3)]"
+            className="flex items-center gap-2 rounded-lg bg-[#facc15] hover:bg-[#eab308] active:scale-[0.98] text-black px-5 py-2 text-xs font-bold transition-all shadow-[0_0_15px_rgba(250,204,21,0.3)]"
           >
             <Save className="h-4 w-4" />
             <span>Enregistrer Les Modifications</span>
@@ -583,7 +583,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* Section 5: Modification du mot de passe Administrateur 2FA */}
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm space-y-4">
         <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
             <KeyRound className="h-4 w-4" />
             <span>Sécurité 2FA : Modifier Le Mot De Passe Maître</span>
           </div>
@@ -609,7 +609,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               onClick={() => onOpenSecurityModal && onOpenSecurityModal('Gestion Authenticator 2FA')}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-200 hover:text-white transition-colors"
             >
-              <Smartphone className="h-3.5 w-3.5 text-amber-400" />
+              <Smartphone className="h-3.5 w-3.5 text-[#facc15]" />
               <span>Jumeler un nouveau téléphone / Reconfigurer</span>
             </button>
           </div>
@@ -629,7 +629,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="4 caractères minimum"
                 required
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
               />
             </div>
 
@@ -641,7 +641,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Confirmer"
                 required
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
               />
             </div>
           </div>
@@ -664,7 +664,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             type="submit"
             className="flex items-center gap-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-2 text-xs font-semibold transition-colors"
           >
-            <Lock className="h-3.5 w-3.5 text-amber-400" />
+            <Lock className="h-3.5 w-3.5 text-[#facc15]" />
             <span>Changer le mot de passe 2FA</span>
           </button>
         </form>
@@ -673,8 +673,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* Section 6: Gestion de multiples IPs de Confiance pour scan instantané */}
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm space-y-4">
         <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-400">
-            <Zap className="h-4 w-4 text-amber-400" />
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
+            <Zap className="h-4 w-4 text-[#facc15]" />
             <span>IPs De Confiance : Autorisation Instantanée Par QR Code (Multi-IP)</span>
           </div>
           <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
@@ -701,7 +701,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     value={newIpInput}
                     onChange={(e) => setNewIpInput(e.target.value.trim())}
                     placeholder="Ex: 82.64.12.34 (ou cliquez sur Détecter)"
-                    className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white placeholder-neutral-600 focus:border-amber-500 focus:outline-none font-mono"
+                    className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white placeholder-neutral-600 focus:border-[#facc15] focus:outline-none font-mono"
                   />
                   <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-neutral-500">
                     <Globe className="h-4 w-4" />
@@ -714,14 +714,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   disabled={isDetectingIp}
                   className="flex items-center justify-center gap-2 rounded-lg border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 px-3.5 py-2 text-xs font-medium transition-colors disabled:opacity-50 shrink-0"
                 >
-                  <Wifi className="h-3.5 w-3.5 text-amber-400" />
+                  <Wifi className="h-3.5 w-3.5 text-[#facc15]" />
                   <span>{isDetectingIp ? 'Détection...' : 'Détecter mon IP actuelle'}</span>
                 </button>
 
                 <button
                   type="submit"
                   disabled={newIpInput.trim().length < 7}
-                  className="flex items-center justify-center gap-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 px-4 py-2 text-xs font-bold transition-all shadow-[0_0_15px_rgba(245,158,11,0.2)] disabled:opacity-40 shrink-0"
+                  className="flex items-center justify-center gap-2 rounded-lg bg-[#facc15] hover:bg-[#eab308] text-black px-4 py-2 text-xs font-bold transition-all shadow-[0_0_15px_rgba(250,204,21,0.2)] disabled:opacity-40 shrink-0"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   <span>Ajouter cette IP</span>
@@ -730,7 +730,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             {ipMessage && (
-              <div className="flex items-center gap-2 text-xs text-amber-300 font-medium">
+              <div className="flex items-center gap-2 text-xs text-[#facc15] font-medium">
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
                 <span>{ipMessage}</span>
               </div>

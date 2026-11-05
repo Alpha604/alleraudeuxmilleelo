@@ -247,7 +247,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
 
         {/* STATE 1: Live Unlocking Sequence Animation */}
         {unlockingState && !isUnlocked ? (
-          <div className="p-6 text-center space-y-4 bg-gradient-to-b from-amber-500/15 via-emerald-950/40 to-emerald-900/40 border border-emerald-500/40 rounded-2xl shadow-xl animate-in zoom-in-95 duration-200">
+          <div className="p-6 text-center space-y-4 bg-gradient-to-b from-[#facc15]/15 via-emerald-950/40 to-emerald-900/40 border border-emerald-500/40 rounded-2xl shadow-xl animate-in zoom-in-95 duration-200">
             <div className="relative mx-auto flex h-16 w-16 items-center justify-center">
               <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400/25 animate-ping" />
               <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/25 border border-emerald-500/60 text-emerald-300 shadow-[0_0_25px_rgba(16,185,129,0.4)]">
@@ -267,7 +267,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
 
             <div className="h-2 w-full bg-neutral-950 rounded-full overflow-hidden border border-neutral-800 max-w-xs mx-auto">
               <div
-                className="h-full bg-gradient-to-r from-amber-500 via-emerald-400 to-emerald-300 transition-all duration-500 ease-out"
+                className="h-full bg-gradient-to-r from-[#facc15] via-emerald-400 to-emerald-300 transition-all duration-500 ease-out"
                 style={{ width: `${(unlockingState.step / 3) * 100}%` }}
               />
             </div>
@@ -284,9 +284,9 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
           <div className="space-y-5">
             {/* PAIRING QR CODE SECTION (Only shown during setup or when explicitly unlocked by the owner) */}
             {showPairingQr ? (
-              <div className="rounded-xl border border-amber-500/30 bg-neutral-950/90 p-4 space-y-3 animate-in fade-in">
+              <div className="rounded-xl border border-[#facc15]/30 bg-neutral-950/90 p-4 space-y-3 animate-in fade-in">
                 <div className="flex items-center justify-between text-xs border-b border-neutral-800 pb-2">
-                  <span className="font-bold text-amber-400 flex items-center gap-1.5">
+                  <span className="font-bold text-[#facc15] flex items-center gap-1.5">
                     <QrCode className="h-4 w-4" />
                     <span>Jumelage Initial (À scanner une seule fois)</span>
                   </span>
@@ -310,7 +310,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                     />
                   ) : (
                     <div className="h-44 w-44 flex items-center justify-center text-neutral-400">
-                      <QrCode className="h-10 w-10 animate-pulse text-amber-500" />
+                      <QrCode className="h-10 w-10 animate-pulse text-[#facc15]" />
                     </div>
                   )}
                 </div>
@@ -318,14 +318,14 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                 <p className="text-[11px] text-neutral-300 text-center leading-relaxed">
                   Scannez ce QR Code dans <strong>Microsoft Authenticator</strong> ou <strong>Google Authenticator</strong>.
                   <br />
-                  <span className="text-amber-300 text-[10px]">
+                  <span className="text-[#facc15] text-[10px]">
                     Une fois jumelé, le QR Code sera masqué pour garantir que vous seul possédez les codes sur votre téléphone.
                   </span>
                 </p>
 
                 {/* Secret Key in text for manual entry */}
                 <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-[11px] font-mono">
-                  <span className="text-neutral-400 truncate">Clé : <strong className="text-amber-300">{secretKey}</strong></span>
+                  <span className="text-neutral-400 truncate">Clé : <strong className="text-[#facc15]">{secretKey}</strong></span>
                   <button
                     type="button"
                     onClick={() => {
@@ -338,12 +338,71 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                     className="text-neutral-300 hover:text-white shrink-0 p-1 rounded"
                     title="Copier la clé secrète"
                   >
-                    <Copy className="h-3 w-3" />
+                    {copiedSecret ? 'Copié !' : 'Copier'}
                   </button>
                 </div>
               </div>
-            ) : (
-              /* MASKED PAIRING STATE: Informative Privacy Banner */
+            ) : isEnrolled ? (
+              <div className="rounded-xl border border-neutral-800 bg-neutral-950/70 p-3.5 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <Smartphone className="h-4 w-4 text-[#facc15]" />
+                  <div>
+                    <span className="font-bold text-white block">Application Authenticator Configurée</span>
+                    <span className="text-[11px] text-neutral-400">Jumelé en toute sécurité à votre appareil mobile</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdminPasswordInput(true)}
+                  className="text-[11px] font-medium text-neutral-400 hover:text-white underline underline-offset-2"
+                >
+                  Afficher à nouveau le QR
+                </button>
+              </div>
+            ) : null}
+
+            {/* PASSWORD PROMPT TO REVEAL QR CODE */}
+            {showAdminPasswordInput && !showPairingQr && (
+              <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-4 space-y-3 animate-in fade-in">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-white flex items-center gap-1.5">
+                    <Lock className="h-3.5 w-3.5 text-[#facc15]" />
+                    <span>Entrez votre mot de passe pour réafficher le QR Code</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminPasswordInput(false)}
+                    className="text-[11px] text-neutral-400 hover:text-white"
+                  >
+                    Annuler
+                  </button>
+                </div>
+
+                <form onSubmit={handleAuthorizeQrReveal} className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={adminUnlockPassword}
+                      onChange={(e) => setAdminUnlockPassword(e.target.value)}
+                      placeholder="Mot de passe"
+                      className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:border-[#facc15] focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isAuthorizingQrReveal || !adminUnlockPassword}
+                      className="rounded-lg bg-[#facc15] hover:bg-[#eab308] text-black px-3 py-1.5 text-xs font-bold transition-all disabled:opacity-40"
+                    >
+                      {isAuthorizingQrReveal ? '...' : 'Révéler'}
+                    </button>
+                  </div>
+                  {qrRevealError && (
+                    <p className="text-[10px] text-rose-400 font-medium">{qrRevealError}</p>
+                  )}
+                </form>
+              </div>
+            )}
+            {/* MASKED PAIRING STATE: Informative Privacy Banner */}
+            {!showPairingQr && isEnrolled && (
               <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 text-xs">
                 <div className="flex items-center gap-2 text-emerald-300">
                   <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400" />
@@ -448,12 +507,12 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                         value={adminUnlockPassword}
                         onChange={(e) => setAdminUnlockPassword(e.target.value)}
                         placeholder="Mot de passe"
-                        className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:border-amber-500 focus:outline-none"
+                        className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:border-[#facc15] focus:outline-none"
                       />
                       <button
                         type="submit"
                         disabled={isAuthorizingQrReveal || !adminUnlockPassword}
-                        className="rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 px-3 py-1.5 text-xs font-bold transition-all disabled:opacity-40"
+                        className="rounded-lg bg-[#facc15] hover:bg-[#eab308] text-black px-3 py-1.5 text-xs font-bold transition-all disabled:opacity-40"
                       >
                         {isAuthorizingQrReveal ? '...' : 'Révéler'}
                       </button>

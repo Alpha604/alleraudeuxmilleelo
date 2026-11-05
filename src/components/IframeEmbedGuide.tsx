@@ -44,7 +44,7 @@ export const IframeEmbedGuide: React.FC = () => {
       {/* Header */}
       <div>
         <h2 className="text-lg font-bold text-neutral-100 dark:text-neutral-100 light:text-neutral-900 flex items-center gap-2">
-          <Code2 className="h-5 w-5 text-amber-400" />
+          <Code2 className="h-5 w-5 text-[#facc15]" />
           <span>Intégration En Iframe & Guide D'Hébergement</span>
         </h2>
         <p className="text-xs text-neutral-400">
@@ -55,7 +55,7 @@ export const IframeEmbedGuide: React.FC = () => {
       {/* Embed Code Snippet Card */}
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/90 light:border-neutral-200 light:bg-white space-y-4">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
+          <span className="text-xs font-bold uppercase tracking-wider text-[#facc15]">
             Code D'Intégration Iframe Standard
           </span>
           <button
@@ -67,7 +67,7 @@ export const IframeEmbedGuide: React.FC = () => {
           </button>
         </div>
 
-        <pre className="overflow-x-auto rounded-xl bg-neutral-950 p-4 font-mono text-xs text-amber-300/90 border border-neutral-800/80">
+        <pre className="overflow-x-auto rounded-xl bg-neutral-950 p-4 font-mono text-xs text-neutral-300 border border-neutral-800/80">
           <code>{embedCode}</code>
         </pre>
 
@@ -80,28 +80,28 @@ export const IframeEmbedGuide: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div className="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-5 space-y-3">
           <div className="flex items-center gap-2 text-xs font-bold text-neutral-200 uppercase tracking-wider">
-            <Layers className="h-4 w-4 text-amber-400" />
+            <Layers className="h-4 w-4 text-[#facc15]" />
             <span>Spécifications & Contraintes Respectées</span>
           </div>
           <ul className="space-y-2 text-xs text-neutral-300">
             <li className="flex items-start gap-2">
-              <span className="text-amber-400 font-bold">✓</span>
+              <span className="text-[#facc15] font-bold">✓</span>
               <span><strong>Sécurité formelle en lecture seule :</strong> En iframe, les paramètres, synchronisations manuelles, purges et tests sont <strong>formellement verrouillés et inaccessibles</strong>. Les visiteurs peuvent uniquement consulter les statistiques, le graphique, le calendrier et les relevés sans risque d'altération.</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-amber-400 font-bold">✓</span>
+              <span className="text-[#facc15] font-bold">✓</span>
               <span><strong>Largeur 100% adaptative :</strong> Aucune largeur fixe rigide, s'étire selon le conteneur hôte.</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-amber-400 font-bold">✓</span>
+              <span className="text-[#facc15] font-bold">✓</span>
               <span><strong>Zéro débordement horizontal :</strong> Grilles fluides avec <code>overflow-x: hidden</code> sur le layout principal.</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-amber-400 font-bold">✓</span>
+              <span className="text-[#facc15] font-bold">✓</span>
               <span><strong>Support complet dès 320 px :</strong> Utilisable sur smartphones étroits, tablettes et grands écrans.</span>
             </li>
             <li className="flex items-start gap-2">
-              <span className="text-amber-400 font-bold">✓</span>
+              <span className="text-[#facc15] font-bold">✓</span>
               <span><strong>Autonomie sans popups :</strong> Toutes les fonctions autorisées s'exécutent dans l'iframe sans ouvrir de fenêtre externe obligatoire.</span>
             </li>
           </ul>
@@ -109,14 +109,14 @@ export const IframeEmbedGuide: React.FC = () => {
 
         <div className="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-5 space-y-3">
           <div className="flex items-center gap-2 text-xs font-bold text-neutral-200 uppercase tracking-wider">
-            <AlertCircle className="h-4 w-4 text-amber-400" />
+            <AlertCircle className="h-4 w-4 text-[#facc15]" />
             <span>Gestion Du Stockage Dégradé (Fallback)</span>
           </div>
           <p className="text-xs text-neutral-300 leading-relaxed">
             Certains navigateurs (Safari ITP, Chrome Privacy Sandbox) restreignent le <code>localStorage</code> tiers dans les iframes cross-origin.
           </p>
           <div className="rounded-lg bg-neutral-950 p-3 border border-neutral-800/80 text-[11px] text-neutral-400 space-y-1.5">
-            <div className="font-semibold text-amber-300">Résilience automatique intégrée :</div>
+            <div className="font-semibold text-[#facc15]">Résilience automatique intégrée :</div>
             <p>
               1. En cas de blocage de <code>localStorage</code>, l'application bascule automatiquement sur un <strong>stockage en mémoire vive (RAM Singleton)</strong> sans générer d'erreur JavaScript.
             </p>
@@ -130,7 +130,7 @@ export const IframeEmbedGuide: React.FC = () => {
       {/* Hosting & Deployment Instructions */}
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-5 space-y-4">
         <div className="flex items-center gap-2 text-xs font-bold text-neutral-200 uppercase tracking-wider">
-          <Server className="h-4 w-4 text-amber-400" />
+          <Server className="h-4 w-4 text-[#facc15]" />
           <span>Instructions D'Hébergement & En-têtes HTTP</span>
         </div>
 

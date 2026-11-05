@@ -6,7 +6,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   CartesianGrid,
-  Legend,
   Line,
   LineChart,
   ReferenceLine,
@@ -18,7 +17,6 @@ import {
 import {
   Calendar,
   CheckCircle2,
-  Clock,
   Compass,
   Milestone,
   Target,
@@ -32,22 +30,29 @@ import { calculateLinearElo, DEFAULT_START_DATE, DEFAULT_TARGET_DATE } from '../
 
 interface HistoryChartProps {
   syncHistory: SyncRecord[];
-  startElo: number;
-  targetElo: number;
-  startDateStr: string;
-  targetDateStr: string;
+  startElo?: number;
+  targetElo?: number;
+  startDateStr?: string;
+  targetDateStr?: string;
 }
 
-type TimeframePreset = 'full' | '1year' | '6months' | '30days';
+type TimeframePreset = 'progress' | 'full' | '30days' | '6months' | '1year';
 
 interface ChartPoint {
-  dayKey: string;
+  dayKey: string; // YYYY-MM-DD (unique identifier for Recharts)
   dateLabel: string;
   timestamp: number;
   realElo: number | null;
   targetElo: number;
   mode?: string;
   isRealPoint: boolean;
+}
+
+function formatDateToKey(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export const HistoryChart: React.FC<HistoryChartProps> = ({
@@ -57,7 +62,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   startDateStr = DEFAULT_START_DATE,
   targetDateStr = DEFAULT_TARGET_DATE,
 }) => {
-  const [timeframe, setTimeframe] = useState<TimeframePreset>('full');
+  const [timeframe, setTimeframe] = useState<TimeframePreset>('progress');
 
   const projectStartTime = useMemo(
     () => new Date(startDateStr || DEFAULT_START_DATE).getTime(),
@@ -68,7 +73,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     [targetDateStr]
   );
 
-  // Chronologically sorted records
+  // Chronologically sorted records (oldest to newest)
   const sortedRecords = useMemo(() => {
     return [...syncHistory].sort(
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
@@ -77,106 +82,184 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
 
   const latestRecord = sortedRecords.length > 0 ? sortedRecords[sortedRecords.length - 1] : null;
   const currentRealElo = latestRecord ? latestRecord.bestRating : startElo;
-  const currentBestMode = latestRecord ? latestRecord.bestMode : 'blitz';
 
-  // Strict 1 point per day aggregation (Latest sync of each calendar day)
-  const chartData = useMemo(() => {
-    const dailyMap = new Map<string, { timestamp: number; realElo: number; mode: string }>();
+  // Today key
+  const todayObj = useMemo(() => {
+    const t = new Date();
+    t.setHours(0, 0, 0, 0);
+    return t;
+  }, []);
+  const todayKey = useMemo(() => formatDateToKey(todayObj), [todayObj]);
+
+  // Target Elo for today
+  const targetToday = Math.round(
+    calculateLinearElo(todayObj.getTime(), startDateStr, targetDateStr, startElo, targetElo)
+  );
+  const diffVsTarget = currentRealElo - targetToday;
+
+  // Build the uniform daily timeline (Strict mathematical proportionality: 1 point per day)
+  const { chartData, tickKeys, yMin, yMax, yTicks } = useMemo(() => {
+    // 1. Group syncs by calendar day (YYYY-MM-DD): maximum 1 point per day
+    const dailyMap = new Map<string, { rating: number; mode: string; timestamp: number }>();
 
     // Initial base point on project start date
-    const startD = new Date(projectStartTime);
-    const startKey = `${startD.getFullYear()}-${String(startD.getMonth() + 1).padStart(2, '0')}-${String(startD.getDate()).padStart(2, '0')}`;
+    const startObj = new Date(projectStartTime);
+    startObj.setHours(0, 0, 0, 0);
+    const startKey = formatDateToKey(startObj);
     dailyMap.set(startKey, {
-      timestamp: projectStartTime,
-      realElo: startElo,
-      mode: 'Base départ',
+      rating: startElo,
+      mode: 'Départ',
+      timestamp: startObj.getTime(),
     });
 
-    // Populate daily records (last sync of each day wins)
+    // Populate daily records (latest sync of each day wins)
     sortedRecords.forEach((record) => {
       const d = new Date(record.timestamp);
-      const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      dailyMap.set(dayKey, {
-        timestamp: d.getTime(),
-        realElo: record.bestRating,
+      const key = formatDateToKey(d);
+      dailyMap.set(key, {
+        rating: record.bestRating,
         mode: record.bestMode,
+        timestamp: d.getTime(),
       });
     });
 
-    // Determine window start and end depending on timeframe
-    const now = Date.now();
-    let windowStart = projectStartTime;
-    let windowEnd = projectEndTime;
+    // 2. Determine window boundaries depending on timeframe
+    let windowStart = new Date(projectStartTime);
+    let windowEnd = new Date(projectEndTime);
+    windowStart.setHours(0, 0, 0, 0);
+    windowEnd.setHours(0, 0, 0, 0);
 
-    if (timeframe === '30days') {
-      windowStart = Math.max(projectStartTime, now - 30 * 86400000);
-      windowEnd = Math.min(projectEndTime, now + 5 * 86400000);
+    const nowMs = todayObj.getTime();
+
+    if (timeframe === 'progress') {
+      // Zoom from project start to today + 14 days margin to inspect current daily action clearly
+      windowStart = new Date(projectStartTime);
+      windowStart.setHours(0, 0, 0, 0);
+      const prospectiveEnd = new Date(nowMs + 14 * 86400000);
+      prospectiveEnd.setHours(0, 0, 0, 0);
+      // Ensure at least 30 days window from start
+      const minEnd = new Date(projectStartTime + 30 * 86400000);
+      windowEnd = prospectiveEnd.getTime() > minEnd.getTime() ? prospectiveEnd : minEnd;
+      if (windowEnd.getTime() > projectEndTime) {
+        windowEnd = new Date(projectEndTime);
+      }
+    } else if (timeframe === '30days') {
+      windowStart = new Date(nowMs - 30 * 86400000);
+      windowStart.setHours(0, 0, 0, 0);
+      windowEnd = new Date(nowMs + 5 * 86400000);
+      windowEnd.setHours(0, 0, 0, 0);
+      if (windowStart.getTime() < projectStartTime) {
+        windowStart = new Date(projectStartTime);
+        windowStart.setHours(0, 0, 0, 0);
+      }
     } else if (timeframe === '6months') {
-      windowStart = Math.max(projectStartTime, now - 180 * 86400000);
-      windowEnd = Math.min(projectEndTime, now + 15 * 86400000);
+      windowStart = new Date(projectStartTime);
+      windowStart.setHours(0, 0, 0, 0);
+      windowEnd = new Date(projectStartTime + 182 * 86400000);
+      windowEnd.setHours(0, 0, 0, 0);
     } else if (timeframe === '1year') {
-      windowStart = Math.max(projectStartTime, now - 365 * 86400000);
-      windowEnd = Math.min(projectEndTime, now + 30 * 86400000);
+      windowStart = new Date(projectStartTime);
+      windowStart.setHours(0, 0, 0, 0);
+      windowEnd = new Date(projectStartTime + 365 * 86400000);
+      windowEnd.setHours(0, 0, 0, 0);
+    } else {
+      // 'full' -> entire project from start to target date
+      windowStart = new Date(projectStartTime);
+      windowEnd = new Date(projectEndTime);
+      windowStart.setHours(0, 0, 0, 0);
+      windowEnd.setHours(0, 0, 0, 0);
     }
 
-    // Build timeline points: include real daily points + regular trajectory checkpoints
+    const totalDays = Math.max(1, Math.round((windowEnd.getTime() - windowStart.getTime()) / 86400000));
+
+    // 3. Step day-by-day: exactly 1 entry per calendar day
     const points: ChartPoint[] = [];
-    const stepDays = timeframe === '30days' ? 1 : timeframe === '6months' ? 5 : 14;
-    const stepMs = stepDays * 86400000;
+    const ticks: string[] = [];
 
-    // Collect all real points inside or near window
-    const realDatesList = Array.from(dailyMap.entries()).map(([dayKey, val]) => ({
-      dayKey,
-      ...val,
-    }));
+    // Determine clean tick spacing
+    let tickIntervalDays = 1;
+    if (totalDays > 300) tickIntervalDays = 60; // every 2 months
+    else if (totalDays > 120) tickIntervalDays = 30; // every month
+    else if (totalDays > 45) tickIntervalDays = 14; // every 2 weeks
+    else if (totalDays > 15) tickIntervalDays = 5; // every 5 days
+    else tickIntervalDays = 2; // every 2 days
 
-    // Merge real points and trajectory samples
-    const timestampsSet = new Set<number>();
+    const curr = new Date(windowStart);
+    let dayIndex = 0;
 
-    // 1. Add all real points within range
-    realDatesList.forEach((rp) => {
-      if (rp.timestamp >= windowStart - 86400000 && rp.timestamp <= windowEnd + 86400000) {
-        timestampsSet.add(rp.timestamp);
+    // Track latest synced day timestamp
+    let latestSyncTimestamp = projectStartTime;
+    dailyMap.forEach((val) => {
+      if (val.timestamp > latestSyncTimestamp) {
+        latestSyncTimestamp = val.timestamp;
       }
     });
 
-    // 2. Add regular checkpoint timestamps for the linear target curve
-    for (let t = windowStart; t <= windowEnd; t += stepMs) {
-      timestampsSet.add(t);
-    }
-    timestampsSet.add(windowEnd);
+    while (curr.getTime() <= windowEnd.getTime()) {
+      const key = formatDateToKey(curr);
+      const timestamp = curr.getTime();
 
-    // Sort all timestamps
-    const sortedTimestamps = Array.from(timestampsSet).sort((a, b) => a - b);
-
-    // Build final points array
-    sortedTimestamps.forEach((t) => {
-      const d = new Date(t);
-      const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      const targetAtDate = Math.round(
-        calculateLinearElo(t, startDateStr, targetDateStr, startElo, targetElo)
+      // Theoretical Elo on this specific day (perfect straight line)
+      const targetVal = calculateLinearElo(
+        timestamp,
+        startDateStr,
+        targetDateStr,
+        startElo,
+        targetElo
       );
 
-      const realInfo = dailyMap.get(dayKey);
-      const isReal = realInfo !== undefined;
+      // Real Elo: exists ONLY if synced, or if it is the start base point
+      const syncEntry = dailyMap.get(key);
+      const isPastOrToday = timestamp <= todayObj.getTime() || key === todayKey;
+      const isReal = syncEntry !== undefined && (isPastOrToday || key === startKey);
 
-      const dateLabel = d.toLocaleDateString('fr-FR', {
+      // Only plot realElo up to the latest known sync (do not predict into future)
+      const realVal = isReal ? syncEntry.rating : null;
+
+      const dateLabel = curr.toLocaleDateString('fr-FR', {
         day: 'numeric',
-        month: timeframe === '30days' ? 'numeric' : 'short',
+        month: totalDays > 45 ? 'short' : 'numeric',
       });
 
       points.push({
-        dayKey,
+        dayKey: key,
         dateLabel,
-        timestamp: t,
-        realElo: isReal ? realInfo.realElo : null,
-        targetElo: targetAtDate,
-        mode: realInfo?.mode,
+        timestamp,
+        realElo: realVal,
+        targetElo: Math.round(targetVal * 10) / 10,
+        mode: syncEntry?.mode,
         isRealPoint: isReal,
       });
-    });
 
-    return points;
+      // Equidistant tick collection
+      if (dayIndex % tickIntervalDays === 0 || dayIndex === totalDays) {
+        ticks.push(key);
+      }
+
+      curr.setDate(curr.getDate() + 1);
+      dayIndex++;
+    }
+
+    // 4. Calculate uniform Y-axis range with exact 100 Elo steps
+    const recordedElos = sortedRecords.map((r) => r.bestRating);
+    const minRating = Math.min(startElo, ...recordedElos);
+    const maxRating = Math.max(targetElo, ...recordedElos);
+
+    const calcYMin = Math.floor(Math.min(1400, minRating - 50) / 100) * 100;
+    const calcYMax = Math.ceil(Math.max(2050, maxRating + 50) / 100) * 100;
+
+    const computedYTicks: number[] = [];
+    for (let y = calcYMin; y <= calcYMax; y += 100) {
+      computedYTicks.push(y);
+    }
+
+    return {
+      chartData: points,
+      tickKeys: ticks,
+      yMin: calcYMin,
+      yMax: calcYMax,
+      yTicks: computedYTicks,
+    };
   }, [
     sortedRecords,
     projectStartTime,
@@ -186,23 +269,26 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     startDateStr,
     targetDateStr,
     timeframe,
+    todayObj,
+    todayKey,
   ]);
 
-  // Target for today
-  const targetToday = Math.round(
-    calculateLinearElo(Date.now(), startDateStr, targetDateStr, startElo, targetElo)
-  );
-  const diffVsTarget = currentRealElo - targetToday;
-  const deltaFromStart = currentRealElo - startElo;
+  // Check if today falls in visible chart range
+  const isTodayVisible = useMemo(() => {
+    return chartData.some((p) => p.dayKey === todayKey);
+  }, [chartData, todayKey]);
 
-  // Custom Tooltip component for Recharts
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  // Tooltip formatter
+  const CustomTooltip = ({ active, payload }: any) => {
     if (!active || !payload || !payload.length) return null;
 
     const pt = payload[0]?.payload as ChartPoint;
-    const realVal = payload.find((p: any) => p.dataKey === 'realElo')?.value;
-    const targetVal = payload.find((p: any) => p.dataKey === 'targetElo')?.value;
-    const diff = realVal !== undefined && realVal !== null ? realVal - targetVal : null;
+    const realItem = payload.find((p: any) => p.dataKey === 'realElo');
+    const targetItem = payload.find((p: any) => p.dataKey === 'targetElo');
+
+    const realVal = realItem?.value;
+    const targetVal = targetItem?.value;
+    const diff = realVal !== undefined && realVal !== null ? Math.round(realVal - targetVal) : null;
 
     const fullDate = new Date(pt.timestamp).toLocaleDateString('fr-FR', {
       weekday: 'long',
@@ -212,17 +298,18 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     });
 
     return (
-      <div className="rounded-2xl border border-neutral-700 bg-[#0d1117] p-4 text-xs shadow-2xl space-y-2 backdrop-blur-md">
-        <div className="font-bold text-white capitalize border-b border-neutral-800 pb-1.5 flex items-center justify-between gap-4">
+      <div className="rounded-2xl border border-neutral-800 bg-[#0c0f14]/95 p-4 text-xs shadow-2xl space-y-2.5 backdrop-blur-md">
+        <div className="font-bold text-white capitalize border-b border-neutral-800/80 pb-2 flex items-center justify-between gap-4">
           <span>{fullDate}</span>
           {pt.mode && (
-            <span className="text-[10px] font-mono text-amber-400 uppercase bg-amber-500/10 px-2 py-0.5 rounded">
+            <span className="text-[10px] font-mono font-bold text-[#facc15] uppercase bg-[#facc15]/10 border border-[#facc15]/30 px-2 py-0.5 rounded">
               {pt.mode}
             </span>
           )}
         </div>
 
-        <div className="space-y-1.5 font-mono">
+        <div className="space-y-2 font-mono">
+          {/* Target Elo */}
           <div className="flex items-center justify-between gap-4">
             <span className="text-neutral-400 flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-white" />
@@ -231,7 +318,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             <span className="font-bold text-white">{targetVal} Elo</span>
           </div>
 
-          {realVal !== undefined && realVal !== null && (
+          {/* Real Elo */}
+          {realVal !== undefined && realVal !== null ? (
             <>
               <div className="flex items-center justify-between gap-4">
                 <span className="text-neutral-400 flex items-center gap-1.5">
@@ -241,17 +329,33 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 <span className="font-bold text-[#facc15]">{realVal} Elo</span>
               </div>
 
-              <div className="flex items-center justify-between gap-4 pt-1 border-t border-neutral-800">
+              <div className="flex items-center justify-between gap-4 pt-1.5 border-t border-neutral-800/80">
                 <span className="text-neutral-400">Écart à la cible :</span>
                 <span
-                  className={`font-bold ${
+                  className={`font-bold flex items-center gap-1 ${
                     diff !== null && diff >= 0 ? 'text-[#10b981]' : 'text-[#ef4444]'
                   }`}
                 >
-                  {diff !== null && diff >= 0 ? `+${diff} pts (En Avance)` : `${diff} pts (Retard)`}
+                  {diff !== null && diff >= 0 ? (
+                    <>
+                      <TrendingUp className="h-3 w-3" />
+                      <span>+{diff} pts (En Avance)</span>
+                    </>
+                  ) : (
+                    <>
+                      <TrendingDown className="h-3 w-3" />
+                      <span>{diff} pts (En Retard)</span>
+                    </>
+                  )}
                 </span>
               </div>
             </>
+          ) : (
+            <div className="pt-1 border-t border-neutral-800/80 text-[11px] text-neutral-400 italic">
+              {pt.timestamp > todayObj.getTime()
+                ? 'Projection future vers 2000 Elo'
+                : 'Pas de partie enregistrée ce jour'}
+            </div>
           )}
         </div>
       </div>
@@ -260,32 +364,35 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* 1. Header with Recharts / Open-Source Badge & Color Indicator */}
+      {/* 1. Header with Status & Linear Calibration Badge */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-[#0d1117] border border-neutral-800 p-5 rounded-3xl shadow-xl">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-black text-white flex items-center gap-2">
               <Compass className="h-5 w-5 text-[#facc15]" />
-              <span>Graphique Officiel Recharts (GitHub Open-Source)</span>
+              <span>Trajectoire Échiquéenne Proportionnelle</span>
             </h2>
-            <span className="text-[10px] font-mono bg-neutral-800 text-neutral-300 px-2 py-0.5 rounded-full border border-neutral-700">
-              1 point / jour max
+            <span className="text-[10px] font-mono bg-neutral-900 text-[#facc15] font-bold px-2.5 py-0.5 rounded-full border border-neutral-800">
+              1 point / jour maximum
+            </span>
+            <span className="text-[10px] font-mono bg-neutral-900 text-neutral-400 px-2.5 py-0.5 rounded-full border border-neutral-800">
+              Échelle temporelle 100% linéaire
             </span>
           </div>
           <p className="text-xs text-neutral-400 mt-1">
-            Visualisation précise du classement réel face à la courbe théorique vers 2000 Elo.
+            Chaque jour occupe la même largeur horizontale. La cible théorique progresse de manière strictement continue et proportionnelle.
           </p>
         </div>
 
-        {/* Tactical Quick Status Chips (Noir/Blanc, Vert, Rouge, Jaune) */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs font-mono">
+        {/* Tactical Quick Status Chips (Blanc, Noir, Vert, Rouge, Jaune) */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0c0f14] border border-neutral-800 text-xs font-mono">
             <span className="text-neutral-400">Actuel :</span>
             <span className="font-bold text-[#facc15]">{currentRealElo} Elo</span>
           </div>
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs font-mono">
-            <span className="text-neutral-400">Cible :</span>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0c0f14] border border-neutral-800 text-xs font-mono">
+            <span className="text-neutral-400">Cible aujourd&apos;hui :</span>
             <span className="font-bold text-white">{targetToday} Elo</span>
           </div>
 
@@ -313,16 +420,17 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
 
       {/* 2. Interactive Period Toolbar (1 Clic, Zéro Molette) */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0d1117] border border-neutral-800 p-3 rounded-2xl">
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs font-bold text-neutral-400 mr-2 flex items-center gap-1.5">
             <Calendar className="h-3.5 w-3.5 text-[#facc15]" />
-            <span>Échelle :</span>
+            <span>Période :</span>
           </span>
           {[
-            { id: 'full', label: 'Tout le projet' },
-            { id: '1year', label: '1 An' },
-            { id: '6months', label: '6 Mois' },
+            { id: 'progress', label: 'Progression Active' },
+            { id: 'full', label: 'Tout le Projet (2026-2027)' },
             { id: '30days', label: '30 Jours' },
+            { id: '6months', label: '6 Mois' },
+            { id: '1year', label: '1 An' },
           ].map((btn) => (
             <button
               key={btn.id}
@@ -330,7 +438,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 timeframe === btn.id
                   ? 'bg-[#facc15] text-black shadow-md'
-                  : 'bg-neutral-900 text-neutral-300 hover:text-white border border-neutral-800'
+                  : 'bg-[#0c0f14] text-neutral-300 hover:text-white border border-neutral-800'
               }`}
             >
               {btn.label}
@@ -341,66 +449,94 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
         {/* Legend pills (Noir, Blanc, Jaune, Vert) */}
         <div className="flex items-center gap-4 text-xs font-mono">
           <div className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-[#facc15]" />
-            <span className="text-[#facc15] font-bold">Réel (1 pt / jour)</span>
+            <span className="h-2.5 w-2.5 rounded-full bg-[#facc15] ring-2 ring-[#0c0f14]" />
+            <span className="text-[#facc15] font-bold">Votre Elo Réel (1 pt / jour)</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="h-2 w-4 border-b-2 border-dashed border-white" />
-            <span className="text-white">Cible 1500 → 2000</span>
+            <span className="h-1.5 w-5 border-b-2 border-dashed border-white" />
+            <span className="text-white">Cible Linéaire 1500 → 2000</span>
           </div>
         </div>
       </div>
 
-      {/* 3. Recharts LineChart Component (Installed from GitHub, responsive, no wheel scroll capture) */}
+      {/* 3. Recharts LineChart Component (Mathematically uniform X & Y scales) */}
       <div className="rounded-3xl border border-neutral-800 bg-[#0c0f14] p-4 sm:p-6 shadow-2xl">
-        <div className="h-[420px] w-full">
+        <div className="h-[430px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={chartData}
               margin={{ top: 20, right: 30, left: 10, bottom: 25 }}
             >
-              {/* Subtle dark Cartesian Grid */}
-              <CartesianGrid stroke="#1e2633" strokeDasharray="3 3" vertical={false} />
+              {/* Subtle Cartesian Grid strictly aligned with 100-Elo steps */}
+              <CartesianGrid stroke="#1c2430" strokeDasharray="3 3" vertical={false} />
 
-              {/* X Axis (Dates) */}
+              {/* X Axis with unique dayKey and evenly distributed ticks */}
               <XAxis
-                dataKey="dateLabel"
+                dataKey="dayKey"
+                ticks={tickKeys}
+                tickFormatter={(key: string) => {
+                  const [y, m, d] = key.split('-').map(Number);
+                  const dt = new Date(y, m - 1, d);
+                  return dt.toLocaleDateString('fr-FR', {
+                    day: 'numeric',
+                    month: 'short',
+                  });
+                }}
                 stroke="#64748b"
                 tick={{ fill: '#94a3b8', fontSize: 11, fontFamily: 'monospace' }}
                 tickLine={{ stroke: '#334155' }}
                 dy={10}
               />
 
-              {/* Y Axis (Elo Ratings: 1400 to 2100) */}
+              {/* Y Axis with proportional 100-Elo ticks */}
               <YAxis
-                domain={[1400, 2100]}
+                domain={[yMin, yMax]}
+                ticks={yTicks}
                 stroke="#64748b"
                 tick={{ fill: '#94a3b8', fontSize: 11, fontFamily: 'monospace' }}
                 tickLine={{ stroke: '#334155' }}
-                ticks={[1500, 1600, 1700, 1800, 1900, 2000]}
                 dx={-5}
               />
 
-              {/* Reference Lines for Departure 1500 and Target 2000 */}
+              {/* Reference line for Today (vertical indicator) */}
+              {isTodayVisible && (
+                <ReferenceLine
+                  x={todayKey}
+                  stroke="#facc15"
+                  strokeDasharray="4 4"
+                  strokeWidth={1.5}
+                  label={{
+                    value: "Aujourd'hui",
+                    fill: '#facc15',
+                    fontSize: 10,
+                    position: 'insideTopRight',
+                    fontWeight: 'bold',
+                  }}
+                />
+              )}
+
+              {/* Departure 1500 Reference Line */}
               <ReferenceLine
-                y={1500}
+                y={startElo}
                 stroke="#ffffff"
                 strokeDasharray="4 4"
                 strokeOpacity={0.4}
                 label={{
-                  value: 'Départ 1500',
+                  value: `Départ ${startElo} Elo`,
                   fill: '#ffffff',
                   fontSize: 10,
                   position: 'insideTopLeft',
                 }}
               />
+
+              {/* Target 2000 Reference Line */}
               <ReferenceLine
-                y={2000}
+                y={targetElo}
                 stroke="#facc15"
                 strokeDasharray="5 5"
                 strokeWidth={1.5}
                 label={{
-                  value: 'Objectif 2000 Elo 🏆',
+                  value: `Objectif ${targetElo} Elo 🏆`,
                   fill: '#facc15',
                   fontSize: 11,
                   fontWeight: 'bold',
@@ -408,23 +544,23 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 }}
               />
 
-              {/* Recharts Custom Tooltip */}
+              {/* Custom Tooltip */}
               <Tooltip content={<CustomTooltip />} />
 
-              {/* Target Elo Line (Dashed White) */}
+              {/* Target Linear Line (Strictly straight, dashed white) */}
               <Line
-                type="monotone"
+                type="linear"
                 dataKey="targetElo"
                 name="Cible Théorique"
-                stroke="#e2e8f0"
+                stroke="#ffffff"
                 strokeWidth={1.8}
-                strokeDasharray="5 5"
+                strokeDasharray="6 6"
                 dot={false}
                 activeDot={false}
                 isAnimationActive={false}
               />
 
-              {/* Real Elo Line (Vivid Yellow #facc15, connectNulls for continuity between synced days) */}
+              {/* Real Elo Line (Pure Yellow, max 1 point per day, small dots r=3) */}
               <Line
                 type="monotone"
                 dataKey="realElo"
@@ -432,10 +568,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 stroke="#facc15"
                 strokeWidth={3}
                 connectNulls={true}
-                /* Points pas trop gros: radius 3px discret et élégant */
+                /* Only render circle when it's a real synced point */
                 dot={(props: any) => {
                   const { cx, cy, payload } = props;
-                  if (!payload.isRealPoint || cx === undefined || cy === undefined) return null;
+                  if (!payload?.isRealPoint || payload?.realElo === null || cx === undefined || cy === undefined) {
+                    return null;
+                  }
                   return (
                     <circle
                       key={`dot-${cx}-${cy}`}
@@ -499,7 +637,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                     {isPassed ? (
                       <CheckCircle2 className="h-4 w-4 text-[#10b981]" />
                     ) : (
-                      <span className="font-mono text-[10px] text-neutral-500">{m.pct}</span>
+                      <span className="font-mono text-[10px] text-neutral-400">{m.pct}</span>
                     )}
                   </div>
                   <div className="mt-1 text-xs font-bold">{m.label}</div>

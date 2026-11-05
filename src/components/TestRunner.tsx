@@ -240,9 +240,9 @@ export const TestRunner: React.FC<TestRunnerProps> = ({
   if (isIframe) {
     return (
       <div className="max-w-4xl mx-auto space-y-6">
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-8 text-center space-y-3">
-          <Lock className="h-10 w-10 text-amber-400 mx-auto" />
-          <h3 className="text-base font-bold text-amber-300">Mode Iframe Sécurisé (Lecture Seule)</h3>
+        <div className="rounded-2xl border border-[#facc15]/30 bg-[#facc15]/10 p-8 text-center space-y-3">
+          <Lock className="h-10 w-10 text-[#facc15] mx-auto" />
+          <h3 className="text-base font-bold text-[#facc15]">Mode Iframe Sécurisé (Lecture Seule)</h3>
           <p className="text-xs text-neutral-300 max-w-xl mx-auto leading-relaxed">
             La suite de tests algorithmiques est réservée au site officiel et masquée en intégration iframe.
           </p>
@@ -254,8 +254,8 @@ export const TestRunner: React.FC<TestRunnerProps> = ({
   if (!isAdmin) {
     return (
       <div className="max-w-4xl mx-auto space-y-6">
-        <div className="rounded-2xl border border-amber-500/40 bg-neutral-900/90 p-8 text-center space-y-5 shadow-2xl">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-400">
+        <div className="rounded-2xl border border-[#facc15]/40 bg-neutral-900/90 p-8 text-center space-y-5 shadow-2xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[#facc15]/30 bg-[#facc15]/10 text-[#facc15]">
             <Lock className="h-7 w-7" />
           </div>
           <div className="space-y-1.5">
@@ -266,7 +266,7 @@ export const TestRunner: React.FC<TestRunnerProps> = ({
           </div>
           <button
             onClick={() => onOpenSecurityModal && onOpenSecurityModal('Exécution des Tests')}
-            className="inline-flex items-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 px-6 py-3 text-xs font-bold transition-all shadow-[0_0_20px_rgba(245,158,11,0.25)]"
+            className="inline-flex items-center gap-2 rounded-xl bg-[#facc15] hover:bg-[#eab308] text-black px-6 py-3 text-xs font-bold transition-all shadow-[0_0_20px_rgba(250,204,21,0.25)]"
           >
             <ShieldCheck className="h-4 w-4" />
             <span>Déverrouiller avec le QR Code 2FA</span>
@@ -295,7 +295,7 @@ export const TestRunner: React.FC<TestRunnerProps> = ({
           disabled={isRunning}
           className="flex items-center gap-2 rounded-lg border border-neutral-700 bg-neutral-800 px-3.5 py-1.5 text-xs font-semibold text-neutral-200 hover:text-white transition-all self-start"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${isRunning ? 'animate-spin text-amber-400' : ''}`} />
+          <RefreshCw className={`h-3.5 w-3.5 ${isRunning ? 'animate-spin text-[#facc15]' : ''}`} />
           <span>Réexécuter les tests</span>
         </button>
       </div>
@@ -360,7 +360,7 @@ export const TestRunner: React.FC<TestRunnerProps> = ({
 
             <div className="mt-3 rounded bg-neutral-950 p-2 text-[11px] font-mono text-neutral-400 border border-neutral-800/60 overflow-x-auto">
               <span className="text-neutral-500 mr-2">Résultat:</span>
-              <span className="text-amber-300/90">{JSON.stringify(t.result.details)}</span>
+              <span className="text-neutral-300">{JSON.stringify(t.result.details)}</span>
             </div>
           </div>
         ))}
