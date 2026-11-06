@@ -7,6 +7,7 @@
  */
 
 import {
+  calculateAdvanceMetrics,
   calculateDailyObjective,
   calculateLinearElo,
   calculateProgressPercentage,
@@ -15,6 +16,8 @@ import {
   DEFAULT_TARGET_DATE,
   DEFAULT_TARGET_ELO,
   getBestGameMode,
+  getModeStartElo,
+  MODE_START_ELOS,
 } from './eloEngine';
 import { ChessComStatsResponse } from '../types/chess';
 
@@ -106,4 +109,22 @@ console.log('--- EXÉCUTION DE LA SUITE DE TESTS DU MOTEUR ROAD TO 2000 ELO ---'
   assert(percentage === 0, 'Cas 10b: 0% sans plantage');
 }
 
-console.log('--- TOUS LES 10 CAS DE TESTS SONT VALIDÉS AVEC SUCCÈS ! ---');
+// 11. Calcul d'avance temporelle (Exemple utilisateur: 1548 Elo au 06/11/2026 avec départ 1458)
+{
+  const advance = calculateAdvanceMetrics(1548, '2026-11-06T00:00:00', '2026-10-31T00:00:00', '2027-12-31T23:59:59', 1458, 2000);
+  assert(advance.isAhead === true, 'Cas 11: Joueur détecté en avance');
+  assert(advance.advanceDays > 0, `Cas 11b: Jours d'avance positifs (${advance.advanceDays} jours)`);
+  assert(advance.equivalentDateKey > '2026-11-06', `Cas 11c: Date équivalente dans le futur (${advance.equivalentDateKey})`);
+}
+
+// 12. Départ spécifique par cadence & auto dynamique (Blitz 1458, Rapide 1289, Bullet 1500)
+{
+  assert(getModeStartElo('blitz') === 1458, 'Cas 12a: Blitz démarre à 1458');
+  assert(getModeStartElo('rapid') === 1289, 'Cas 12b: Rapide démarre à 1289');
+  assert(getModeStartElo('bullet') === 1500, 'Cas 12c: Bullet démarre à 1500');
+  assert(getModeStartElo('auto', 'bullet') === 1500, 'Cas 12d: Auto avec meilleur Bullet démarre à 1500');
+  assert(getModeStartElo('auto', 'blitz') === 1458, 'Cas 12e: Auto avec meilleur Blitz démarre à 1458');
+  assert(getModeStartElo('auto', 'rapid') === 1289, 'Cas 12f: Auto avec meilleur Rapide démarre à 1289');
+}
+
+console.log('--- TOUS LES 12 CAS DE TESTS SONT VALIDÉS AVEC SUCCÈS ! ---');

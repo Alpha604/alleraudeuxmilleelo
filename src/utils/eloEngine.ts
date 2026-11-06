@@ -4,6 +4,7 @@
  */
 
 import {
+  AdvanceMetric,
   ChessComStatsResponse,
   DailyObjective,
   GameMode,
@@ -21,8 +22,15 @@ export const MODE_START_ELOS: Record<string, number> = {
   blitz: 1458,
   rapid: 1289,
   bullet: 1500,
-  auto: 1458,
 };
+
+export function getModeStartElo(mode: string, bestModeFallback?: string): number {
+  if (mode === 'auto') {
+    const activeMode = bestModeFallback || 'bullet';
+    return MODE_START_ELOS[activeMode] ?? DEFAULT_START_ELO;
+  }
+  return MODE_START_ELOS[mode] ?? DEFAULT_START_ELO;
+}
 
 /**
  * Calculates progress percentage between startElo and targetElo.
@@ -228,6 +236,15 @@ export function calculateDailyObjective(
   const paceRequiredPerWeek = Math.round(paceRequiredPerDay * 7 * 10) / 10;
   const paceRequiredPerMonth = Math.round(paceRequiredPerDay * 30.4375 * 10) / 10;
 
+  const advance = calculateAdvanceMetrics(
+    currentRealElo,
+    d,
+    startDateStr,
+    targetDateStr,
+    startElo,
+    targetElo
+  );
+
   return {
     dateStr,
     theoreticalElo,
@@ -239,6 +256,74 @@ export function calculateDailyObjective(
     paceRequiredPerDay,
     paceRequiredPerWeek,
     paceRequiredPerMonth,
+    advanceDays: advance.advanceDays,
+    advanceDateLabel: advance.equivalentDateLabel,
+    advanceDateKey: advance.equivalentDateKey,
+  };
+}
+
+/**
+ * Calculates advance calendar metrics:
+ * Finds the date on which the linear target curve equals the player's current Elo.
+ * If currentElo > theoreticalElo(today), the equivalent date is in the future,
+ * meaning the player is "in advance" until that date (e.g. "En avance jusqu'au 5 décembre").
+ */
+export function calculateAdvanceMetrics(
+  currentRealElo: number,
+  refDate: Date | string | number = new Date(),
+  startDateStr: string = DEFAULT_START_DATE,
+  targetDateStr: string = DEFAULT_TARGET_DATE,
+  startElo: number = DEFAULT_START_ELO,
+  targetElo: number = DEFAULT_TARGET_ELO
+): AdvanceMetric {
+  const today = new Date(refDate);
+  today.setHours(0, 0, 0, 0);
+
+  const start = new Date(startDateStr);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(targetDateStr);
+  end.setHours(0, 0, 0, 0);
+
+  const todayTargetElo = calculateLinearElo(today, start, end, startElo, targetElo);
+  const diffElo = Math.round((currentRealElo - todayTargetElo) * 10) / 10;
+  const isGoalReached = currentRealElo >= targetElo;
+
+  const totalRange = Math.max(1, targetElo - startElo);
+  const totalDuration = Math.max(1, end.getTime() - start.getTime());
+
+  // Clamped ratio for equivalent date
+  const clampedElo = Math.max(startElo, Math.min(targetElo, currentRealElo));
+  const ratio = (clampedElo - startElo) / totalRange;
+  const equivalentTimestamp = start.getTime() + totalDuration * ratio;
+  const equivalentDate = new Date(equivalentTimestamp);
+  equivalentDate.setHours(0, 0, 0, 0);
+
+  const y = equivalentDate.getFullYear();
+  const m = String(equivalentDate.getMonth() + 1).padStart(2, '0');
+  const d = String(equivalentDate.getDate()).padStart(2, '0');
+  const equivalentDateKey = `${y}-${m}-${d}`;
+
+  const equivalentDateLabel = equivalentDate.toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
+  const diffMs = equivalentDate.getTime() - today.getTime();
+  const advanceDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+  return {
+    isAhead: advanceDays > 0,
+    isBehind: advanceDays < 0,
+    isGoalReached,
+    advanceDays,
+    equivalentDate,
+    equivalentDateKey,
+    equivalentDateLabel,
+    currentElo: currentRealElo,
+    todayTargetElo,
+    diffElo,
   };
 }
 

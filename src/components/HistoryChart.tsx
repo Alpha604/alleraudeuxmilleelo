@@ -10,6 +10,7 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -42,7 +43,12 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import { GameMode, SyncRecord } from '../types/chess';
-import { calculateLinearElo, DEFAULT_START_DATE, DEFAULT_TARGET_DATE } from '../utils/eloEngine';
+import {
+  calculateAdvanceMetrics,
+  calculateLinearElo,
+  DEFAULT_START_DATE,
+  DEFAULT_TARGET_DATE,
+} from '../utils/eloEngine';
 
 interface HistoryChartProps {
   syncHistory: SyncRecord[];
@@ -77,11 +83,10 @@ function formatDateToKey(d: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-export const MODE_START_ELOS: Record<ModeFilter, number> = {
+export const MODE_START_ELOS: Record<string, number> = {
   blitz: 1458,
   rapid: 1289,
   bullet: 1500,
-  auto: 1458,
 };
 
 export const HistoryChart: React.FC<HistoryChartProps> = ({
@@ -94,14 +99,10 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   // 1. Controls & Filter States
   const [selectedMode, setSelectedMode] = useState<ModeFilter>('auto');
   const [activePreset, setActivePreset] = useState<QuickPreset>('progress');
-
-  // Mode-specific starting Elo requested by user (Blitz: 1458, Rapid: 1289)
-  const effectiveStartElo = useMemo(() => {
-    return MODE_START_ELOS[selectedMode] ?? startElo;
-  }, [selectedMode, startElo]);
   
   // Visual layer toggles
   const [showTargetLine, setShowTargetLine] = useState<boolean>(true);
+  const [showAdvanceMarker, setShowAdvanceMarker] = useState<boolean>(true);
   const [showAreaGlow, setShowAreaGlow] = useState<boolean>(true);
   const [showAllDots, setShowAllDots] = useState<boolean>(true);
   const [showTodayMarker, setShowTodayMarker] = useState<boolean>(true);
@@ -139,6 +140,42 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     );
   }, [syncHistory]);
 
+  // Helper to determine the best mode from a record (highest absolute rating)
+  const getBestModeFromRecord = (record?: SyncRecord | null): 'blitz' | 'rapid' | 'bullet' => {
+    if (!record) return 'bullet';
+    const candidates: { mode: 'blitz' | 'rapid' | 'bullet'; rating: number; priority: number }[] = [];
+    if (typeof record.bullet === 'number') candidates.push({ mode: 'bullet', rating: record.bullet, priority: 1 });
+    if (typeof record.blitz === 'number') candidates.push({ mode: 'blitz', rating: record.blitz, priority: 2 });
+    if (typeof record.rapid === 'number') candidates.push({ mode: 'rapid', rating: record.rapid, priority: 3 });
+    if (candidates.length === 0) {
+      if (record.bestMode && ['bullet', 'blitz', 'rapid'].includes(record.bestMode)) {
+        return record.bestMode as 'blitz' | 'rapid' | 'bullet';
+      }
+      return 'bullet';
+    }
+    candidates.sort((a, b) => {
+      if (b.rating !== a.rating) return b.rating - a.rating;
+      return b.priority - a.priority;
+    });
+    return candidates[0].mode;
+  };
+
+  // Determine active cadence for Auto mode (mode with the highest rating on latest sync)
+  const autoBestMode: 'blitz' | 'rapid' | 'bullet' = useMemo(() => {
+    if (sortedRecords.length === 0) return 'bullet';
+    return getBestModeFromRecord(sortedRecords[sortedRecords.length - 1]);
+  }, [sortedRecords]);
+
+  // Mode-specific starting Elo requested by user:
+  // - Blitz starts at 1458
+  // - Rapid starts at 1289
+  // - Bullet starts at 1500
+  // - Auto dynamically starts at the start Elo of the cadence that has the highest rating (e.g. Bullet -> 1500)!
+  const effectiveStartElo = useMemo(() => {
+    const activeKey = selectedMode === 'auto' ? autoBestMode : selectedMode;
+    return MODE_START_ELOS[activeKey] ?? startElo;
+  }, [selectedMode, autoBestMode, startElo]);
+
   // Helper to extract rating based on mode filter
   // For 'auto' mode, it strictly picks the game mode with the HIGHEST absolute rating (not points gained)
   const getRatingForMode = (record: SyncRecord, mode: ModeFilter): { rating: number; modeName: string } => {
@@ -154,14 +191,14 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
 
     // AUTO MODE: strictly choose the cadence with the HIGHEST absolute rating
     const candidates: { modeName: string; rating: number; priority: number }[] = [];
+    if (typeof record.bullet === 'number') {
+      candidates.push({ modeName: 'BULLET', rating: record.bullet, priority: 1 });
+    }
     if (typeof record.blitz === 'number') {
       candidates.push({ modeName: 'BLITZ', rating: record.blitz, priority: 2 });
     }
     if (typeof record.rapid === 'number') {
       candidates.push({ modeName: 'RAPIDE', rating: record.rapid, priority: 3 });
-    }
-    if (typeof record.bullet === 'number') {
-      candidates.push({ modeName: 'BULLET', rating: record.bullet, priority: 1 });
     }
 
     if (candidates.length > 0) {
@@ -175,7 +212,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
 
     return {
       rating: record.bestRating ?? effectiveStartElo,
-      modeName: (record.bestMode || 'blitz').toUpperCase(),
+      modeName: (record.bestMode || autoBestMode).toUpperCase(),
     };
   };
 
@@ -190,7 +227,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     const startKey = formatDateToKey(startObj);
     dailySyncMap.set(startKey, {
       rating: effectiveStartElo,
-      mode: selectedMode === 'auto' ? 'Base Départ' : selectedMode.toUpperCase(),
+      mode: selectedMode === 'auto' ? `Base (${autoBestMode.toUpperCase()})` : selectedMode.toUpperCase(),
       timestamp: startObj.getTime(),
     });
 
@@ -214,7 +251,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     endBoundary.setHours(0, 0, 0, 0);
 
     let lastKnownElo = effectiveStartElo;
-    let lastKnownMode = selectedMode === 'auto' ? 'Départ' : selectedMode.toUpperCase();
+    let lastKnownMode = selectedMode === 'auto' ? `Départ (${autoBestMode.toUpperCase()})` : selectedMode.toUpperCase();
     let prevElo: number | null = null;
 
     const curr = new Date(startCurr);
@@ -282,6 +319,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   }, [
     sortedRecords,
     selectedMode,
+    autoBestMode,
+    effectiveStartElo,
     projectStartTime,
     projectEndTime,
     startElo,
@@ -298,11 +337,50 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     return idx >= 0 ? idx : 0;
   }, [allChartData, todayKey]);
 
+  // Current real Elo
+  const currentRealElo = useMemo(() => {
+    const played = allChartData.filter((p) => p.realElo !== null);
+    return played.length > 0 ? played[played.length - 1].realElo! : effectiveStartElo;
+  }, [allChartData, effectiveStartElo]);
+
+  const targetToday = Math.round(
+    calculateLinearElo(todayObj.getTime(), startDateStr, targetDateStr, effectiveStartElo, targetElo)
+  );
+  const diffVsTarget = currentRealElo - targetToday;
+
+  // Advance calendar calculation (Vertical line on target date where targetElo = currentRealElo)
+  const advanceMetric = useMemo(() => {
+    return calculateAdvanceMetrics(
+      currentRealElo,
+      todayObj,
+      startDateStr,
+      targetDateStr,
+      effectiveStartElo,
+      targetElo
+    );
+  }, [currentRealElo, todayObj, startDateStr, targetDateStr, effectiveStartElo, targetElo]);
+
+  // Index of advance equivalent date in full timeline
+  const advanceIndex = useMemo(() => {
+    if (!advanceMetric.isAhead) return -1;
+    return allChartData.findIndex((p) => p.dayKey === advanceMetric.equivalentDateKey);
+  }, [allChartData, advanceMetric]);
+
   // 3. Zoom Range Management (Controlled brush/slider)
   const [zoomRange, setZoomRange] = useState<{ startIndex: number; endIndex: number }>(() => {
-    const end = Math.min(allChartData.length - 1, todayIndex + 14);
+    const prospectiveEnd = Math.max(todayIndex + 14, advanceIndex >= 0 ? advanceIndex + 7 : 0);
+    const end = Math.min(allChartData.length - 1, prospectiveEnd);
     return { startIndex: 0, endIndex: end > 30 ? end : Math.min(allChartData.length - 1, 30) };
   });
+
+  // Center chart view on the advance date
+  const handleFocusAdvance = () => {
+    if (advanceIndex < 0) return;
+    const start = Math.max(0, todayIndex - 5);
+    const end = Math.min(allChartData.length - 1, advanceIndex + 7);
+    setZoomRange({ startIndex: start, endIndex: end });
+    setActivePreset('progress');
+  };
 
   // Apply quick presets
   const applyPreset = (preset: QuickPreset) => {
@@ -311,8 +389,9 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     if (preset === 'full') {
       setZoomRange({ startIndex: 0, endIndex: total - 1 });
     } else if (preset === 'progress') {
-      const prospectiveEnd = Math.min(total - 1, todayIndex + 14);
-      setZoomRange({ startIndex: 0, endIndex: Math.max(30, prospectiveEnd) });
+      const prospectiveEnd = Math.max(todayIndex + 14, advanceIndex >= 0 ? advanceIndex + 7 : 0);
+      const end = Math.min(total - 1, prospectiveEnd);
+      setZoomRange({ startIndex: 0, endIndex: Math.max(30, end) });
     } else if (preset === '1year') {
       setZoomRange({ startIndex: 0, endIndex: Math.min(total - 1, 365) });
     } else if (preset === '6months') {
@@ -388,17 +467,6 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     return visiblePoints.filter((p) => p.realElo !== null);
   }, [visiblePoints]);
 
-  // Current real Elo
-  const currentRealElo = useMemo(() => {
-    const played = allChartData.filter((p) => p.realElo !== null);
-    return played.length > 0 ? played[played.length - 1].realElo! : effectiveStartElo;
-  }, [allChartData, effectiveStartElo]);
-
-  const targetToday = Math.round(
-    calculateLinearElo(todayObj.getTime(), startDateStr, targetDateStr, effectiveStartElo, targetElo)
-  );
-  const diffVsTarget = currentRealElo - targetToday;
-
   // Dynamic Y-axis scale based on data
   const { yMin, yMax, yTicks } = useMemo(() => {
     const elos = visibleRealPoints.map((p) => p.realElo!);
@@ -406,7 +474,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     const maxRating = Math.max(targetElo, ...elos);
 
     // Rapid mode started at 1289 Elo: scale starts at 1200 Elo
-    const minThreshold = selectedMode === 'rapid' ? 1200 : 1400;
+    const isRapid = selectedMode === 'rapid' || (selectedMode === 'auto' && autoBestMode === 'rapid');
+    const minThreshold = isRapid ? 1200 : 1400;
     const calcYMin = Math.floor(Math.min(minThreshold, minRating - 50) / 100) * 100;
     const calcYMax = Math.ceil(Math.max(2050, maxRating + 50) / 100) * 100;
 
@@ -415,7 +484,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
       ticks.push(y);
     }
     return { yMin: calcYMin, yMax: calcYMax, yTicks: ticks };
-  }, [visibleRealPoints, effectiveStartElo, targetElo, selectedMode]);
+  }, [visibleRealPoints, effectiveStartElo, targetElo, selectedMode, autoBestMode]);
 
   // Visible XAxis ticks
   const visibleTickKeys = useMemo(() => {
@@ -656,6 +725,16 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               Projection future vers l&apos;objectif 2000 Elo
             </div>
           )}
+
+          {/* Special advance milestone callout on tooltip */}
+          {pt.dayKey === advanceMetric.equivalentDateKey && advanceMetric.isAhead && (
+            <div className="pt-2 border-t border-neutral-800/80">
+              <div className="rounded-xl bg-[#10b981]/15 border border-[#10b981]/40 p-2 text-[10px] text-[#10b981] font-bold flex items-center gap-1.5">
+                <Zap className="h-3.5 w-3.5 flex-shrink-0" />
+                <span>🚀 Objectif atteint en avance dès aujourd&apos;hui (+{advanceMetric.advanceDays} j)</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -714,6 +793,13 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               </>
             )}
           </div>
+
+          {advanceMetric.isAhead && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30 text-xs font-bold font-mono">
+              <Zap className="h-3.5 w-3.5 text-[#10b981]" />
+              <span>Avance jusqu&apos;au {advanceMetric.equivalentDateLabel} (+{advanceMetric.advanceDays} j)</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -818,6 +904,38 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
         </div>
       </div>
 
+      {/* Advance Calendar Alert Banner */}
+      {advanceMetric.isAhead && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#10b981]/10 border border-[#10b981]/30 p-4 rounded-3xl shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-[#10b981]/20 text-[#10b981] flex-shrink-0">
+              <Zap className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-white flex items-center gap-2">
+                <span>Avance Calendrier Validée</span>
+                <span className="text-[10px] font-mono bg-[#10b981]/20 text-[#10b981] px-2 py-0.5 rounded-full border border-[#10b981]/40 font-bold">
+                  +{advanceMetric.advanceDays} jours d&apos;avance
+                </span>
+              </div>
+              <p className="text-xs text-neutral-300 mt-0.5">
+                Votre classement actuel de <span className="font-bold text-[#facc15]">{currentRealElo} Elo</span> correspond au niveau théorique prévu le <span className="font-bold text-[#10b981]">{advanceMetric.equivalentDateLabel}</span>. La barre verticale verte en pointillés sur le graphique indique cette borne d&apos;avance.
+              </p>
+            </div>
+          </div>
+          {advanceIndex >= 0 && (
+            <button
+              onClick={handleFocusAdvance}
+              className="self-start sm:self-auto px-3.5 py-2 rounded-xl bg-[#10b981] text-black font-black text-xs hover:bg-[#10b981]/90 transition-all flex items-center gap-1.5 shadow-md flex-shrink-0"
+              title="Centrer le graphique sur la barre d'avance"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              <span>Centrer sur la barre</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 3. MULTI-LEVEL FILTER & ZOOM TOOLBAR */}
       <div className="bg-[#0d1117] border border-neutral-800 p-4 rounded-3xl space-y-3.5">
         {/* Row 1: Mode selector + Timeframe presets */}
@@ -829,7 +947,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               <span>Cadence :</span>
             </span>
             {[
-              { id: 'auto', label: 'Meilleur Elo (Auto)' },
+              { id: 'auto', label: `Meilleur Elo (Auto: ${autoBestMode.toUpperCase()})` },
               { id: 'blitz', label: 'Blitz' },
               { id: 'rapid', label: 'Rapide' },
               { id: 'bullet', label: 'Bullet' },
@@ -932,6 +1050,17 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               Réinitialiser
             </button>
 
+            {advanceMetric.isAhead && advanceIndex >= 0 && (
+              <button
+                onClick={handleFocusAdvance}
+                className="px-2.5 py-1 rounded-lg bg-[#10b981]/15 border border-[#10b981]/40 text-[#10b981] hover:bg-[#10b981]/25 text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
+                title="Centrer la vue sur votre date d'avance"
+              >
+                <Zap className="h-3.5 w-3.5" />
+                <span>Voir Avance (+{advanceMetric.advanceDays} j)</span>
+              </button>
+            )}
+
             <span className="text-[11px] font-mono text-neutral-400 ml-2">
               Affichage : {visiblePoints.length} jours ({visiblePoints[0]?.dateLabel} → {visiblePoints[visiblePoints.length - 1]?.dateLabel})
             </span>
@@ -943,6 +1072,18 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               <Layers className="h-3.5 w-3.5 text-[#facc15]" />
               <span>Couches :</span>
             </span>
+
+            <button
+              onClick={() => setShowAdvanceMarker(!showAdvanceMarker)}
+              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all ${
+                showAdvanceMarker
+                  ? 'bg-[#10b981]/15 text-[#10b981] border-[#10b981]/40 font-bold'
+                  : 'bg-[#0c0f14] text-neutral-500 border-neutral-800 line-through'
+              }`}
+              title="Afficher/masquer la barre verticale d'avance calendrier"
+            >
+              🚀 Barre Avance
+            </button>
 
             <button
               onClick={() => setShowTargetLine(!showTargetLine)}
@@ -1017,7 +1158,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
           </div>
 
           {/* Color Legend */}
-          <div className="flex items-center gap-4 text-xs font-mono">
+          <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
             <div className="flex items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-[#facc15]" />
               <span className="text-[#facc15] font-bold">Votre Elo Réel (Plateau journalier)</span>
@@ -1026,6 +1167,14 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               <div className="flex items-center gap-2">
                 <span className="h-1.5 w-5 border-b-2 border-dashed border-white" />
                 <span className="text-white">Cible Linéaire 1500 → 2000</span>
+              </div>
+            )}
+            {showAdvanceMarker && advanceMetric.isAhead && (
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-4 border-b-2 border-dashed border-[#10b981]" />
+                <span className="text-[#10b981] font-bold">
+                  Avance jusqu&apos;au {advanceMetric.equivalentDateLabel} (+{advanceMetric.advanceDays} j)
+                </span>
               </div>
             )}
           </div>
@@ -1097,14 +1246,40 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 />
               )}
 
-              {/* Departure Line (Mode specific: Blitz 1458, Rapid 1289) */}
+              {/* Vertical Reference Line: Ahead until date (Barre d'avance demandée par l'utilisateur) */}
+              {showAdvanceMarker && advanceMetric.isAhead && (
+                <>
+                  {/* Subtle emerald tint over the lead zone */}
+                  <ReferenceArea
+                    x1={todayKey}
+                    x2={advanceMetric.equivalentDateKey}
+                    fill="#10b981"
+                    fillOpacity={0.07}
+                  />
+                  <ReferenceLine
+                    x={advanceMetric.equivalentDateKey}
+                    stroke="#10b981"
+                    strokeDasharray="4 4"
+                    strokeWidth={2.5}
+                    label={{
+                      value: `🚀 En avance jusqu'au ${advanceMetric.equivalentDateLabel} (+${advanceMetric.advanceDays} j)`,
+                      fill: '#10b981',
+                      fontSize: 11,
+                      fontWeight: 'bold',
+                      position: 'insideTopLeft',
+                    }}
+                  />
+                </>
+              )}
+
+              {/* Departure Line (Mode specific: Blitz 1458, Rapid 1289, Bullet 1500) */}
               <ReferenceLine
                 y={effectiveStartElo}
                 stroke="#ffffff"
                 strokeDasharray="4 4"
                 strokeOpacity={0.4}
                 label={{
-                  value: `Départ ${effectiveStartElo} Elo (${selectedMode.toUpperCase()})`,
+                  value: `Départ ${effectiveStartElo} Elo (${selectedMode === 'auto' ? `Auto: ${autoBestMode.toUpperCase()}` : selectedMode.toUpperCase()})`,
                   fill: '#ffffff',
                   fontSize: 10,
                   position: 'insideTopLeft',

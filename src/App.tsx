@@ -33,6 +33,7 @@ import {
   DEFAULT_TARGET_ELO,
   getBestGameMode,
   getProjectTimeMetrics,
+  MODE_START_ELOS,
 } from './utils/eloEngine';
 import {
   isAdminSessionActive,
@@ -410,6 +411,14 @@ export default function App() {
     };
   }, [stats, syncHistory, settings.selectedMode, settings.startElo]);
 
+  // Dynamic starting Elo based on selected/best game mode:
+  // Blitz: 1458, Rapid: 1289, Bullet: 1500
+  // When in Auto mode: uses the start rating of the best cadence (e.g. Bullet -> 1500)
+  const effectiveStartElo = useMemo(() => {
+    const modeKey = settings.selectedMode === 'auto' ? activeBestMode : settings.selectedMode;
+    return MODE_START_ELOS[modeKey] ?? settings.startElo;
+  }, [settings.selectedMode, activeBestMode, settings.startElo]);
+
   // Time metrics
   const timeMetrics = useMemo(() => {
     return getProjectTimeMetrics(new Date(), settings.startDate, settings.targetDate);
@@ -422,12 +431,12 @@ export default function App() {
       new Date(),
       settings.startDate,
       settings.targetDate,
-      settings.startElo,
+      effectiveStartElo,
       settings.targetElo,
       settings.trajectoryModel,
       settings.customMilestones
     );
-  }, [currentElo, settings]);
+  }, [currentElo, settings, effectiveStartElo]);
 
   // Monthly objective calculation
   const monthlyObjective = useMemo(() => {
@@ -436,16 +445,16 @@ export default function App() {
       new Date(),
       settings.startDate,
       settings.targetDate,
-      settings.startElo,
+      effectiveStartElo,
       settings.targetElo
     );
-  }, [currentElo, settings]);
+  }, [currentElo, settings, effectiveStartElo]);
 
   // Complementary KPI summary metrics
   const kpiData = useMemo(() => {
     const recordedElos = syncHistory.map((s) => s.bestRating);
     const peakHistorical = recordedElos.length > 0 ? Math.max(...recordedElos) : currentElo;
-    const progressionSinceStart = currentElo - settings.startElo;
+    const progressionSinceStart = currentElo - effectiveStartElo;
 
     let recentDelta: number | null = null;
     if (syncHistory.length >= 2) {
@@ -499,7 +508,7 @@ export default function App() {
             <HeroEloCard
               currentElo={currentElo}
               bestMode={activeBestMode}
-              startElo={settings.startElo}
+              startElo={effectiveStartElo}
               targetElo={settings.targetElo}
               daysRemaining={timeMetrics.remainingDays}
               lastSyncTime={lastSyncTime}
@@ -532,7 +541,7 @@ export default function App() {
         {currentTab === 'charts' && (
           <HistoryChart
             syncHistory={syncHistory}
-            startElo={settings.startElo}
+            startElo={effectiveStartElo}
             targetElo={settings.targetElo}
             startDateStr={settings.startDate}
             targetDateStr={settings.targetDate}
@@ -545,7 +554,7 @@ export default function App() {
             currentElo={currentElo}
             syncHistory={syncHistory}
             milestones={settings.customMilestones}
-            startElo={settings.startElo}
+            startElo={effectiveStartElo}
             targetElo={settings.targetElo}
             startDateStr={settings.startDate}
             targetDateStr={settings.targetDate}

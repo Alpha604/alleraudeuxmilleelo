@@ -96,6 +96,19 @@ export interface AppSettings {
   customMilestones: MonthlyMilestone[];
 }
 
+export interface AdvanceMetric {
+  isAhead: boolean;
+  isBehind: boolean;
+  isGoalReached: boolean;
+  advanceDays: number;
+  equivalentDate: Date;
+  equivalentDateKey: string; // YYYY-MM-DD
+  equivalentDateLabel: string; // e.g. "5 déc. 2026"
+  currentElo: number;
+  todayTargetElo: number;
+  diffElo: number;
+}
+
 export interface DailyObjective {
   dateStr: string;
   theoreticalElo: number;
@@ -107,6 +120,9 @@ export interface DailyObjective {
   paceRequiredPerDay: number;
   paceRequiredPerWeek: number;
   paceRequiredPerMonth: number;
+  advanceDays?: number;
+  advanceDateLabel?: string;
+  advanceDateKey?: string;
 }
 
 export interface MonthlyObjective {
