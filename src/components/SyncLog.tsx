@@ -20,8 +20,10 @@ import {
   clearSyncHistory,
   exportSyncHistoryCSV,
   exportSyncHistoryJSON,
+  getStoredSettings,
   importSyncHistory,
 } from '../utils/storage';
+import { SecurePurgeModal } from './SecurePurgeModal';
 
 interface SyncLogProps {
   history: SyncRecord[];
@@ -44,7 +46,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
   isIframe = false,
   onOpenSecurityModal,
 }) => {
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [secureModalOpen, setSecureModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExportJSON = () => {
@@ -116,30 +118,22 @@ export const SyncLog: React.FC<SyncLogProps> = ({
 
   const handleTriggerPurge = () => {
     if (isIframe) return;
-    if (!isAdmin) {
-      if (onOpenSecurityModal) onOpenSecurityModal("Purge des données d'historique");
-      return;
-    }
-    if (onPurgeAccountData) {
-      onPurgeAccountData();
-    }
+    setSecureModalOpen(true);
   };
 
   const handleTriggerClear = () => {
     if (isIframe) return;
-    if (!isAdmin) {
-      if (onOpenSecurityModal) onOpenSecurityModal("Suppression de l'historique complet");
-      return;
-    }
-    setShowClearConfirm(true);
+    setSecureModalOpen(true);
   };
 
-  const handleClearHistory = () => {
-    if (isIframe || !isAdmin) return;
-    clearSyncHistory(username);
-    onHistoryUpdate([]);
-    setShowClearConfirm(false);
-    onShowMessage(`Historique des synchronisations vidé pour @${username}.`, 'info');
+  const handleExecuteSecureConfirm = () => {
+    if (onPurgeAccountData) {
+      onPurgeAccountData();
+    } else {
+      clearSyncHistory(username);
+      onHistoryUpdate([]);
+    }
+    onShowMessage(`Historique vidé et purgé avec succès après sauvegarde et double validation A2F.`, 'success');
   };
 
   return (
@@ -224,34 +218,16 @@ export const SyncLog: React.FC<SyncLogProps> = ({
         </div>
       </div>
 
-      {/* Confirmation Modal for Clearing History */}
-      {!isIframe && showClearConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
-            <div className="flex items-center gap-3 text-rose-400">
-              <AlertTriangle className="h-6 w-6" />
-              <h3 className="text-base font-bold text-white">Confirmer la suppression</h3>
-            </div>
-            <p className="mt-3 text-xs text-neutral-300">
-              Êtes-vous certain de vouloir vider l'historique complet ({history.length} entrées) pour @{username} ? Cette action est irréversible.
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                onClick={() => setShowClearConfirm(false)}
-                className="px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleClearHistory}
-                className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700"
-              >
-                Confirmer la suppression
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Secure Purge / Clear Modal with Mandatory Backup & Double 2FA */}
+      <SecurePurgeModal
+        isOpen={secureModalOpen}
+        onClose={() => setSecureModalOpen(false)}
+        onConfirm={handleExecuteSecureConfirm}
+        actionType="purge"
+        username={username}
+        settings={getStoredSettings()}
+        syncHistory={history}
+      />
 
       {/* History Table */}
       <div className="overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0c1019]/90 shadow-[0_8px_30px_rgba(0,0,0,0.4)] backdrop-blur-xl">

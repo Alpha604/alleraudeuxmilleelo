@@ -140,11 +140,43 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   }, [syncHistory]);
 
   // Helper to extract rating based on mode filter
-  const getRatingForMode = (record: SyncRecord, mode: ModeFilter): number => {
-    if (mode === 'blitz' && record.blitz !== null) return record.blitz;
-    if (mode === 'rapid' && record.rapid !== null) return record.rapid;
-    if (mode === 'bullet' && record.bullet !== null) return record.bullet;
-    return record.bestRating ?? effectiveStartElo;
+  // For 'auto' mode, it strictly picks the game mode with the HIGHEST absolute rating (not points gained)
+  const getRatingForMode = (record: SyncRecord, mode: ModeFilter): { rating: number; modeName: string } => {
+    if (mode === 'blitz') {
+      return { rating: record.blitz ?? MODE_START_ELOS.blitz, modeName: 'BLITZ' };
+    }
+    if (mode === 'rapid') {
+      return { rating: record.rapid ?? MODE_START_ELOS.rapid, modeName: 'RAPIDE' };
+    }
+    if (mode === 'bullet') {
+      return { rating: record.bullet ?? MODE_START_ELOS.bullet, modeName: 'BULLET' };
+    }
+
+    // AUTO MODE: strictly choose the cadence with the HIGHEST absolute rating
+    const candidates: { modeName: string; rating: number; priority: number }[] = [];
+    if (typeof record.blitz === 'number') {
+      candidates.push({ modeName: 'BLITZ', rating: record.blitz, priority: 2 });
+    }
+    if (typeof record.rapid === 'number') {
+      candidates.push({ modeName: 'RAPIDE', rating: record.rapid, priority: 3 });
+    }
+    if (typeof record.bullet === 'number') {
+      candidates.push({ modeName: 'BULLET', rating: record.bullet, priority: 1 });
+    }
+
+    if (candidates.length > 0) {
+      // Sort strictly descending by highest rating
+      candidates.sort((a, b) => {
+        if (b.rating !== a.rating) return b.rating - a.rating;
+        return b.priority - a.priority;
+      });
+      return { rating: candidates[0].rating, modeName: candidates[0].modeName };
+    }
+
+    return {
+      rating: record.bestRating ?? effectiveStartElo,
+      modeName: (record.bestMode || 'blitz').toUpperCase(),
+    };
   };
 
   // 2. Full Unified Daily Timeline with CARRY-FORWARD (Plateau)
@@ -165,11 +197,10 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     sortedRecords.forEach((record) => {
       const d = new Date(record.timestamp);
       const key = formatDateToKey(d);
-      const rating = getRatingForMode(record, selectedMode);
-      const modeLabel = selectedMode === 'auto' ? record.bestMode : selectedMode;
+      const { rating, modeName } = getRatingForMode(record, selectedMode);
       dailySyncMap.set(key, {
         rating,
-        mode: modeLabel.toUpperCase(),
+        mode: modeName,
         timestamp: d.getTime(),
       });
     });
