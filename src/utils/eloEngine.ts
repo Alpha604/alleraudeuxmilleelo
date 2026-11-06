@@ -263,10 +263,10 @@ export function calculateDailyObjective(
 }
 
 /**
- * Calculates advance calendar metrics:
+ * Calculates advance/delay calendar metrics:
  * Finds the date on which the linear target curve equals the player's current Elo.
- * If currentElo > theoreticalElo(today), the equivalent date is in the future,
- * meaning the player is "in advance" until that date (e.g. "En avance jusqu'au 5 décembre").
+ * - If currentElo > theoreticalElo(today): advanceDays > 0, equivalent date is in the future (green bar)
+ * - If currentElo < theoreticalElo(today): advanceDays < 0, equivalent date is in the past (red bar)
  */
 export function calculateAdvanceMetrics(
   currentRealElo: number,
@@ -291,12 +291,31 @@ export function calculateAdvanceMetrics(
 
   const totalRange = Math.max(1, targetElo - startElo);
   const totalDuration = Math.max(1, end.getTime() - start.getTime());
+  const msPerDay = 86400000;
 
-  // Clamped ratio for equivalent date
-  const clampedElo = Math.max(startElo, Math.min(targetElo, currentRealElo));
-  const ratio = (clampedElo - startElo) / totalRange;
-  const equivalentTimestamp = start.getTime() + totalDuration * ratio;
-  const equivalentDate = new Date(equivalentTimestamp);
+  // Progression pace in Elo points per day
+  const dailyRate = Math.max(0.1, totalRange / (totalDuration / msPerDay));
+
+  // Exact difference in days
+  const advanceDays = Math.round(diffElo / dailyRate);
+
+  // Theoretical date corresponding to this rating:
+  let rawEquivalentMs: number;
+  if (currentRealElo <= startElo) {
+    const deficitPoints = startElo - currentRealElo;
+    const daysBeforeStart = Math.round(deficitPoints / dailyRate);
+    rawEquivalentMs = start.getTime() - daysBeforeStart * msPerDay;
+  } else if (currentRealElo >= targetElo) {
+    rawEquivalentMs = end.getTime();
+  } else {
+    const ratio = (currentRealElo - startElo) / totalRange;
+    rawEquivalentMs = start.getTime() + totalDuration * ratio;
+  }
+
+  // Clamped strictly to the chart available timeline range [start, end]
+  // so that categorical Recharts axes can always display the marker line
+  const clampedMs = Math.max(start.getTime(), Math.min(end.getTime(), rawEquivalentMs));
+  const equivalentDate = new Date(clampedMs);
   equivalentDate.setHours(0, 0, 0, 0);
 
   const y = equivalentDate.getFullYear();
@@ -309,9 +328,6 @@ export function calculateAdvanceMetrics(
     month: 'short',
     year: 'numeric',
   });
-
-  const diffMs = equivalentDate.getTime() - today.getTime();
-  const advanceDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
 
   return {
     isAhead: advanceDays > 0,

@@ -10,7 +10,6 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
-  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -360,27 +359,43 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     );
   }, [currentRealElo, todayObj, startDateStr, targetDateStr, effectiveStartElo, targetElo]);
 
-  // Index of advance equivalent date in full timeline
-  const advanceIndex = useMemo(() => {
-    if (!advanceMetric.isAhead) return -1;
+  // Index of equivalent marker date in full timeline (works for both advance and delay)
+  const markerIndex = useMemo(() => {
     return allChartData.findIndex((p) => p.dayKey === advanceMetric.equivalentDateKey);
-  }, [allChartData, advanceMetric]);
+  }, [allChartData, advanceMetric.equivalentDateKey]);
 
   // 3. Zoom Range Management (Controlled brush/slider)
   const [zoomRange, setZoomRange] = useState<{ startIndex: number; endIndex: number }>(() => {
-    const prospectiveEnd = Math.max(todayIndex + 14, advanceIndex >= 0 ? advanceIndex + 7 : 0);
+    const minIdx = Math.min(todayIndex, markerIndex >= 0 ? markerIndex : todayIndex);
+    const maxIdx = Math.max(todayIndex, markerIndex >= 0 ? markerIndex : todayIndex);
+    const start = Math.max(0, minIdx - 7);
+    const prospectiveEnd = Math.max(maxIdx + 10, todayIndex + 14);
     const end = Math.min(allChartData.length - 1, prospectiveEnd);
-    return { startIndex: 0, endIndex: end > 30 ? end : Math.min(allChartData.length - 1, 30) };
+    return { startIndex: start, endIndex: Math.max(start + 30, end) };
   });
 
-  // Center chart view on the advance date
-  const handleFocusAdvance = () => {
-    if (advanceIndex < 0) return;
-    const start = Math.max(0, todayIndex - 5);
-    const end = Math.min(allChartData.length - 1, advanceIndex + 7);
-    setZoomRange({ startIndex: start, endIndex: end });
+  // Center chart view on the advance / retard marker line
+  const handleFocusMarker = () => {
+    if (markerIndex < 0) return;
+    const minIdx = Math.min(todayIndex, markerIndex);
+    const maxIdx = Math.max(todayIndex, markerIndex);
+    const start = Math.max(0, minIdx - 7);
+    const end = Math.min(allChartData.length - 1, maxIdx + 7);
+    setZoomRange({ startIndex: start, endIndex: Math.max(start + 14, end) });
     setActivePreset('progress');
   };
+
+  // Automatically keep the marker in view when switching cadences if in progress preset
+  React.useEffect(() => {
+    if (activePreset === 'progress') {
+      const minIdx = Math.min(todayIndex, markerIndex >= 0 ? markerIndex : todayIndex);
+      const maxIdx = Math.max(todayIndex, markerIndex >= 0 ? markerIndex : todayIndex);
+      const start = Math.max(0, minIdx - 7);
+      const prospectiveEnd = Math.max(maxIdx + 10, todayIndex + 14);
+      const end = Math.min(allChartData.length - 1, prospectiveEnd);
+      setZoomRange({ startIndex: start, endIndex: Math.max(start + 30, end) });
+    }
+  }, [selectedMode, activePreset, todayIndex, markerIndex, allChartData.length]);
 
   // Apply quick presets
   const applyPreset = (preset: QuickPreset) => {
@@ -389,9 +404,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     if (preset === 'full') {
       setZoomRange({ startIndex: 0, endIndex: total - 1 });
     } else if (preset === 'progress') {
-      const prospectiveEnd = Math.max(todayIndex + 14, advanceIndex >= 0 ? advanceIndex + 7 : 0);
+      const minIdx = Math.min(todayIndex, markerIndex >= 0 ? markerIndex : todayIndex);
+      const maxIdx = Math.max(todayIndex, markerIndex >= 0 ? markerIndex : todayIndex);
+      const start = Math.max(0, minIdx - 7);
+      const prospectiveEnd = Math.max(maxIdx + 10, todayIndex + 14);
       const end = Math.min(total - 1, prospectiveEnd);
-      setZoomRange({ startIndex: 0, endIndex: Math.max(30, end) });
+      setZoomRange({ startIndex: start, endIndex: Math.max(start + 30, end) });
     } else if (preset === '1year') {
       setZoomRange({ startIndex: 0, endIndex: Math.min(total - 1, 365) });
     } else if (preset === '6months') {
@@ -726,13 +744,20 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             </div>
           )}
 
-          {/* Special advance milestone callout on tooltip */}
-          {pt.dayKey === advanceMetric.equivalentDateKey && advanceMetric.isAhead && (
+          {/* Special advance or delay milestone callout on tooltip */}
+          {pt.dayKey === advanceMetric.equivalentDateKey && (
             <div className="pt-2 border-t border-neutral-800/80">
-              <div className="rounded-xl bg-[#10b981]/15 border border-[#10b981]/40 p-2 text-[10px] text-[#10b981] font-bold flex items-center gap-1.5">
-                <Zap className="h-3.5 w-3.5 flex-shrink-0" />
-                <span>🚀 Objectif atteint en avance dès aujourd&apos;hui (+{advanceMetric.advanceDays} j)</span>
-              </div>
+              {advanceMetric.isAhead ? (
+                <div className="rounded-xl bg-[#10b981]/15 border border-[#10b981]/40 p-2 text-[10px] text-[#10b981] font-bold flex items-center gap-1.5">
+                  <Zap className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>🚀 Objectif théorique atteint en avance (+{advanceMetric.advanceDays} j)</span>
+                </div>
+              ) : advanceMetric.isBehind ? (
+                <div className="rounded-xl bg-[#ef4444]/15 border border-[#ef4444]/40 p-2 text-[10px] text-[#ef4444] font-bold flex items-center gap-1.5">
+                  <TrendingDown className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>⚠️ Niveau théorique équivalent en retard ({advanceMetric.advanceDays} j)</span>
+                </div>
+              ) : null}
             </div>
           )}
         </div>
@@ -798,6 +823,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30 text-xs font-bold font-mono">
               <Zap className="h-3.5 w-3.5 text-[#10b981]" />
               <span>Avance jusqu&apos;au {advanceMetric.equivalentDateLabel} (+{advanceMetric.advanceDays} j)</span>
+            </div>
+          )}
+          {advanceMetric.isBehind && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#ef4444]/15 text-[#ef4444] border border-[#ef4444]/30 text-xs font-bold font-mono">
+              <TrendingDown className="h-3.5 w-3.5 text-[#ef4444]" />
+              <span>Retard : niveau du {advanceMetric.equivalentDateLabel} ({advanceMetric.advanceDays} j)</span>
             </div>
           )}
         </div>
@@ -904,7 +935,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
         </div>
       </div>
 
-      {/* Advance Calendar Alert Banner */}
+      {/* Advance / Retard Calendar Alert Banner */}
       {advanceMetric.isAhead && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#10b981]/10 border border-[#10b981]/30 p-4 rounded-3xl shadow-lg">
           <div className="flex items-center gap-3">
@@ -923,14 +954,45 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               </p>
             </div>
           </div>
-          {advanceIndex >= 0 && (
+          {markerIndex >= 0 && (
             <button
-              onClick={handleFocusAdvance}
+              onClick={handleFocusMarker}
               className="self-start sm:self-auto px-3.5 py-2 rounded-xl bg-[#10b981] text-black font-black text-xs hover:bg-[#10b981]/90 transition-all flex items-center gap-1.5 shadow-md flex-shrink-0"
               title="Centrer le graphique sur la barre d'avance"
             >
               <Eye className="h-3.5 w-3.5" />
               <span>Centrer sur la barre</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {advanceMetric.isBehind && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#ef4444]/10 border border-[#ef4444]/30 p-4 rounded-3xl shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-[#ef4444]/20 text-[#ef4444] flex-shrink-0">
+              <TrendingDown className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-white flex items-center gap-2">
+                <span>Retard Calendrier Constaté</span>
+                <span className="text-[10px] font-mono bg-[#ef4444]/20 text-[#ef4444] px-2 py-0.5 rounded-full border border-[#ef4444]/40 font-bold">
+                  {advanceMetric.advanceDays} jours de retard
+                </span>
+              </div>
+              <p className="text-xs text-neutral-300 mt-0.5">
+                Votre classement actuel de <span className="font-bold text-[#facc15]">{currentRealElo} Elo</span> correspond au niveau théorique du <span className="font-bold text-[#ef4444]">{advanceMetric.equivalentDateLabel}</span>. La barre verticale rouge en pointillés indique la date équivalente.
+              </p>
+            </div>
+          </div>
+          {markerIndex >= 0 && (
+            <button
+              onClick={handleFocusMarker}
+              className="self-start sm:self-auto px-3.5 py-2 rounded-xl bg-[#ef4444] text-white font-black text-xs hover:bg-[#ef4444]/90 transition-all flex items-center gap-1.5 shadow-md flex-shrink-0"
+              title="Centrer le graphique sur la barre de retard"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              <span>Centrer sur le retard</span>
             </button>
           )}
         </div>
@@ -1050,15 +1112,26 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               Réinitialiser
             </button>
 
-            {advanceMetric.isAhead && advanceIndex >= 0 && (
-              <button
-                onClick={handleFocusAdvance}
-                className="px-2.5 py-1 rounded-lg bg-[#10b981]/15 border border-[#10b981]/40 text-[#10b981] hover:bg-[#10b981]/25 text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
-                title="Centrer la vue sur votre date d'avance"
-              >
-                <Zap className="h-3.5 w-3.5" />
-                <span>Voir Avance (+{advanceMetric.advanceDays} j)</span>
-              </button>
+            {markerIndex >= 0 && (
+              advanceMetric.isAhead ? (
+                <button
+                  onClick={handleFocusMarker}
+                  className="px-2.5 py-1 rounded-lg bg-[#10b981]/15 border border-[#10b981]/40 text-[#10b981] hover:bg-[#10b981]/25 text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
+                  title="Centrer la vue sur votre date d'avance"
+                >
+                  <Zap className="h-3.5 w-3.5" />
+                  <span>Voir Avance (+{advanceMetric.advanceDays} j)</span>
+                </button>
+              ) : advanceMetric.isBehind ? (
+                <button
+                  onClick={handleFocusMarker}
+                  className="px-2.5 py-1 rounded-lg bg-[#ef4444]/15 border border-[#ef4444]/40 text-[#ef4444] hover:bg-[#ef4444]/25 text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
+                  title="Centrer la vue sur votre date équivalente de retard"
+                >
+                  <TrendingDown className="h-3.5 w-3.5" />
+                  <span>Voir Retard ({advanceMetric.advanceDays} j)</span>
+                </button>
+              ) : null
             )}
 
             <span className="text-[11px] font-mono text-neutral-400 ml-2">
@@ -1077,12 +1150,14 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               onClick={() => setShowAdvanceMarker(!showAdvanceMarker)}
               className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all ${
                 showAdvanceMarker
-                  ? 'bg-[#10b981]/15 text-[#10b981] border-[#10b981]/40 font-bold'
+                  ? advanceMetric.isAhead
+                    ? 'bg-[#10b981]/15 text-[#10b981] border-[#10b981]/40 font-bold'
+                    : 'bg-[#ef4444]/15 text-[#ef4444] border-[#ef4444]/40 font-bold'
                   : 'bg-[#0c0f14] text-neutral-500 border-neutral-800 line-through'
               }`}
-              title="Afficher/masquer la barre verticale d'avance calendrier"
+              title="Afficher/masquer la barre verticale d'avance ou de retard calendrier"
             >
-              🚀 Barre Avance
+              {advanceMetric.isAhead ? '🚀 Barre Avance' : '⚠️ Barre Retard'}
             </button>
 
             <button
@@ -1169,13 +1244,22 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 <span className="text-white">Cible Linéaire 1500 → 2000</span>
               </div>
             )}
-            {showAdvanceMarker && advanceMetric.isAhead && (
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-4 border-b-2 border-dashed border-[#10b981]" />
-                <span className="text-[#10b981] font-bold">
-                  Avance jusqu&apos;au {advanceMetric.equivalentDateLabel} (+{advanceMetric.advanceDays} j)
-                </span>
-              </div>
+            {showAdvanceMarker && (
+              advanceMetric.isAhead ? (
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-4 border-b-2 border-dashed border-[#10b981]" />
+                  <span className="text-[#10b981] font-bold">
+                    Avance jusqu&apos;au {advanceMetric.equivalentDateLabel} (+{advanceMetric.advanceDays} j)
+                  </span>
+                </div>
+              ) : advanceMetric.isBehind ? (
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-4 border-b-2 border-dashed border-[#ef4444]" />
+                  <span className="text-[#ef4444] font-bold">
+                    Retard : niveau du {advanceMetric.equivalentDateLabel} ({advanceMetric.advanceDays} j)
+                  </span>
+                </div>
+              ) : null
             )}
           </div>
         </div>
@@ -1246,16 +1330,9 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 />
               )}
 
-              {/* Vertical Reference Line: Ahead until date (Barre d'avance demandée par l'utilisateur) */}
-              {showAdvanceMarker && advanceMetric.isAhead && (
-                <>
-                  {/* Subtle emerald tint over the lead zone */}
-                  <ReferenceArea
-                    x1={todayKey}
-                    x2={advanceMetric.equivalentDateKey}
-                    fill="#10b981"
-                    fillOpacity={0.07}
-                  />
+              {/* Vertical Reference Line: Ahead (Green) or Behind (Red) target date - No shaded area */}
+              {showAdvanceMarker && visiblePoints.some((p) => p.dayKey === advanceMetric.equivalentDateKey) && (
+                advanceMetric.isAhead ? (
                   <ReferenceLine
                     x={advanceMetric.equivalentDateKey}
                     stroke="#10b981"
@@ -1269,7 +1346,21 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                       position: 'insideTopLeft',
                     }}
                   />
-                </>
+                ) : advanceMetric.isBehind ? (
+                  <ReferenceLine
+                    x={advanceMetric.equivalentDateKey}
+                    stroke="#ef4444"
+                    strokeDasharray="4 4"
+                    strokeWidth={2.5}
+                    label={{
+                      value: `⚠️ En retard : niveau du ${advanceMetric.equivalentDateLabel} (${advanceMetric.advanceDays} j)`,
+                      fill: '#ef4444',
+                      fontSize: 11,
+                      fontWeight: 'bold',
+                      position: 'insideTopRight',
+                    }}
+                  />
+                ) : null
               )}
 
               {/* Departure Line (Mode specific: Blitz 1458, Rapid 1289, Bullet 1500) */}
