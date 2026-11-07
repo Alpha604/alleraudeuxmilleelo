@@ -148,19 +148,19 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Interactive Calendar Grid */}
-        <div className="lg:col-span-7 rounded-3xl border border-neutral-800 bg-[#0c0f14] p-6 shadow-xl">
+        <div className="lg:col-span-7 rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-6 shadow-xl">
           {/* Calendar Month Navigation */}
-          <div className="flex items-center justify-between pb-4 border-b border-neutral-800">
-            <div className="flex items-center gap-3">
-              <span className="font-display text-lg font-bold text-white capitalize">
+          <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-neutral-800">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <span className="font-display text-base sm:text-lg font-bold text-white capitalize">
                 {monthNames[month]} {year}
               </span>
-              <span className="text-xs font-mono font-bold text-[#facc15] bg-[#facc15]/10 border border-[#facc15]/30 px-2.5 py-1 rounded-lg">
+              <span className="text-[11px] sm:text-xs font-mono font-bold text-[#facc15] bg-[#facc15]/10 border border-[#facc15]/30 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg">
                 Cible : {currentMonthMilestone.targetElo} Elo
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1 sm:gap-1.5">
               <button
                 onClick={prevMonth}
                 className="h-8 w-8 rounded-lg border border-neutral-800 bg-neutral-900 flex items-center justify-center text-neutral-300 hover:text-white transition-colors"
@@ -179,7 +179,7 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
           </div>
 
           {/* Day of Week Headers */}
-          <div className="mt-4 grid grid-cols-7 text-center text-xs font-semibold text-neutral-400">
+          <div className="mt-3 sm:mt-4 grid grid-cols-7 text-center text-[11px] sm:text-xs font-semibold text-neutral-400">
             <div>Lun</div>
             <div>Mar</div>
             <div>Mer</div>
@@ -190,9 +190,9 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
           </div>
 
           {/* Calendar Days */}
-          <div className="mt-2.5 grid grid-cols-7 gap-1.5">
+          <div className="mt-2 sm:mt-2.5 grid grid-cols-7 gap-1 sm:gap-1.5">
             {Array.from({ length: mondayOffset }).map((_, i) => (
-              <div key={`empty-${i}`} className="h-16 rounded-xl opacity-10 bg-neutral-950" />
+              <div key={`empty-${i}`} className="h-12 sm:h-16 rounded-lg sm:rounded-xl opacity-10 bg-neutral-950" />
             ))}
 
             {Array.from({ length: daysInMonth }).map((_, i) => {
@@ -213,7 +213,7 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
                 <button
                   key={day}
                   onClick={() => setSelectedDate(dateObj)}
-                  className={`h-16 flex flex-col justify-between p-2 rounded-xl border text-left transition-all ${
+                  className={`h-12 sm:h-16 flex flex-col justify-between p-1 sm:p-2 rounded-lg sm:rounded-xl border text-left transition-all ${
                     isSelected
                       ? 'border-[#facc15] bg-[#facc15]/15 ring-2 ring-[#facc15]/50 shadow-md'
                       : 'border-neutral-800/80 bg-neutral-900/60 hover:border-neutral-700'
@@ -221,22 +221,24 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
                 >
                   <div className="flex items-center justify-between w-full">
                     <span
-                      className={`font-mono text-xs font-bold ${
+                      className={`font-mono text-[11px] sm:text-xs font-bold ${
                         isSelected ? 'text-[#facc15]' : 'text-neutral-300'
                       }`}
                     >
                       {day}
                     </span>
                     {realElo && (
-                      <span className="h-2 w-2 rounded-full bg-[#10b981] shadow-[0_0_6px_rgba(16,185,129,0.8)]" title={`Relevé du jour: ${realElo}`} />
+                      <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-[#10b981] shadow-[0_0_6px_rgba(16,185,129,0.8)]" title={`Relevé du jour: ${realElo}`} />
                     )}
                   </div>
 
-                  <div className="font-mono text-[10px] text-neutral-400 flex flex-col leading-tight">
-                    <span className="text-neutral-400">{theoreticalElo}</span>
+                  <div className="font-mono text-[9px] sm:text-[10px] text-neutral-400 flex flex-col leading-none sm:leading-tight">
+                    <span className="text-neutral-400 hidden sm:inline">{theoreticalElo}</span>
                     {realElo ? (
                       <span className="text-[#facc15] font-bold">{realElo}</span>
-                    ) : null}
+                    ) : (
+                      <span className="text-neutral-500 sm:hidden">{theoreticalElo}</span>
+                    )}
                   </div>
                 </button>
               );

@@ -4,6 +4,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Calendar, History, LayoutDashboard, LineChart, Settings as SettingsIcon } from 'lucide-react';
 import { DailyObjectiveCard } from './components/DailyObjectiveCard';
 import { GameModesBreakdown } from './components/GameModesBreakdown';
 import { HeroEloCard } from './components/HeroEloCard';
@@ -499,11 +500,11 @@ export default function App() {
         onLockAdmin={handleLockAdmin}
       />
 
-      {/* Main Content Viewport */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {/* Main Content Viewport - Fully responsive for Mobile & Tablet */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-24 sm:pb-8 space-y-5 sm:space-y-8">
         {/* TAB 1: DASHBOARD */}
         {currentTab === 'dashboard' && (
-          <div className="space-y-8">
+          <div className="space-y-5 sm:space-y-8">
             {/* 1. Main Hero Elo Card with Master Progress Bar */}
             <HeroEloCard
               currentElo={currentElo}
@@ -517,7 +518,7 @@ export default function App() {
             />
 
             {/* 2. Today's Objective & Month's Objective Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               <DailyObjectiveCard objective={dailyObjective} />
               <MonthlyObjectiveCard objective={monthlyObjective} />
             </div>
@@ -616,29 +617,101 @@ export default function App() {
         />
       )}
 
-      {/* Editorial Clean Footer */}
-      <footer className="relative z-10 border-t border-white/[0.06] bg-[#070a10]/90 py-6 text-center text-xs text-neutral-400 transition-colors backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+      {/* Editorial Clean Footer - Responsive for Mobile & Tablet */}
+      <footer className="relative z-10 border-t border-white/[0.06] bg-[#070a10]/90 py-4 sm:py-6 text-center text-xs text-neutral-400 transition-colors backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3 text-center sm:text-left">
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
             <span className="font-bold text-white tracking-wide">ROAD TO 2000 ELO</span>
-            <span aria-hidden="true" className="text-neutral-600">·</span>
-            <span>Programme Officiel de Performance Échiquéenne</span>
+            <span aria-hidden="true" className="text-neutral-600 hidden sm:inline">·</span>
+            <span className="hidden sm:inline">Programme Officiel de Performance</span>
             {isIframe && (
               <>
                 <span aria-hidden="true" className="text-neutral-600">·</span>
-                <span className="text-[#facc15] font-bold">[Mode Iframe Consultation Seule]</span>
+                <span className="text-[#facc15] font-bold">[Iframe]</span>
               </>
             )}
           </div>
-          <div className="flex items-center gap-2 text-[11px] font-mono text-neutral-400">
-            <span>Joueur : @{settings.username}</span>
+          <div className="flex flex-wrap items-center justify-center sm:justify-end gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] font-mono text-neutral-400">
+            <span>@{settings.username}</span>
             <span aria-hidden="true" className="text-neutral-600">·</span>
-            <span>Échéance : 31/12/2027</span>
-            <span aria-hidden="true" className="text-neutral-600">·</span>
-            <span>Europe/Paris</span>
+            <span>Échéance 31/12/2027</span>
           </div>
         </div>
       </footer>
+
+      {/* Mobile Minimalist Bottom Navigation Dock (< sm) */}
+      <nav
+        aria-label="Navigation mobile"
+        className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#07090e]/95 backdrop-blur-xl border-t border-neutral-800/80 px-2 py-1.5 flex items-center justify-around shadow-[0_-8px_30px_rgba(0,0,0,0.6)]"
+      >
+        <button
+          onClick={() => setCurrentTab('dashboard')}
+          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+            currentTab === 'dashboard'
+              ? 'text-[#facc15] font-black'
+              : 'text-neutral-400 hover:text-white'
+          }`}
+        >
+          <LayoutDashboard className="h-5 w-5 mb-0.5" />
+          <span className="text-[10px] tracking-tight">Bilan</span>
+        </button>
+
+        <button
+          onClick={() => setCurrentTab('charts')}
+          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+            currentTab === 'charts'
+              ? 'text-[#facc15] font-black'
+              : 'text-neutral-400 hover:text-white'
+          }`}
+        >
+          <LineChart className="h-5 w-5 mb-0.5" />
+          <span className="text-[10px] tracking-tight">Courbe</span>
+        </button>
+
+        <button
+          onClick={() => setCurrentTab('calendar')}
+          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+            currentTab === 'calendar'
+              ? 'text-[#facc15] font-black'
+              : 'text-neutral-400 hover:text-white'
+          }`}
+        >
+          <Calendar className="h-5 w-5 mb-0.5" />
+          <span className="text-[10px] tracking-tight">Calendrier</span>
+        </button>
+
+        <button
+          onClick={() => setCurrentTab('history')}
+          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+            currentTab === 'history'
+              ? 'text-[#facc15] font-black'
+              : 'text-neutral-400 hover:text-white'
+          }`}
+        >
+          <History className="h-5 w-5 mb-0.5" />
+          <span className="text-[10px] tracking-tight">Historique</span>
+        </button>
+
+        {!isIframe && (
+          <button
+            onClick={() => {
+              if (!isAdmin) {
+                handleOpenSecurityModal('Accès aux Réglages', () => setCurrentTab('settings'));
+              } else {
+                setCurrentTab('settings');
+              }
+            }}
+            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+              currentTab === 'settings'
+                ? 'text-[#facc15] font-black'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <SettingsIcon className="h-5 w-5 mb-0.5" />
+            <span className="text-[10px] tracking-tight">Réglages</span>
+          </button>
+        )}
+      </nav>
     </div>
   );
 }

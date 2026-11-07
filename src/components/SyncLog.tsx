@@ -163,43 +163,46 @@ export const SyncLog: React.FC<SyncLogProps> = ({
         </div>
 
         {/* Action buttons (Noir/Blanc, Vert, Rouge, Jaune) */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {!isIframe && onPurgeAccountData && (
             <button
               onClick={handleTriggerPurge}
               title={isAdmin ? "Purger le cache et forcer un relevé neuf" : "Action protégée par 2FA"}
-              className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-neutral-800 transition-colors"
+              className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-white hover:bg-neutral-800 transition-colors"
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              <span>Purger l'ancien compte</span>
+              <span>Purger</span>
+              <span className="hidden sm:inline">l'ancien compte</span>
               {!isAdmin && <Lock className="h-2.5 w-2.5 text-[#facc15]" />}
             </button>
           )}
 
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-1.5 rounded-xl border border-[#10b981]/40 bg-[#10b981]/15 px-3 py-1.5 text-xs font-bold text-[#10b981] hover:bg-[#10b981]/25 transition-colors"
+            className="flex items-center gap-1.5 rounded-xl border border-[#10b981]/40 bg-[#10b981]/15 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-[#10b981] hover:bg-[#10b981]/25 transition-colors"
           >
             <FileSpreadsheet className="h-3.5 w-3.5" />
-            <span>Export CSV</span>
+            <span>CSV</span>
+            <span className="hidden sm:inline">Export</span>
           </button>
 
           <button
             onClick={handleExportJSON}
-            className="flex items-center gap-1.5 rounded-xl border border-[#facc15]/40 bg-[#facc15]/10 px-3 py-1.5 text-xs font-bold text-[#facc15] hover:bg-[#facc15]/20 transition-colors"
+            className="flex items-center gap-1.5 rounded-xl border border-[#facc15]/40 bg-[#facc15]/10 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-[#facc15] hover:bg-[#facc15]/20 transition-colors"
           >
             <FileJson className="h-3.5 w-3.5" />
-            <span>Export JSON</span>
+            <span>JSON</span>
+            <span className="hidden sm:inline">Export</span>
           </button>
 
           {!isIframe && (
             <button
               onClick={handleTriggerImport}
               title={isAdmin ? "Importer un fichier d'historique" : "Import protégé par 2FA"}
-              className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-neutral-800 transition-colors"
+              className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-white hover:bg-neutral-800 transition-colors"
             >
               <Upload className="h-3.5 w-3.5" />
-              <span>Importer</span>
+              <span>Import</span>
               {!isAdmin && <Lock className="h-2.5 w-2.5 text-[#facc15]" />}
             </button>
           )}
@@ -208,7 +211,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
             <button
               onClick={handleTriggerClear}
               title={isAdmin ? "Vider l'historique" : "Action protégée par 2FA"}
-              className="flex items-center gap-1.5 rounded-xl border border-[#ef4444]/40 bg-[#ef4444]/15 px-3 py-1.5 text-xs font-bold text-[#ef4444] hover:bg-[#ef4444]/25 transition-colors"
+              className="flex items-center gap-1.5 rounded-xl border border-[#ef4444]/40 bg-[#ef4444]/15 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-[#ef4444] hover:bg-[#ef4444]/25 transition-colors"
             >
               <Trash2 className="h-3.5 w-3.5" />
               <span>Vider</span>

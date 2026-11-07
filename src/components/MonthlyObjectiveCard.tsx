@@ -22,89 +22,89 @@ export const MonthlyObjectiveCard: React.FC<MonthlyObjectiveCardProps> = ({ obje
   const status = statusLabels[objective.status];
 
   return (
-    <div className="relative flex flex-col justify-between overflow-hidden rounded-3xl border border-neutral-800 bg-[#0c0f14] p-6 sm:p-7 shadow-xl">
+    <div className="relative flex flex-col justify-between overflow-hidden rounded-3xl border border-neutral-800 bg-[#0c0f14] p-4 sm:p-6 lg:p-7 shadow-xl">
       <div>
-        <div className="flex items-center justify-between gap-3 border-b border-neutral-800 pb-4">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#facc15]/10 border border-[#facc15]/30 text-[#facc15]">
-              <Calendar className="h-4 w-4" />
+        <div className="flex items-center justify-between gap-2.5 sm:gap-3 border-b border-neutral-800 pb-3.5 sm:pb-4">
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-xl bg-[#facc15]/10 border border-[#facc15]/30 text-[#facc15]">
+              <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </div>
             <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-white">
+              <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-white">
                 Objectif Mensuel
               </span>
-              <p className="text-[11px] capitalize text-neutral-400">Palier de {objective.monthName}</p>
+              <p className="text-[10px] sm:text-[11px] capitalize text-neutral-400">Palier de {objective.monthName}</p>
             </div>
           </div>
 
-          <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold ${status.badgeClass}`}>
-            <TrendingUp className="h-4 w-4" />
+          <div className={`inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 rounded-full border text-[11px] sm:text-xs font-bold ${status.badgeClass}`}>
+            <TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             <span>{status.label}</span>
           </div>
         </div>
 
         {/* Core Comparison Display */}
-        <div className="mt-6 grid grid-cols-2 gap-4 border-b border-neutral-800 pb-6">
-          <div className="space-y-1">
-            <span className="text-[11px] uppercase tracking-wider font-semibold text-neutral-400">
+        <div className="mt-4 sm:mt-6 grid grid-cols-2 gap-3 sm:gap-4 border-b border-neutral-800 pb-4 sm:pb-6">
+          <div className="space-y-0.5 sm:space-y-1">
+            <span className="text-[10px] sm:text-[11px] uppercase tracking-wider font-semibold text-neutral-400">
               Cible fin de mois
             </span>
-            <div className="font-mono text-4xl font-black text-white tabular-nums">
+            <div className="font-mono text-3xl sm:text-4xl font-black text-white tabular-nums">
               {objective.targetElo}
             </div>
-            <span className="text-[10px] text-neutral-500">Au dernier jour du mois</span>
+            <span className="text-[10px] text-neutral-500 hidden sm:block">Au dernier jour du mois</span>
           </div>
 
-          <div className="space-y-1">
-            <span className="text-[11px] uppercase tracking-wider font-semibold text-neutral-400">
+          <div className="space-y-0.5 sm:space-y-1">
+            <span className="text-[10px] sm:text-[11px] uppercase tracking-wider font-semibold text-neutral-400">
               Progression requise
             </span>
-            <div className="font-mono text-4xl font-black text-[#facc15] tabular-nums">
+            <div className="font-mono text-3xl sm:text-4xl font-black text-[#facc15] tabular-nums">
               {objective.pointsToTarget}
               <span className="text-xs font-normal text-neutral-400 ml-1">pts</span>
             </div>
             <div className="text-[10px] text-neutral-400 font-mono">
-              Sur {objective.daysRemainingInMonth} jours restants ce mois
+              Sur {objective.daysRemainingInMonth} j. restants
             </div>
           </div>
         </div>
 
         {/* Detailed Metrics */}
-        <div className="mt-5 space-y-3 text-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-neutral-400">Écart au palier mensuel :</span>
-            <span className="font-mono font-bold">
+        <div className="mt-3.5 sm:mt-5 space-y-2 sm:space-y-3 text-[11px] sm:text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-neutral-400">Écart au palier :</span>
+            <span className="font-mono font-bold text-right">
               {objective.diff >= 0 ? (
-                <span className="text-[#10b981]">+{objective.diff} pts (Déjà sécurisé ✓)</span>
+                <span className="text-[#10b981]">+{objective.diff} pts (Sécurisé ✓)</span>
               ) : (
                 <span className="text-[#ef4444]">{objective.diff} pts</span>
               )}
             </span>
           </div>
 
-          <div className="flex items-center justify-between">
-            <span className="text-neutral-400">Rythme d'avancement mensuel :</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-neutral-400">Rythme d&apos;avancement :</span>
             <span className={`font-bold ${status.color}`}>
               {status.label}
             </span>
           </div>
 
-          <div className="flex items-center justify-between">
-            <span className="text-neutral-400">Actualisation des calculs :</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-neutral-400">Actualisation :</span>
             <span className="text-neutral-400 font-mono">Chaque 1er du mois</span>
           </div>
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl bg-neutral-900/80 p-3.5 text-xs text-neutral-300 border border-neutral-800">
+      <div className="mt-4 sm:mt-6 rounded-2xl bg-neutral-900/80 p-3 sm:p-3.5 text-[11px] sm:text-xs text-neutral-300 border border-neutral-800">
         {objective.diff >= 0 ? (
           <span className="text-[#10b981] flex items-center gap-1.5 font-bold">
-            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
             Le palier prévu pour la fin du mois est validé !
           </span>
         ) : (
           <span>
-            {objective.pointsToTarget} points à remporter sur les {objective.daysRemainingInMonth} prochains jours pour valider l'étape.
+            {objective.pointsToTarget} points à remporter sur les {objective.daysRemainingInMonth} prochains jours pour valider l&apos;étape.
           </span>
         )}
       </div>

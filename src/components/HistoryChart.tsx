@@ -768,39 +768,39 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   return (
     <div className="space-y-6">
       {/* 1. TOP HEADER & MAIN STATUS ROW */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-[#0d1117] border border-neutral-800 p-5 rounded-3xl shadow-xl">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4 bg-[#0d1117] border border-neutral-800 p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl shadow-xl">
         <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-black text-white flex items-center gap-2">
-              <Compass className="h-5 w-5 text-[#facc15]" />
-              <span>Trajectoire Échiquéenne Complète & Analytique</span>
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            <h2 className="text-sm sm:text-lg font-black text-white flex items-center gap-1.5 sm:gap-2">
+              <Compass className="h-4 w-4 sm:h-5 sm:w-5 text-[#facc15]" />
+              <span>Trajectoire Échiquéenne Complète</span>
             </h2>
-            <span className="text-[10px] font-mono bg-neutral-900 text-[#facc15] font-bold px-2.5 py-0.5 rounded-full border border-neutral-800">
+            <span className="text-[10px] font-mono bg-neutral-900 text-[#facc15] font-bold px-2 py-0.5 rounded-full border border-neutral-800 hidden sm:inline-block">
               1 point / jour + report plateau
             </span>
-            <span className="text-[10px] font-mono bg-neutral-900 text-neutral-300 px-2.5 py-0.5 rounded-full border border-neutral-800">
+            <span className="text-[10px] font-mono bg-neutral-900 text-neutral-300 px-2 py-0.5 rounded-full border border-neutral-800 hidden md:inline-block">
               Zoom & filtres dynamiques
             </span>
           </div>
-          <p className="text-xs text-neutral-400 mt-1">
+          <p className="text-xs text-neutral-400 mt-1 hidden sm:block">
             Chaque jour sans partie conserve automatiquement votre classement précédent. Explorez, zoomez et filtrez l&apos;ensemble de votre parcours.
           </p>
         </div>
 
         {/* Primary Status Chips (Blanc, Noir, Vert, Rouge, Jaune) */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0c0f14] border border-neutral-800 text-xs font-mono">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2.5">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-[#0c0f14] border border-neutral-800 text-[11px] sm:text-xs font-mono">
             <span className="text-neutral-400">Actuel :</span>
             <span className="font-bold text-[#facc15]">{currentRealElo} Elo</span>
           </div>
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#0c0f14] border border-neutral-800 text-xs font-mono">
-            <span className="text-neutral-400">Cible aujourd&apos;hui :</span>
+          <div className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-[#0c0f14] border border-neutral-800 text-[11px] sm:text-xs font-mono">
+            <span className="text-neutral-400">Cible :</span>
             <span className="font-bold text-white">{targetToday} Elo</span>
           </div>
 
           <div
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border ${
+            className={`flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-[11px] sm:text-xs font-bold border ${
               diffVsTarget >= 0
                 ? 'bg-[#10b981]/15 text-[#10b981] border-[#10b981]/30'
                 : 'bg-[#ef4444]/15 text-[#ef4444] border-[#ef4444]/30'
@@ -808,41 +808,41 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
           >
             {diffVsTarget >= 0 ? (
               <>
-                <TrendingUp className="h-3.5 w-3.5" />
-                <span>+{diffVsTarget} pts (En Avance)</span>
+                <TrendingUp className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                <span>+{diffVsTarget} pts (Avance)</span>
               </>
             ) : (
               <>
-                <TrendingDown className="h-3.5 w-3.5" />
+                <TrendingDown className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                 <span>{diffVsTarget} pts (Retard)</span>
               </>
             )}
           </div>
 
           {advanceMetric.isAhead && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30 text-xs font-bold font-mono">
-              <Zap className="h-3.5 w-3.5 text-[#10b981]" />
-              <span>Avance jusqu&apos;au {advanceMetric.equivalentDateLabel} (+{advanceMetric.advanceDays} j)</span>
+            <div className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30 text-[11px] sm:text-xs font-bold font-mono">
+              <Zap className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[#10b981]" />
+              <span>Avance : +{advanceMetric.advanceDays} j ({advanceMetric.equivalentDateLabel})</span>
             </div>
           )}
           {advanceMetric.isBehind && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#ef4444]/15 text-[#ef4444] border border-[#ef4444]/30 text-xs font-bold font-mono">
-              <TrendingDown className="h-3.5 w-3.5 text-[#ef4444]" />
-              <span>Retard : niveau du {advanceMetric.equivalentDateLabel} ({advanceMetric.advanceDays} j)</span>
+            <div className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-[#ef4444]/15 text-[#ef4444] border border-[#ef4444]/30 text-[11px] sm:text-xs font-bold font-mono">
+              <TrendingDown className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[#ef4444]" />
+              <span>Retard : {advanceMetric.advanceDays} j ({advanceMetric.equivalentDateLabel})</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* 2. ANALYTICS RIBBON (6 KPI Cards calculated on current zoom window) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      {/* 2. ANALYTICS RIBBON (Optimized for Mobile 2x2 grid, Tablet & Desktop 6-col) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
         {/* Delta on period */}
-        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-3.5 space-y-1">
+        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-2.5 sm:p-3.5 space-y-0.5 sm:space-y-1">
           <div className="text-[10px] uppercase font-bold text-neutral-400 flex items-center justify-between">
-            <span>Évolution Période</span>
+            <span>Évolution</span>
             <Activity className="h-3.5 w-3.5 text-[#facc15]" />
           </div>
-          <div className="text-lg font-black font-mono">
+          <div className="text-base sm:text-lg font-black font-mono">
             <span
               className={
                 rangeKpis.netDelta > 0
@@ -855,18 +855,18 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               {rangeKpis.netDelta > 0 ? `+${rangeKpis.netDelta}` : rangeKpis.netDelta} pts
             </span>
           </div>
-          <div className="text-[10px] text-neutral-400">
-            {rangeKpis.dailyRate > 0 ? `+${rangeKpis.dailyRate}` : rangeKpis.dailyRate} Elo/jour moy.
+          <div className="text-[10px] text-neutral-400 hidden sm:block">
+            {rangeKpis.dailyRate > 0 ? `+${rangeKpis.dailyRate}` : rangeKpis.dailyRate} Elo/j. moy.
           </div>
         </div>
 
-        {/* Period Peak */}
-        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-3.5 space-y-1">
+        {/* Period Peak - Hidden on tiny mobile to keep clean 2x2 */}
+        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-2.5 sm:p-3.5 space-y-0.5 sm:space-y-1 hidden sm:block">
           <div className="text-[10px] uppercase font-bold text-neutral-400 flex items-center justify-between">
             <span>Sommet Période</span>
             <Trophy className="h-3.5 w-3.5 text-[#facc15]" />
           </div>
-          <div className="text-lg font-black font-mono text-[#facc15]">
+          <div className="text-base sm:text-lg font-black font-mono text-[#facc15]">
             {rangeKpis.peak} Elo
           </div>
           <div className="text-[10px] text-neutral-400">
@@ -874,90 +874,90 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
           </div>
         </div>
 
-        {/* Activity & Regularity */}
-        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-3.5 space-y-1">
+        {/* Activity & Regularity - Hidden on tiny mobile to keep clean 2x2 */}
+        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-2.5 sm:p-3.5 space-y-0.5 sm:space-y-1 hidden sm:block">
           <div className="text-[10px] uppercase font-bold text-neutral-400 flex items-center justify-between">
             <span>Activité Jouée</span>
             <Flame className="h-3.5 w-3.5 text-[#facc15]" />
           </div>
-          <div className="text-lg font-black font-mono text-white">
+          <div className="text-base sm:text-lg font-black font-mono text-white">
             {rangeKpis.playedDays} j.
           </div>
           <div className="text-[10px] text-neutral-400">
-            {rangeKpis.carryoverDays} j. de maintien
+            {rangeKpis.carryoverDays} j. maintien
           </div>
         </div>
 
         {/* Average difference vs Target */}
-        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-3.5 space-y-1">
+        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-2.5 sm:p-3.5 space-y-0.5 sm:space-y-1">
           <div className="text-[10px] uppercase font-bold text-neutral-400 flex items-center justify-between">
             <span>Écart Moyen</span>
             <Target className="h-3.5 w-3.5 text-[#facc15]" />
           </div>
           <div
-            className={`text-lg font-black font-mono ${
+            className={`text-base sm:text-lg font-black font-mono ${
               rangeKpis.avgDiff >= 0 ? 'text-[#10b981]' : 'text-[#ef4444]'
             }`}
           >
             {rangeKpis.avgDiff >= 0 ? `+${rangeKpis.avgDiff}` : rangeKpis.avgDiff} pts
           </div>
-          <div className="text-[10px] text-neutral-400">
-            Face à la droite théorique
+          <div className="text-[10px] text-neutral-400 hidden sm:block">
+            Face à la cible
           </div>
         </div>
 
         {/* Required Pace for 2000 */}
-        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-3.5 space-y-1">
+        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-2.5 sm:p-3.5 space-y-0.5 sm:space-y-1">
           <div className="text-[10px] uppercase font-bold text-neutral-400 flex items-center justify-between">
             <span>Rythme Requis</span>
             <Zap className="h-3.5 w-3.5 text-[#facc15]" />
           </div>
-          <div className="text-lg font-black font-mono text-[#facc15]">
+          <div className="text-base sm:text-lg font-black font-mono text-[#facc15]">
             +{projectionInfo.requiredRatePerWeek} pts/sem.
           </div>
-          <div className="text-[10px] text-neutral-400">
+          <div className="text-[10px] text-neutral-400 hidden sm:block">
             {projectionInfo.pointsRemaining} pts restants
           </div>
         </div>
 
         {/* Projected Completion Date */}
-        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-3.5 space-y-1">
+        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-2.5 sm:p-3.5 space-y-0.5 sm:space-y-1">
           <div className="text-[10px] uppercase font-bold text-neutral-400 flex items-center justify-between">
             <span>Projection 2000</span>
             <CheckCircle2 className="h-3.5 w-3.5 text-[#10b981]" />
           </div>
-          <div className="text-sm font-bold font-mono text-white truncate pt-0.5">
+          <div className="text-xs sm:text-sm font-bold font-mono text-white truncate pt-0.5">
             {projectionInfo.projectedDateStr}
           </div>
-          <div className="text-[10px] text-neutral-400">
+          <div className="text-[10px] text-neutral-400 hidden sm:block">
             Au rythme observé
           </div>
         </div>
       </div>
 
-      {/* Advance / Retard Calendar Alert Banner */}
+      {/* Advance / Retard Calendar Alert Banner - Responsive */}
       {advanceMetric.isAhead && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#10b981]/10 border border-[#10b981]/30 p-4 rounded-3xl shadow-lg">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-[#10b981]/20 text-[#10b981] flex-shrink-0">
-              <Zap className="h-5 w-5" />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#10b981]/10 border border-[#10b981]/30 p-3 sm:p-4 rounded-2xl sm:rounded-3xl shadow-lg">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="p-2 sm:p-2.5 rounded-xl bg-[#10b981]/20 text-[#10b981] flex-shrink-0">
+              <Zap className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
             <div>
-              <div className="text-xs font-bold text-white flex items-center gap-2">
-                <span>Avance Calendrier Validée</span>
+              <div className="text-xs font-bold text-white flex flex-wrap items-center gap-1.5">
+                <span>Avance Validée</span>
                 <span className="text-[10px] font-mono bg-[#10b981]/20 text-[#10b981] px-2 py-0.5 rounded-full border border-[#10b981]/40 font-bold">
                   +{advanceMetric.advanceDays} jours d&apos;avance
                 </span>
               </div>
-              <p className="text-xs text-neutral-300 mt-0.5">
-                Votre classement actuel de <span className="font-bold text-[#facc15]">{currentRealElo} Elo</span> correspond au niveau théorique prévu le <span className="font-bold text-[#10b981]">{advanceMetric.equivalentDateLabel}</span>. La barre verticale verte en pointillés sur le graphique indique cette borne d&apos;avance.
+              <p className="text-[11px] sm:text-xs text-neutral-300 mt-0.5">
+                Votre Elo actuel de <strong className="text-[#facc15]">{currentRealElo}</strong> correspond à la cible du <strong className="text-[#10b981]">{advanceMetric.equivalentDateLabel}</strong>.
               </p>
             </div>
           </div>
           {markerIndex >= 0 && (
             <button
               onClick={handleFocusMarker}
-              className="self-start sm:self-auto px-3.5 py-2 rounded-xl bg-[#10b981] text-black font-black text-xs hover:bg-[#10b981]/90 transition-all flex items-center gap-1.5 shadow-md flex-shrink-0"
+              className="w-full sm:w-auto px-3 py-2 rounded-xl bg-[#10b981] text-black font-black text-xs hover:bg-[#10b981]/90 transition-all flex items-center justify-center gap-1.5 shadow-md flex-shrink-0 min-h-[38px]"
               title="Centrer le graphique sur la barre d'avance"
             >
               <Eye className="h-3.5 w-3.5" />
@@ -968,27 +968,27 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
       )}
 
       {advanceMetric.isBehind && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#ef4444]/10 border border-[#ef4444]/30 p-4 rounded-3xl shadow-lg">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-2xl bg-[#ef4444]/20 text-[#ef4444] flex-shrink-0">
-              <TrendingDown className="h-5 w-5" />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#ef4444]/10 border border-[#ef4444]/30 p-3 sm:p-4 rounded-2xl sm:rounded-3xl shadow-lg">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="p-2 sm:p-2.5 rounded-xl bg-[#ef4444]/20 text-[#ef4444] flex-shrink-0">
+              <TrendingDown className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
             <div>
-              <div className="text-xs font-bold text-white flex items-center gap-2">
-                <span>Retard Calendrier Constaté</span>
+              <div className="text-xs font-bold text-white flex flex-wrap items-center gap-1.5">
+                <span>Retard Constaté</span>
                 <span className="text-[10px] font-mono bg-[#ef4444]/20 text-[#ef4444] px-2 py-0.5 rounded-full border border-[#ef4444]/40 font-bold">
                   {advanceMetric.advanceDays} jours de retard
                 </span>
               </div>
-              <p className="text-xs text-neutral-300 mt-0.5">
-                Votre classement actuel de <span className="font-bold text-[#facc15]">{currentRealElo} Elo</span> correspond au niveau théorique du <span className="font-bold text-[#ef4444]">{advanceMetric.equivalentDateLabel}</span>. La barre verticale rouge en pointillés indique la date équivalente.
+              <p className="text-[11px] sm:text-xs text-neutral-300 mt-0.5">
+                Votre Elo actuel de <strong className="text-[#facc15]">{currentRealElo}</strong> équivaut au niveau du <strong className="text-[#ef4444]">{advanceMetric.equivalentDateLabel}</strong>.
               </p>
             </div>
           </div>
           {markerIndex >= 0 && (
             <button
               onClick={handleFocusMarker}
-              className="self-start sm:self-auto px-3.5 py-2 rounded-xl bg-[#ef4444] text-white font-black text-xs hover:bg-[#ef4444]/90 transition-all flex items-center gap-1.5 shadow-md flex-shrink-0"
+              className="w-full sm:w-auto px-3 py-2 rounded-xl bg-[#ef4444] text-white font-black text-xs hover:bg-[#ef4444]/90 transition-all flex items-center justify-center gap-1.5 shadow-md flex-shrink-0 min-h-[38px]"
               title="Centrer le graphique sur la barre de retard"
             >
               <Eye className="h-3.5 w-3.5" />
@@ -998,157 +998,161 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
         </div>
       )}
 
-      {/* 3. MULTI-LEVEL FILTER & ZOOM TOOLBAR */}
-      <div className="bg-[#0d1117] border border-neutral-800 p-4 rounded-3xl space-y-3.5">
+      {/* 3. MULTI-LEVEL FILTER & ZOOM TOOLBAR - Touch & Mobile Optimized */}
+      <div className="bg-[#0d1117] border border-neutral-800 p-3 sm:p-4 rounded-2xl sm:rounded-3xl space-y-3">
         {/* Row 1: Mode selector + Timeframe presets */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2.5 sm:gap-3">
           {/* Mode Selector */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-bold text-neutral-400 mr-1 flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1 md:pb-0">
+            <span className="text-[11px] sm:text-xs font-bold text-neutral-400 mr-1 flex items-center gap-1 shrink-0">
               <SlidersHorizontal className="h-3.5 w-3.5 text-[#facc15]" />
-              <span>Cadence :</span>
+              <span className="hidden sm:inline">Cadence :</span>
             </span>
             {[
-              { id: 'auto', label: `Meilleur Elo (Auto: ${autoBestMode.toUpperCase()})` },
-              { id: 'blitz', label: 'Blitz' },
-              { id: 'rapid', label: 'Rapide' },
-              { id: 'bullet', label: 'Bullet' },
+              { id: 'auto', label: 'Auto', fullLabel: `Meilleur Elo (Auto: ${autoBestMode.toUpperCase()})` },
+              { id: 'blitz', label: 'Blitz', fullLabel: 'Blitz' },
+              { id: 'rapid', label: 'Rapide', fullLabel: 'Rapide' },
+              { id: 'bullet', label: 'Bullet', fullLabel: 'Bullet' },
             ].map((m) => (
               <button
                 key={m.id}
                 onClick={() => setSelectedMode(m.id as ModeFilter)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 min-h-[36px] ${
                   selectedMode === m.id
                     ? 'bg-[#facc15] text-black shadow-md'
                     : 'bg-[#0c0f14] text-neutral-300 hover:text-white border border-neutral-800'
                 }`}
               >
-                {m.label}
+                <span className="sm:hidden">{m.label}</span>
+                <span className="hidden sm:inline">{m.fullLabel}</span>
               </button>
             ))}
           </div>
 
-          {/* Quick presets */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-bold text-neutral-400 mr-1 flex items-center gap-1.5">
+          {/* Quick presets (Responsive filtering) */}
+          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pb-1 md:pb-0">
+            <span className="text-[11px] sm:text-xs font-bold text-neutral-400 mr-1 flex items-center gap-1 shrink-0">
               <Calendar className="h-3.5 w-3.5 text-[#facc15]" />
-              <span>Période :</span>
+              <span className="hidden sm:inline">Période :</span>
             </span>
             {[
-              { id: 'progress', label: 'Progression Active' },
-              { id: 'full', label: 'Tout le Projet' },
-              { id: '1year', label: '1 An' },
-              { id: '6months', label: '6 Mois' },
-              { id: '3months', label: '3 Mois' },
-              { id: '30days', label: '30 Jours' },
-              { id: '14days', label: '14 Jours' },
-              { id: '7days', label: '7 Jours' },
+              { id: 'progress', label: 'Progression', fullLabel: 'Progression Active', always: true },
+              { id: 'full', label: 'Tout', fullLabel: 'Tout le Projet', always: true },
+              { id: '1year', label: '1 An', fullLabel: '1 An', always: false },
+              { id: '6months', label: '6 Mois', fullLabel: '6 Mois', always: false },
+              { id: '3months', label: '3 Mois', fullLabel: '3 Mois', always: false },
+              { id: '30days', label: '30j', fullLabel: '30 Jours', always: true },
+              { id: '14days', label: '14j', fullLabel: '14 Jours', always: false },
+              { id: '7days', label: '7j', fullLabel: '7 Jours', always: true },
             ].map((p) => (
               <button
                 key={p.id}
                 onClick={() => applyPreset(p.id as QuickPreset)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                className={`px-2 sm:px-2.5 py-1 rounded-lg text-xs font-semibold transition-all shrink-0 min-h-[34px] ${
+                  !p.always ? 'hidden sm:inline-block' : 'inline-block'
+                } ${
                   activePreset === p.id
                     ? 'bg-neutral-800 text-[#facc15] border border-[#facc15]/40 font-bold'
                     : 'bg-[#0c0f14] text-neutral-400 hover:text-white border border-neutral-800/80'
                 }`}
               >
-                {p.label}
+                <span className="sm:hidden">{p.label}</span>
+                <span className="hidden sm:inline">{p.fullLabel}</span>
               </button>
             ))}
           </div>
         </div>
 
         {/* Row 2: Zoom controls (+, -, Pan, Reset) + Visual Layers Toggles */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-neutral-800/80">
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 pt-2.5 sm:pt-3 border-t border-neutral-800/80">
           {/* Zoom Buttons */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-neutral-400 mr-1 flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            <span className="text-[11px] sm:text-xs font-bold text-neutral-400 mr-0.5 flex items-center gap-1">
               <ZoomIn className="h-3.5 w-3.5 text-[#facc15]" />
-              <span>Zoom :</span>
+              <span className="hidden sm:inline">Zoom :</span>
             </span>
 
             <button
               onClick={() => handlePan('left')}
-              className="px-2.5 py-1 rounded-lg bg-[#0c0f14] border border-neutral-800 text-neutral-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1"
+              className="px-2 sm:px-2.5 py-1 rounded-lg bg-[#0c0f14] border border-neutral-800 text-neutral-300 hover:text-white text-xs font-bold transition-all flex items-center gap-0.5 min-h-[34px]"
               title="Décaler vers le passé"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
-              <span>Passé</span>
+              <span className="hidden sm:inline">Passé</span>
             </button>
 
             <button
               onClick={handleZoomIn}
-              className="px-2.5 py-1 rounded-lg bg-[#0c0f14] border border-neutral-800 text-neutral-200 hover:text-white hover:border-[#facc15]/50 text-xs font-bold transition-all flex items-center gap-1"
+              className="px-2 sm:px-2.5 py-1 rounded-lg bg-[#0c0f14] border border-neutral-800 text-neutral-200 hover:text-white hover:border-[#facc15]/50 text-xs font-bold transition-all flex items-center gap-0.5 min-h-[34px]"
               title="Zoomer (+)"
             >
               <ZoomIn className="h-3.5 w-3.5 text-[#facc15]" />
-              <span>Zoom +</span>
+              <span>+</span>
             </button>
 
             <button
               onClick={handleZoomOut}
-              className="px-2.5 py-1 rounded-lg bg-[#0c0f14] border border-neutral-800 text-neutral-200 hover:text-white hover:border-[#facc15]/50 text-xs font-bold transition-all flex items-center gap-1"
+              className="px-2 sm:px-2.5 py-1 rounded-lg bg-[#0c0f14] border border-neutral-800 text-neutral-200 hover:text-white hover:border-[#facc15]/50 text-xs font-bold transition-all flex items-center gap-0.5 min-h-[34px]"
               title="Dézoomer (-)"
             >
               <ZoomOut className="h-3.5 w-3.5 text-[#facc15]" />
-              <span>Zoom -</span>
+              <span>-</span>
             </button>
 
             <button
               onClick={() => handlePan('right')}
-              className="px-2.5 py-1 rounded-lg bg-[#0c0f14] border border-neutral-800 text-neutral-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1"
+              className="px-2 sm:px-2.5 py-1 rounded-lg bg-[#0c0f14] border border-neutral-800 text-neutral-300 hover:text-white text-xs font-bold transition-all flex items-center gap-0.5 min-h-[34px]"
               title="Décaler vers le futur"
             >
-              <span>Futur</span>
+              <span className="hidden sm:inline">Futur</span>
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
 
             <button
               onClick={() => applyPreset('full')}
-              className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-700 text-neutral-400 hover:text-white text-xs font-medium transition-all"
+              className="px-2 sm:px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-700 text-neutral-400 hover:text-white text-xs font-medium transition-all min-h-[34px]"
               title="Réinitialiser le zoom"
             >
-              Réinitialiser
+              Reset
             </button>
 
             {markerIndex >= 0 && (
               advanceMetric.isAhead ? (
                 <button
                   onClick={handleFocusMarker}
-                  className="px-2.5 py-1 rounded-lg bg-[#10b981]/15 border border-[#10b981]/40 text-[#10b981] hover:bg-[#10b981]/25 text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
+                  className="px-2 sm:px-2.5 py-1 rounded-lg bg-[#10b981]/15 border border-[#10b981]/40 text-[#10b981] hover:bg-[#10b981]/25 text-xs font-bold transition-all flex items-center gap-1 shadow-sm min-h-[34px]"
                   title="Centrer la vue sur votre date d'avance"
                 >
                   <Zap className="h-3.5 w-3.5" />
-                  <span>Voir Avance (+{advanceMetric.advanceDays} j)</span>
+                  <span>Avance (+{advanceMetric.advanceDays}j)</span>
                 </button>
               ) : advanceMetric.isBehind ? (
                 <button
                   onClick={handleFocusMarker}
-                  className="px-2.5 py-1 rounded-lg bg-[#ef4444]/15 border border-[#ef4444]/40 text-[#ef4444] hover:bg-[#ef4444]/25 text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
-                  title="Centrer la vue sur votre date équivalente de retard"
+                  className="px-2 sm:px-2.5 py-1 rounded-lg bg-[#ef4444]/15 border border-[#ef4444]/40 text-[#ef4444] hover:bg-[#ef4444]/25 text-xs font-bold transition-all flex items-center gap-1 shadow-sm min-h-[34px]"
+                  title="Centrer la vue sur votre date de retard"
                 >
                   <TrendingDown className="h-3.5 w-3.5" />
-                  <span>Voir Retard ({advanceMetric.advanceDays} j)</span>
+                  <span>Retard ({advanceMetric.advanceDays}j)</span>
                 </button>
               ) : null
             )}
 
-            <span className="text-[11px] font-mono text-neutral-400 ml-2">
-              Affichage : {visiblePoints.length} jours ({visiblePoints[0]?.dateLabel} → {visiblePoints[visiblePoints.length - 1]?.dateLabel})
+            <span className="text-[11px] font-mono text-neutral-400 ml-2 hidden lg:inline-block">
+              {visiblePoints.length} jours ({visiblePoints[0]?.dateLabel} → {visiblePoints[visiblePoints.length - 1]?.dateLabel})
             </span>
           </div>
 
           {/* Visual Layer Toggles */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-neutral-400 mr-1 flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            <span className="text-[11px] sm:text-xs font-bold text-neutral-400 mr-0.5 flex items-center gap-1">
               <Layers className="h-3.5 w-3.5 text-[#facc15]" />
-              <span>Couches :</span>
+              <span className="hidden sm:inline">Couches :</span>
             </span>
 
             <button
               onClick={() => setShowAdvanceMarker(!showAdvanceMarker)}
-              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all ${
+              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all min-h-[32px] ${
                 showAdvanceMarker
                   ? advanceMetric.isAhead
                     ? 'bg-[#10b981]/15 text-[#10b981] border-[#10b981]/40 font-bold'
@@ -1157,12 +1161,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               }`}
               title="Afficher/masquer la barre verticale d'avance ou de retard calendrier"
             >
-              {advanceMetric.isAhead ? '🚀 Barre Avance' : '⚠️ Barre Retard'}
+              {advanceMetric.isAhead ? 'Barre Avance' : 'Barre Retard'}
             </button>
 
             <button
               onClick={() => setShowTargetLine(!showTargetLine)}
-              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all ${
+              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all min-h-[32px] ${
                 showTargetLine
                   ? 'bg-white/10 text-white border-white/30'
                   : 'bg-[#0c0f14] text-neutral-500 border-neutral-800 line-through'
@@ -1172,41 +1176,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             </button>
 
             <button
-              onClick={() => setShowAreaGlow(!showAreaGlow)}
-              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all ${
-                showAreaGlow
-                  ? 'bg-[#facc15]/10 text-[#facc15] border-[#facc15]/30'
-                  : 'bg-[#0c0f14] text-neutral-500 border-neutral-800 line-through'
-              }`}
-            >
-              Lueur Dégradé
-            </button>
-
-            <button
-              onClick={() => setShowAllDots(!showAllDots)}
-              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all ${
-                showAllDots
-                  ? 'bg-neutral-800 text-[#facc15] border-neutral-700'
-                  : 'bg-[#0c0f14] text-neutral-500 border-neutral-800'
-              }`}
-            >
-              {showAllDots ? 'Tous les points' : 'Points syncs'}
-            </button>
-
-            <button
-              onClick={() => setShowBrush(!showBrush)}
-              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all ${
-                showBrush
-                  ? 'bg-neutral-800 text-white border-neutral-700'
-                  : 'bg-[#0c0f14] text-neutral-500 border-neutral-800'
-              }`}
-            >
-              Navigateur Slider
-            </button>
-
-            <button
               onClick={() => setShowGrid(!showGrid)}
-              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all ${
+              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all min-h-[32px] ${
                 showGrid
                   ? 'bg-neutral-800 text-white border-neutral-700'
                   : 'bg-[#0c0f14] text-neutral-500 border-neutral-800'
@@ -1214,49 +1185,71 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             >
               Grille
             </button>
+
+            <button
+              onClick={() => setShowAreaGlow(!showAreaGlow)}
+              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all min-h-[32px] hidden sm:inline-block ${
+                showAreaGlow
+                  ? 'bg-[#facc15]/10 text-[#facc15] border-[#facc15]/30'
+                  : 'bg-[#0c0f14] text-neutral-500 border-neutral-800 line-through'
+              }`}
+            >
+              Lueur
+            </button>
+
+            <button
+              onClick={() => setShowBrush(!showBrush)}
+              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all min-h-[32px] hidden md:inline-block ${
+                showBrush
+                  ? 'bg-neutral-800 text-white border-neutral-700'
+                  : 'bg-[#0c0f14] text-neutral-500 border-neutral-800'
+              }`}
+            >
+              Slider
+            </button>
           </div>
         </div>
       </div>
 
       {/* 4. MAIN RECHARTS COMPOSED CHART WITH BRUSH ZOOM */}
-      <div className="rounded-3xl border border-neutral-800 bg-[#0c0f14] p-4 sm:p-6 shadow-2xl space-y-4">
+      <div className="rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3 sm:p-6 shadow-2xl space-y-3 sm:space-y-4">
         {/* Chart Title & Legend */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-neutral-800/80">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 pb-2 border-b border-neutral-800/80">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <span className="h-2 w-2 rounded-full bg-[#facc15] animate-ping" />
-            <span className="text-xs font-bold text-white uppercase tracking-wider">
-              Graphique Interactif Dynamique Recharts
+            <span className="text-[11px] sm:text-xs font-bold text-white uppercase tracking-wider">
+              Graphique Dynamique
             </span>
-            <span className="text-[10px] font-mono text-neutral-400 bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800">
-              Glissez le curseur en bas pour naviguer et zoomer
+            <span className="text-[10px] font-mono text-neutral-400 bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800 hidden sm:inline-block">
+              Glissez le curseur en bas pour naviguer
             </span>
           </div>
 
           {/* Color Legend */}
-          <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
-            <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#facc15]" />
-              <span className="text-[#facc15] font-bold">Votre Elo Réel (Plateau journalier)</span>
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-4 text-[11px] sm:text-xs font-mono">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <span className="h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full bg-[#facc15]" />
+              <span className="text-[#facc15] font-bold">Elo Réel</span>
             </div>
             {showTargetLine && (
-              <div className="flex items-center gap-2">
-                <span className="h-1.5 w-5 border-b-2 border-dashed border-white" />
-                <span className="text-white">Cible Linéaire 1500 → 2000</span>
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <span className="h-1 sm:h-1.5 w-4 sm:w-5 border-b-2 border-dashed border-white" />
+                <span className="text-white">Cible Linéaire</span>
               </div>
             )}
             {showAdvanceMarker && (
               advanceMetric.isAhead ? (
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-4 border-b-2 border-dashed border-[#10b981]" />
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <span className="h-1.5 sm:h-2 w-3 sm:w-4 border-b-2 border-dashed border-[#10b981]" />
                   <span className="text-[#10b981] font-bold">
-                    Avance jusqu&apos;au {advanceMetric.equivalentDateLabel} (+{advanceMetric.advanceDays} j)
+                    Avance (+{advanceMetric.advanceDays} j)
                   </span>
                 </div>
               ) : advanceMetric.isBehind ? (
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-4 border-b-2 border-dashed border-[#ef4444]" />
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <span className="h-1.5 sm:h-2 w-3 sm:w-4 border-b-2 border-dashed border-[#ef4444]" />
                   <span className="text-[#ef4444] font-bold">
-                    Retard : niveau du {advanceMetric.equivalentDateLabel} ({advanceMetric.advanceDays} j)
+                    Retard ({advanceMetric.advanceDays} j)
                   </span>
                 </div>
               ) : null
@@ -1264,12 +1257,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
           </div>
         </div>
 
-        {/* Recharts Canvas */}
-        <div className="h-[460px] w-full">
+        {/* Recharts Canvas - Fully responsive height and margins */}
+        <div className="h-[340px] sm:h-[420px] lg:h-[480px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={visiblePoints}
-              margin={{ top: 20, right: 30, left: 10, bottom: showBrush ? 10 : 25 }}
+              margin={{ top: 15, right: 15, left: -12, bottom: showBrush ? 10 : 25 }}
             >
               <defs>
                 {/* Yellow glow gradient under real Elo */}
@@ -1298,19 +1291,20 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                   });
                 }}
                 stroke="#64748b"
-                tick={{ fill: '#94a3b8', fontSize: 11, fontFamily: 'monospace' }}
+                tick={{ fill: '#94a3b8', fontSize: 10, fontFamily: 'monospace' }}
                 tickLine={{ stroke: '#334155' }}
-                dy={8}
+                dy={6}
               />
 
               {/* Y Axis */}
               <YAxis
                 domain={[yMin, yMax]}
                 ticks={yTicks}
+                width={42}
                 stroke="#64748b"
-                tick={{ fill: '#94a3b8', fontSize: 11, fontFamily: 'monospace' }}
+                tick={{ fill: '#94a3b8', fontSize: 10, fontFamily: 'monospace' }}
                 tickLine={{ stroke: '#334155' }}
-                dx={-5}
+                dx={-3}
               />
 
               {/* Reference line for Today */}

@@ -24,37 +24,37 @@ export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({
   pointsToNextMilestone,
 }) => {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
       {/* 1. Peak Elo (Jaune #facc15) */}
-      <div className="group rounded-3xl border border-neutral-800 bg-[#0c0f14] p-5 shadow-lg transition-all hover:border-[#facc15]/50">
-        <div className="flex items-center justify-between text-neutral-400 text-xs">
-          <span className="font-bold uppercase tracking-wider">Record Personnel</span>
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#facc15]/10 text-[#facc15] border border-[#facc15]/30">
-            <Award className="h-4 w-4" />
+      <div className="group rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-5 shadow-lg transition-all hover:border-[#facc15]/50">
+        <div className="flex items-center justify-between text-neutral-400 text-[11px] sm:text-xs">
+          <span className="font-bold uppercase tracking-wider">Record</span>
+          <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-xl bg-[#facc15]/10 text-[#facc15] border border-[#facc15]/30">
+            <Award className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
           </div>
         </div>
-        <div className="mt-3 flex items-baseline gap-2">
-          <span className="font-mono text-3xl font-black text-white tabular-nums">
+        <div className="mt-2 sm:mt-3 flex items-baseline gap-1.5 sm:gap-2">
+          <span className="font-mono text-2xl sm:text-3xl font-black text-white tabular-nums">
             {peakElo}
           </span>
-          <span className="text-xs font-bold uppercase text-[#facc15] font-mono">
+          <span className="text-[10px] sm:text-xs font-bold uppercase text-[#facc15] font-mono">
             {peakMode}
           </span>
         </div>
-        <div className="mt-1 text-xs text-neutral-400">Sommet historique atteint</div>
+        <div className="mt-1 text-[11px] sm:text-xs text-neutral-400 hidden sm:block">Sommet historique</div>
       </div>
 
       {/* 2. Cumulative project gain (Vert #10b981) */}
-      <div className="group rounded-3xl border border-neutral-800 bg-[#0c0f14] p-5 shadow-lg transition-all hover:border-[#10b981]/50">
-        <div className="flex items-center justify-between text-neutral-400 text-xs">
-          <span className="font-bold uppercase tracking-wider">Gain Cumulé Projet</span>
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/30">
-            <Flame className="h-4 w-4" />
+      <div className="group rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-5 shadow-lg transition-all hover:border-[#10b981]/50">
+        <div className="flex items-center justify-between text-neutral-400 text-[11px] sm:text-xs">
+          <span className="font-bold uppercase tracking-wider">Gain Cumulé</span>
+          <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-xl bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/30">
+            <Flame className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
           </div>
         </div>
-        <div className="mt-3 flex items-baseline gap-1.5">
+        <div className="mt-2 sm:mt-3 flex items-baseline gap-1">
           <span
-            className={`font-mono text-3xl font-black tabular-nums ${
+            className={`font-mono text-2xl sm:text-3xl font-black tabular-nums ${
               progressionSinceStart >= 0 ? 'text-[#10b981]' : 'text-[#ef4444]'
             }`}
           >
@@ -62,34 +62,34 @@ export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({
           </span>
           <span className="text-xs font-mono text-neutral-400">pts</span>
         </div>
-        <div className="mt-1 text-xs text-neutral-400">Depuis la base 1500 Elo</div>
+        <div className="mt-1 text-[11px] sm:text-xs text-neutral-400 hidden sm:block">Depuis la base</div>
       </div>
 
       {/* 3. Recent delta (Vert si > 0, Rouge si < 0) */}
-      <div className="group rounded-3xl border border-neutral-800 bg-[#0c0f14] p-5 shadow-lg transition-all hover:border-neutral-700">
-        <div className="flex items-center justify-between text-neutral-400 text-xs">
-          <span className="font-bold uppercase tracking-wider">Variation Récente</span>
+      <div className="group rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-5 shadow-lg transition-all hover:border-neutral-700">
+        <div className="flex items-center justify-between text-neutral-400 text-[11px] sm:text-xs">
+          <span className="font-bold uppercase tracking-wider">Variation</span>
           <div
-            className={`flex h-8 w-8 items-center justify-center rounded-xl border ${
+            className={`flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-xl border ${
               recentDelta !== null && recentDelta >= 0
                 ? 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/30'
                 : 'bg-[#ef4444]/10 text-[#ef4444] border-[#ef4444]/30'
             }`}
           >
             {recentDelta !== null && recentDelta >= 0 ? (
-              <TrendingUp className="h-4 w-4 text-[#10b981]" />
+              <TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#10b981]" />
             ) : (
-              <TrendingDown className="h-4 w-4 text-[#ef4444]" />
+              <TrendingDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#ef4444]" />
             )}
           </div>
         </div>
-        <div className="mt-3 flex items-baseline gap-1.5">
+        <div className="mt-2 sm:mt-3 flex items-baseline gap-1">
           {recentDelta === null ? (
-            <span className="font-mono text-2xl font-bold text-neutral-500">—</span>
+            <span className="font-mono text-xl sm:text-2xl font-bold text-neutral-500">—</span>
           ) : (
             <>
               <span
-                className={`font-mono text-3xl font-black tabular-nums ${
+                className={`font-mono text-2xl sm:text-3xl font-black tabular-nums ${
                   recentDelta > 0
                     ? 'text-[#10b981]'
                     : recentDelta < 0
@@ -103,26 +103,26 @@ export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({
             </>
           )}
         </div>
-        <div className="mt-1 text-xs text-neutral-400">Dernier relevé Chess.com</div>
+        <div className="mt-1 text-[11px] sm:text-xs text-neutral-400 hidden sm:block">Dernier relevé</div>
       </div>
 
       {/* 4. Next Intermediate Milestone (Jaune / Blanc) */}
-      <div className="group rounded-3xl border border-neutral-800 bg-[#0c0f14] p-5 shadow-lg transition-all hover:border-[#facc15]/50">
-        <div className="flex items-center justify-between text-neutral-400 text-xs">
+      <div className="group rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-5 shadow-lg transition-all hover:border-[#facc15]/50">
+        <div className="flex items-center justify-between text-neutral-400 text-[11px] sm:text-xs">
           <span className="font-bold uppercase tracking-wider">Prochain Jalon</span>
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#facc15]/10 text-[#facc15] border border-[#facc15]/30">
-            <Milestone className="h-4 w-4" />
+          <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-xl bg-[#facc15]/10 text-[#facc15] border border-[#facc15]/30">
+            <Milestone className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
           </div>
         </div>
-        <div className="mt-3 flex items-baseline gap-2">
-          <span className="font-mono text-3xl font-black text-[#facc15] tabular-nums">
+        <div className="mt-2 sm:mt-3 flex items-baseline gap-1.5 sm:gap-2">
+          <span className="font-mono text-2xl sm:text-3xl font-black text-[#facc15] tabular-nums">
             {nextMilestone}
           </span>
-          <span className="text-xs font-mono text-neutral-400">
+          <span className="text-[10px] sm:text-xs font-mono text-neutral-400">
             ({pointsToNextMilestone} pts)
           </span>
         </div>
-        <div className="mt-1 text-xs text-neutral-400">Tranche de 50 Elo</div>
+        <div className="mt-1 text-[11px] sm:text-xs text-neutral-400 hidden sm:block">Tranche de 50 Elo</div>
       </div>
     </div>
   );

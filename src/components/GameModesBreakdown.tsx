@@ -59,7 +59,59 @@ export const GameModesBreakdown: React.FC<GameModesBreakdownProps> = ({ stats, b
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      {/* Minimalist Mobile Presentation (< sm) */}
+      <div className="sm:hidden space-y-2.5">
+        {modes.map((mode) => {
+          const isCurrentBest = mode.key === bestMode;
+          const currentRating = mode.data?.last?.rating ?? null;
+          const bestRating = mode.data?.best?.rating ?? null;
+          const record = mode.data?.record;
+          const totalGames = record ? record.win + record.loss + record.draw : 0;
+          const winRate = totalGames > 0 && record ? Math.round((record.win / totalGames) * 100) : 0;
+
+          return (
+            <div
+              key={mode.key}
+              className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${
+                isCurrentBest
+                  ? 'border-[#facc15]/40 bg-[#0c1019] shadow-[0_0_15px_rgba(250,204,21,0.08)]'
+                  : 'border-neutral-800 bg-[#0c1019]'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-neutral-900 border border-neutral-800">
+                  {mode.icon}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-extrabold text-sm text-white">{mode.title}</span>
+                    {isCurrentBest && (
+                      <span className="rounded bg-[#facc15]/20 border border-[#facc15]/40 px-1.5 py-0.2 text-[9px] font-black text-[#facc15] uppercase tracking-wider">
+                        Leader
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-neutral-400 font-mono truncate">
+                    {mode.cadence} · {winRate}% vict.
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-right shrink-0">
+                <div className="font-mono text-xl font-black text-white tabular-nums">
+                  {currentRating !== null ? currentRating : '—'}
+                </div>
+                <div className="text-[10px] text-neutral-400 font-mono">
+                  Rec. <span className="text-[#facc15] font-bold">{bestRating ?? '—'}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop and Tablet Full Grid (sm and up) */}
+      <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {modes.map((mode) => {
           const isCurrentBest = mode.key === bestMode;
           const currentRating = mode.data?.last?.rating ?? null;

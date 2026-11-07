@@ -104,12 +104,12 @@ export const HeroEloCard: React.FC<HeroEloCardProps> = ({
         <div className="absolute inset-0 bg-gradient-to-t from-[#0c0f14] via-transparent to-transparent" />
       </div>
 
-      <div className="relative z-10 p-6 sm:p-8 lg:p-10 space-y-8">
+      <div className="relative z-10 p-4 sm:p-8 lg:p-10 space-y-6 sm:space-y-8">
         {/* Top Header Row with status pills (Blanc, Vert, Jaune) */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-800 pb-5">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#facc15]/10 border border-[#facc15]/30 text-xs font-bold uppercase tracking-wider text-[#facc15]">
-              <Sparkles className="h-3.5 w-3.5 text-[#facc15]" />
+        <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 border-b border-neutral-800 pb-4 sm:pb-5">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <span className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-[#facc15]/10 border border-[#facc15]/30 text-[11px] sm:text-xs font-bold uppercase tracking-wider text-[#facc15]">
+              <Sparkles className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[#facc15]" />
               <span>Programme 2000 Elo</span>
             </span>
             <span className="hidden sm:inline text-xs text-neutral-300 font-medium">
@@ -117,124 +117,125 @@ export const HeroEloCard: React.FC<HeroEloCardProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-2 text-xs font-mono text-neutral-400">
+          <div className="flex items-center gap-2 text-[11px] sm:text-xs font-mono text-neutral-400">
             <span className="inline-block h-2 w-2 rounded-full bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-            <span>Relevé en direct :</span>
+            <span className="hidden sm:inline">Relevé en direct :</span>
             <span className="text-white font-semibold">{formattedSync}</span>
           </div>
         </div>
 
         {/* Hero Spotlight: Big Elo Number & Key Drivers */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          <div className="lg:col-span-7 space-y-4">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-semibold uppercase tracking-widest text-neutral-400">
-                Meilleur Classement Actuel
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-center">
+          <div className="lg:col-span-7 space-y-3 sm:space-y-4">
+            <div className="flex items-center gap-2.5 sm:gap-3">
+              <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-widest text-neutral-400">
+                Meilleur Classement
               </span>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-neutral-900 border border-neutral-700 text-xs font-bold text-[#facc15]">
+              <div className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg bg-neutral-900 border border-neutral-700 text-xs font-bold text-[#facc15]">
                 {modeConfig[bestMode]?.icon}
                 <span className="capitalize">{bestMode}</span>
-                <span className="text-neutral-400 text-[10px] font-normal">({modeConfig[bestMode]?.desc})</span>
+                <span className="text-neutral-400 text-[10px] font-normal hidden sm:inline">({modeConfig[bestMode]?.desc})</span>
               </div>
             </div>
 
-            <div className="flex items-baseline gap-5">
-              <span className="font-mono text-7xl sm:text-8xl lg:text-9xl font-black tracking-tight text-white drop-shadow-[0_4px_24px_rgba(255,255,255,0.15)] tabular-nums">
+            <div className="flex flex-wrap items-baseline gap-3 sm:gap-5">
+              <span className="font-mono text-5xl sm:text-7xl lg:text-9xl font-black tracking-tight text-white drop-shadow-[0_4px_24px_rgba(255,255,255,0.15)] tabular-nums">
                 {currentElo}
               </span>
               <div className="flex flex-col">
-                <span className="text-sm font-extrabold uppercase tracking-widest text-[#facc15]">
+                <span className="text-xs sm:text-sm font-extrabold uppercase tracking-widest text-[#facc15]">
                   POINTS ELO
                 </span>
-                <span className={`text-xs font-mono font-bold mt-0.5 ${deltaFromStart >= 0 ? 'text-[#10b981]' : 'text-[#ef4444]'}`}>
-                  {deltaFromStart >= 0 ? `+${deltaFromStart}` : deltaFromStart} pts depuis la base (1500)
+                <span className={`text-[11px] sm:text-xs font-mono font-bold mt-0.5 ${deltaFromStart >= 0 ? 'text-[#10b981]' : 'text-[#ef4444]'}`}>
+                  {deltaFromStart >= 0 ? `+${deltaFromStart}` : deltaFromStart} pts
+                  <span className="hidden sm:inline"> depuis la base ({startElo})</span>
                 </span>
               </div>
             </div>
 
             {isGoalReached ? (
-              <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-xl bg-[#10b981]/15 border border-[#10b981]/30 text-[#10b981] text-xs font-bold">
-                <Trophy className="h-5 w-5 text-[#10b981]" />
+              <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-[#10b981]/15 border border-[#10b981]/30 text-[#10b981] text-xs font-bold">
+                <Trophy className="h-4 w-4 sm:h-5 sm:w-5 text-[#10b981]" />
                 <span>TRIOMPHE : Le sommet des 2000 Elo est franchi avec succès !</span>
               </div>
             ) : isBelowStart ? (
               <p className="text-xs text-[#ef4444] font-medium">
-                Classement sous la base initiale (1500 Elo). Le point d'ancrage reste fixé à 1500.
+                Classement sous la base ({startElo} Elo). Le point d&apos;ancrage reste fixé à {startElo}.
               </p>
             ) : (
-              <p className="text-xs text-neutral-300 leading-relaxed max-w-xl">
+              <p className="text-xs text-neutral-300 leading-relaxed max-w-xl hidden sm:block">
                 Trajectoire calibrée pour franchir la barrière des <strong className="text-[#facc15]">2000 Elo</strong>. Progression continue vers le palier Expert.
               </p>
             )}
           </div>
 
           {/* 4 Interactive Tactical Tiles (Noir, Blanc, Jaune, Vert) */}
-          <div className="lg:col-span-5 grid grid-cols-2 gap-3">
-            <div className="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-4.5">
-              <div className="flex items-center gap-2 text-xs text-neutral-400">
-                <Flag className="h-3.5 w-3.5 text-white" />
+          <div className="lg:col-span-5 grid grid-cols-2 gap-2 sm:gap-3">
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-3 sm:p-4.5">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-neutral-400">
+                <Flag className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-white" />
                 <span>Base départ</span>
               </div>
-              <div className="mt-2 text-2xl font-black font-mono text-white tabular-nums">
+              <div className="mt-1.5 sm:mt-2 text-xl sm:text-2xl font-black font-mono text-white tabular-nums">
                 {startElo}
                 <span className="text-xs font-normal text-neutral-400 ml-1">Elo</span>
               </div>
-              <div className="mt-1 text-[11px] text-neutral-500">Repère immuable</div>
+              <div className="mt-1 text-[11px] text-neutral-500 hidden sm:block">Repère immuable</div>
             </div>
 
-            <div className="rounded-2xl border border-[#facc15]/30 bg-[#facc15]/[0.06] p-4.5">
-              <div className="flex items-center gap-2 text-xs text-[#facc15]">
-                <Target className="h-3.5 w-3.5 text-[#facc15]" />
+            <div className="rounded-2xl border border-[#facc15]/30 bg-[#facc15]/[0.06] p-3 sm:p-4.5">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-[#facc15]">
+                <Target className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[#facc15]" />
                 <span>Cible Ultime</span>
               </div>
-              <div className="mt-2 text-2xl font-black font-mono text-[#facc15] tabular-nums">
+              <div className="mt-1.5 sm:mt-2 text-xl sm:text-2xl font-black font-mono text-[#facc15] tabular-nums">
                 {targetElo}
                 <span className="text-xs font-normal text-neutral-300 ml-1">Elo</span>
               </div>
-              <div className="mt-1 text-[11px] text-neutral-400 font-mono">31 Décembre 2027</div>
+              <div className="mt-1 text-[11px] text-neutral-400 font-mono hidden sm:block">31 Décembre 2027</div>
             </div>
 
-            <div className="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-4.5">
-              <div className="flex items-center gap-2 text-xs text-neutral-400">
-                <Trophy className="h-3.5 w-3.5 text-[#facc15]" />
-                <span>Reste à conquérir</span>
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-3 sm:p-4.5">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-neutral-400">
+                <Trophy className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[#facc15]" />
+                <span>À conquérir</span>
               </div>
-              <div className="mt-2 text-2xl font-black font-mono text-white tabular-nums">
+              <div className="mt-1.5 sm:mt-2 text-xl sm:text-2xl font-black font-mono text-white tabular-nums">
                 {pointsRemaining}
                 <span className="text-xs font-normal text-neutral-400 ml-1">pts</span>
               </div>
-              <div className="mt-1 text-[11px] text-neutral-500">Pour atteindre 2000</div>
+              <div className="mt-1 text-[11px] text-neutral-500 hidden sm:block">Pour atteindre 2000</div>
             </div>
 
-            <div className="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-4.5">
-              <div className="flex items-center gap-2 text-xs text-neutral-400">
-                <Calendar className="h-3.5 w-3.5 text-white" />
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-3 sm:p-4.5">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-xs text-neutral-400">
+                <Calendar className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-white" />
                 <span>Jours restants</span>
               </div>
-              <div className="mt-2 text-2xl font-black font-mono text-white tabular-nums">
+              <div className="mt-1.5 sm:mt-2 text-xl sm:text-2xl font-black font-mono text-white tabular-nums">
                 {daysRemaining}
                 <span className="text-xs font-normal text-neutral-400 ml-1">j</span>
               </div>
-              <div className="mt-1 text-[11px] text-neutral-500">Compte à rebours</div>
+              <div className="mt-1 text-[11px] text-neutral-500 hidden sm:block">Compte à rebours</div>
             </div>
           </div>
         </div>
 
         {/* Master Milestones Track with glowing bar */}
-        <div className="pt-6 border-t border-neutral-800 space-y-3">
+        <div className="pt-4 sm:pt-6 border-t border-neutral-800 space-y-2.5 sm:space-y-3">
           <div className="flex items-center justify-between text-xs font-semibold">
-            <span className="uppercase tracking-wider text-neutral-300 flex items-center gap-2">
-              <Compass className="h-4 w-4 text-[#facc15]" />
+            <span className="uppercase tracking-wider text-neutral-300 flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
+              <Compass className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#facc15]" />
               <span>Avancement Global Vers 2000 Elo</span>
             </span>
-            <div className="flex items-center gap-2 font-mono">
-              <span className="text-xl font-black text-[#facc15]">{percentage}%</span>
-              <span className="text-xs text-neutral-400">validé</span>
+            <div className="flex items-center gap-1.5 sm:gap-2 font-mono">
+              <span className="text-base sm:text-xl font-black text-[#facc15]">{percentage}%</span>
+              <span className="text-[10px] sm:text-xs text-neutral-400">validé</span>
             </div>
           </div>
 
           {/* Master Progress Bar (Jaune vif #facc15) */}
-          <div className="relative h-4 w-full rounded-full bg-neutral-950 p-0.5 border border-neutral-800 shadow-inner overflow-hidden">
+          <div className="relative h-3.5 sm:h-4 w-full rounded-full bg-neutral-950 p-0.5 border border-neutral-800 shadow-inner overflow-hidden">
             <div
               className="h-full rounded-full bg-gradient-to-r from-[#facc15] via-[#fde047] to-white transition-all duration-700 ease-out shadow-[0_0_15px_rgba(250,204,21,0.6)]"
               style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}
@@ -242,23 +243,23 @@ export const HeroEloCard: React.FC<HeroEloCardProps> = ({
           </div>
 
           {/* Steppers along the road */}
-          <div className="grid grid-cols-6 text-center text-xs font-mono pt-2">
+          <div className="grid grid-cols-6 text-center text-xs font-mono pt-1.5 sm:pt-2">
             {milestones.map((m) => {
               const isPassed = currentElo >= m.elo;
               const isTarget = !isPassed && currentElo >= m.elo - 100;
 
               return (
                 <div key={m.elo} className="flex flex-col items-center">
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-0.5 sm:gap-1">
                     {isPassed ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-[#10b981]" />
+                      <CheckCircle2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[#10b981]" />
                     ) : isTarget ? (
-                      <span className="inline-block h-2 w-2 rounded-full bg-[#facc15] animate-ping" />
+                      <span className="inline-block h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-[#facc15] animate-ping" />
                     ) : (
-                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-neutral-700" />
+                      <span className="inline-block h-1 w-1 sm:h-1.5 sm:w-1.5 rounded-full bg-neutral-700" />
                     )}
                     <span
-                      className={`font-bold ${
+                      className={`text-[11px] sm:text-xs font-bold ${
                         isPassed
                           ? 'text-[#10b981]'
                           : isTarget
@@ -269,7 +270,7 @@ export const HeroEloCard: React.FC<HeroEloCardProps> = ({
                       {m.elo}
                     </span>
                   </div>
-                  <span className="text-[10px] text-neutral-400 mt-0.5">{m.label}</span>
+                  <span className="text-[10px] text-neutral-400 mt-0.5 hidden sm:inline">{m.label}</span>
                 </div>
               );
             })}
