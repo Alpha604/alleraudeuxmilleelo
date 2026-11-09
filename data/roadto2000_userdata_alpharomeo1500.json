@@ -1,0 +1,18 @@
+{
+  "username": "alpharomeo1500",
+  "history": [
+    {
+      "id": "test_1",
+      "username": "alpharomeo1500",
+      "timestamp": "2026-11-09T10:00:00.000Z",
+      "bullet": 1500,
+      "blitz": 1458,
+      "rapid": 1289,
+      "bestRating": 1500,
+      "bestMode": "bullet",
+      "source": "API Chess.com"
+    }
+  ],
+  "settings": null,
+  "lastUpdated": 1794254114728
+}

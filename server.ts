@@ -572,7 +572,129 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
     });
   });
 
-  // 8. Chess.com API proxy route
+  // 8. User Persistent Cloud Sync API (Syncs history & settings between PC & Phone)
+  const DATA_DIR = path.resolve(__dirname, 'data');
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('[RoadTo2000] Could not create data dir, fallback to tmpdir:', err);
+  }
+
+  function getUserDataFilePath(username: string): string {
+    const clean = (username || 'default').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const preferredDir = fs.existsSync(DATA_DIR) ? DATA_DIR : os.tmpdir();
+    return path.resolve(preferredDir, `roadto2000_userdata_${clean}.json`);
+  }
+
+  app.get('/api/user-data/:username', (req: Request, res: Response) => {
+    try {
+      const username = (req.params.username || '').trim().toLowerCase();
+      if (!username) {
+        res.status(400).json({ error: 'Username required' });
+        return;
+      }
+      const filePath = getUserDataFilePath(username);
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        const data = JSON.parse(raw);
+        res.json({
+          success: true,
+          username,
+          history: Array.isArray(data.history) ? data.history : [],
+          settings: data.settings || null,
+          lastUpdated: data.lastUpdated || 0,
+        });
+        return;
+      }
+      res.json({
+        success: true,
+        username,
+        history: [],
+        settings: null,
+        lastUpdated: 0,
+      });
+    } catch (err: any) {
+      console.error('[RoadTo2000] Failed to read user data:', err);
+      res.status(500).json({ error: 'Failed to read user data' });
+    }
+  });
+
+  app.post('/api/user-data/:username', (req: Request, res: Response) => {
+    try {
+      const username = (req.params.username || '').trim().toLowerCase();
+      if (!username) {
+        res.status(400).json({ error: 'Username required' });
+        return;
+      }
+
+      const { history: incomingHistory, settings: incomingSettings } = req.body || {};
+      const filePath = getUserDataFilePath(username);
+
+      let existingHistory: any[] = [];
+      let existingSettings: any = null;
+
+      if (fs.existsSync(filePath)) {
+        try {
+          const raw = fs.readFileSync(filePath, 'utf-8');
+          const data = JSON.parse(raw);
+          if (Array.isArray(data.history)) existingHistory = data.history;
+          if (data.settings) existingSettings = data.settings;
+        } catch {}
+      }
+
+      // Merge incoming and existing history: 1 sync per day, keep newest timestamp of that day
+      const combined = [...(Array.isArray(incomingHistory) ? incomingHistory : []), ...existingHistory];
+      const validRecords = combined.filter((r) => {
+        if (!r || typeof r.bestRating !== 'number' || r.bestRating <= 0) return false;
+        // Clean out legacy test 1938
+        if (username === 'alpharomeo1500' && r.bestRating === 1938) return false;
+        if (r.username && r.username.toLowerCase() !== username) return false;
+        return true;
+      });
+
+      // Sort newest first
+      validRecords.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      // Deduplicate by calendar day
+      const seenDays = new Set<string>();
+      const onePerDay: any[] = [];
+      for (const r of validRecords) {
+        const d = new Date(r.timestamp);
+        if (isNaN(d.getTime())) continue;
+        const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (!seenDays.has(dayKey)) {
+          seenDays.add(dayKey);
+          onePerDay.push(r);
+        }
+      }
+
+      const mergedSettings = incomingSettings || existingSettings;
+      const payloadToSave = {
+        username,
+        history: onePerDay.slice(0, 500),
+        settings: mergedSettings,
+        lastUpdated: Date.now(),
+      };
+
+      fs.writeFileSync(filePath, JSON.stringify(payloadToSave, null, 2), 'utf-8');
+
+      res.json({
+        success: true,
+        username,
+        history: payloadToSave.history,
+        settings: payloadToSave.settings,
+        count: payloadToSave.history.length,
+        lastUpdated: payloadToSave.lastUpdated,
+      });
+    } catch (err: any) {
+      console.error('[RoadTo2000] Failed to save user data:', err);
+      res.status(500).json({ error: 'Failed to save user data' });
+    }
+  });
+
+  // 9. Chess.com API proxy route
   app.get('/api/chess-proxy/*', async (req: Request, res: Response) => {
     try {
       const subpath = req.url.replace(/^\/api\/chess-proxy/, '');

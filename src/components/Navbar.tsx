@@ -92,15 +92,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-neutral-800 bg-[#07090e]/95 backdrop-blur-xl transition-all">
-      <div className="mx-auto flex h-16 sm:h-18 max-w-7xl items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-14 sm:h-18 max-w-7xl items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8">
         {/* Brand identity: White, Black & Yellow Crown */}
         <button
           onClick={() => onSelectTab('dashboard')}
           className="group flex items-center gap-2.5 sm:gap-3 text-left transition-opacity hover:opacity-90 shrink-0"
         >
-          <div className="relative flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-[#facc15] via-[#eab308] to-[#ca8a04] p-0.5 shadow-[0_0_15px_rgba(250,204,21,0.3)]">
+          <div className="relative flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-[#facc15] via-[#eab308] to-[#ca8a04] p-0.5 shadow-[0_0_15px_rgba(250,204,21,0.3)]">
             <div className="flex h-full w-full items-center justify-center rounded-[14px] bg-[#07090e]">
-              <Crown className="h-4.5 w-4.5 sm:h-5 sm:w-5 text-[#facc15] transition-transform group-hover:scale-110" />
+              <Crown className="h-4 w-4 sm:h-5 sm:w-5 text-[#facc15] transition-transform group-hover:scale-110" />
             </div>
           </div>
           <div className="flex flex-col">
@@ -146,7 +146,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               {isAdmin ? (
                 <button
                   onClick={onLockAdmin}
-                  className="flex h-9 w-9 sm:h-auto sm:w-auto items-center justify-center gap-1.5 rounded-xl border border-[#10b981]/40 bg-[#10b981]/15 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-[#10b981] hover:bg-[#10b981]/25 transition-all"
+                  className="flex h-8 w-8 sm:h-auto sm:w-auto items-center justify-center gap-1.5 rounded-xl border border-[#10b981]/40 bg-[#10b981]/15 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-[#10b981] hover:bg-[#10b981]/25 transition-all"
                   title="Session active. Cliquez pour verrouiller."
                 >
                   <ShieldCheck className="h-4 w-4 text-[#10b981]" />
@@ -156,7 +156,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               ) : (
                 <button
                   onClick={() => onOpenSecurityModal('Espace Administrateur')}
-                  className="flex h-9 w-9 sm:h-auto sm:w-auto items-center justify-center gap-1.5 rounded-xl border border-[#facc15]/40 bg-[#facc15]/10 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-[#facc15] hover:bg-[#facc15]/20 transition-all shadow-[0_0_12px_rgba(250,204,21,0.15)]"
+                  className="flex h-8 w-8 sm:h-auto sm:w-auto items-center justify-center gap-1.5 rounded-xl border border-[#facc15]/40 bg-[#facc15]/10 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-[#facc15] hover:bg-[#facc15]/20 transition-all shadow-[0_0_12px_rgba(250,204,21,0.15)]"
                   title="Accès protégé par 2FA Authenticator. Cliquez pour déverrouiller."
                 >
                   <Lock className="h-3.5 w-3.5 text-[#facc15]" />
@@ -171,7 +171,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               onClick={handleSyncClick}
               disabled={isSyncing}
-              className={`flex h-9 w-9 sm:h-auto sm:w-auto items-center justify-center gap-2 rounded-xl px-2.5 sm:px-3.5 py-1.5 text-xs font-bold transition-all disabled:opacity-50 border ${
+              className={`flex h-8 w-8 sm:h-auto sm:w-auto items-center justify-center gap-2 rounded-xl px-2.5 sm:px-3.5 py-1.5 text-xs font-bold transition-all disabled:opacity-50 border ${
                 isAdmin
                   ? 'border-[#facc15]/40 bg-neutral-900 text-[#facc15] hover:bg-[#facc15]/10 hover:border-[#facc15]'
                   : 'border-neutral-800 bg-neutral-900 text-neutral-200 hover:text-white hover:border-neutral-700'
@@ -186,7 +186,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Theme toggle */}
           <button
             onClick={onToggleTheme}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900 text-neutral-300 hover:text-white transition-colors"
+            className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900 text-neutral-300 hover:text-white transition-colors"
             title={theme === 'dark' ? 'Activer le mode clair' : 'Activer le mode sombre'}
           >
             {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -214,8 +214,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Mobile & Tablet Horizontal Navigation Tabs (Touch-optimized >= 44px) */}
-      <div className="flex lg:hidden overflow-x-auto border-t border-neutral-800 px-3 sm:px-4 py-2 gap-1.5 sm:gap-2 scrollbar-none bg-[#090b10] -webkit-overflow-scrolling-touch">
+      {/* Tablet Horizontal Navigation Tabs (Hidden on mobile phones because bottom dock is used!) */}
+      <div className="hidden sm:flex lg:hidden overflow-x-auto border-t border-neutral-800 px-3 sm:px-4 py-2 gap-1.5 sm:gap-2 scrollbar-none bg-[#090b10] -webkit-overflow-scrolling-touch">
         {navItems.map((item) => {
           const isActive = currentTab === item.key;
           return (

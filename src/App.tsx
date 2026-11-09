@@ -26,6 +26,7 @@ import {
   GameMode,
   SyncRecord,
 } from './types/chess';
+import { reconcileCloudSync, saveServerData } from './utils/cloudSync';
 import { fetchChessComData } from './utils/chessApi';
 import {
   calculateDailyObjective,
@@ -253,6 +254,8 @@ export default function App() {
         );
 
         setSyncHistory(history);
+        // Persist to server so Smartphone & PC share exact same sync records
+        saveServerData(activeUser, history, settings).catch(() => {});
 
         if (manual) {
           if (isDuplicate) {
@@ -280,6 +283,39 @@ export default function App() {
     },
     [settings, showToast]
   );
+
+  // Cloud Reconciliation: Pull any syncs done on PC to Phone, or vice versa
+  useEffect(() => {
+    const activeUser = settings.username.trim().toLowerCase();
+
+    const doReconciliation = async () => {
+      try {
+        const local = getStoredSyncHistory(activeUser);
+        const res = await reconcileCloudSync(activeUser, local, settings);
+        if (res.didUpdate || (res.history.length > 0 && syncHistory.length === 0)) {
+          setSyncHistory(res.history);
+        }
+      } catch (err) {
+        console.warn('Reconciliation error:', err);
+      }
+    };
+
+    doReconciliation();
+
+    const handleFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        doReconciliation();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, [settings.username]);
 
   // Sync on mount
   useEffect(() => {
@@ -566,7 +602,10 @@ export default function App() {
         {currentTab === 'history' && (
           <SyncLog
             history={syncHistory}
-            onHistoryUpdate={setSyncHistory}
+            onHistoryUpdate={(updated) => {
+              setSyncHistory(updated);
+              saveServerData(settings.username, updated, settings).catch(() => {});
+            }}
             onShowMessage={showToast}
             username={settings.username}
             onPurgeAccountData={handlePurgeAccountData}

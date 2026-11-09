@@ -113,6 +113,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   const [tableFilter, setTableFilter] = useState<TableStatusFilter>('all');
   const [tableSearch, setTableSearch] = useState<string>('');
   const [tablePage, setTablePage] = useState<number>(1);
+  const [mobileShowTable, setMobileShowTable] = useState<boolean>(false);
   const pageSize = 10;
 
   // Timestamps
@@ -888,8 +889,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
           </div>
         </div>
 
-        {/* Average difference vs Target */}
-        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-2.5 sm:p-3.5 space-y-0.5 sm:space-y-1">
+        {/* Average difference vs Target - Hidden on mobile phone */}
+        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-2.5 sm:p-3.5 space-y-0.5 sm:space-y-1 hidden sm:block">
           <div className="text-[10px] uppercase font-bold text-neutral-400 flex items-center justify-between">
             <span>Écart Moyen</span>
             <Target className="h-3.5 w-3.5 text-[#facc15]" />
@@ -901,13 +902,13 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
           >
             {rangeKpis.avgDiff >= 0 ? `+${rangeKpis.avgDiff}` : rangeKpis.avgDiff} pts
           </div>
-          <div className="text-[10px] text-neutral-400 hidden sm:block">
+          <div className="text-[10px] text-neutral-400">
             Face à la cible
           </div>
         </div>
 
-        {/* Required Pace for 2000 */}
-        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-2.5 sm:p-3.5 space-y-0.5 sm:space-y-1">
+        {/* Required Pace for 2000 - Hidden on mobile phone */}
+        <div className="rounded-2xl border border-neutral-800 bg-[#0d1117] p-2.5 sm:p-3.5 space-y-0.5 sm:space-y-1 hidden sm:block">
           <div className="text-[10px] uppercase font-bold text-neutral-400 flex items-center justify-between">
             <span>Rythme Requis</span>
             <Zap className="h-3.5 w-3.5 text-[#facc15]" />
@@ -915,7 +916,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
           <div className="text-base sm:text-lg font-black font-mono text-[#facc15]">
             +{projectionInfo.requiredRatePerWeek} pts/sem.
           </div>
-          <div className="text-[10px] text-neutral-400 hidden sm:block">
+          <div className="text-[10px] text-neutral-400">
             {projectionInfo.pointsRemaining} pts restants
           </div>
         </div>
@@ -1143,8 +1144,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             </span>
           </div>
 
-          {/* Visual Layer Toggles */}
-          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          {/* Visual Layer Toggles - Hidden on mobile phone (< sm) */}
+          <div className="hidden sm:flex flex-wrap items-center gap-1.5 sm:gap-2">
             <span className="text-[11px] sm:text-xs font-bold text-neutral-400 mr-0.5 flex items-center gap-1">
               <Layers className="h-3.5 w-3.5 text-[#facc15]" />
               <span className="hidden sm:inline">Couches :</span>
@@ -1258,11 +1259,11 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
         </div>
 
         {/* Recharts Canvas - Fully responsive height and margins */}
-        <div className="h-[340px] sm:h-[420px] lg:h-[480px] w-full">
+        <div className="h-[280px] sm:h-[420px] lg:h-[480px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={visiblePoints}
-              margin={{ top: 15, right: 15, left: -12, bottom: showBrush ? 10 : 25 }}
+              margin={{ top: 15, right: 15, left: -14, bottom: showBrush ? 10 : 25 }}
             >
               <defs>
                 {/* Yellow glow gradient under real Elo */}
@@ -1300,11 +1301,11 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               <YAxis
                 domain={[yMin, yMax]}
                 ticks={yTicks}
-                width={42}
+                width={38}
                 stroke="#64748b"
                 tick={{ fill: '#94a3b8', fontSize: 10, fontFamily: 'monospace' }}
                 tickLine={{ stroke: '#334155' }}
-                dx={-3}
+                dx={-2}
               />
 
               {/* Reference line for Today */}
@@ -1333,9 +1334,9 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                     strokeDasharray="4 4"
                     strokeWidth={2.5}
                     label={{
-                      value: `🚀 En avance jusqu'au ${advanceMetric.equivalentDateLabel} (+${advanceMetric.advanceDays} j)`,
+                      value: `Avance +${advanceMetric.advanceDays} j (${advanceMetric.equivalentDateLabel})`,
                       fill: '#10b981',
-                      fontSize: 11,
+                      fontSize: 10,
                       fontWeight: 'bold',
                       position: 'insideTopLeft',
                     }}
@@ -1347,9 +1348,9 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                     strokeDasharray="4 4"
                     strokeWidth={2.5}
                     label={{
-                      value: `⚠️ En retard : niveau du ${advanceMetric.equivalentDateLabel} (${advanceMetric.advanceDays} j)`,
+                      value: `Retard ${advanceMetric.advanceDays} j (${advanceMetric.equivalentDateLabel})`,
                       fill: '#ef4444',
-                      fontSize: 11,
+                      fontSize: 10,
                       fontWeight: 'bold',
                       position: 'insideTopRight',
                     }}
@@ -1364,7 +1365,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 strokeDasharray="4 4"
                 strokeOpacity={0.4}
                 label={{
-                  value: `Départ ${effectiveStartElo} Elo (${selectedMode === 'auto' ? `Auto: ${autoBestMode.toUpperCase()}` : selectedMode.toUpperCase()})`,
+                  value: `Départ ${effectiveStartElo} Elo`,
                   fill: '#ffffff',
                   fontSize: 10,
                   position: 'insideTopLeft',
@@ -1380,7 +1381,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 label={{
                   value: `Objectif ${targetElo} Elo 🏆`,
                   fill: '#facc15',
-                  fontSize: 11,
+                  fontSize: 10,
                   fontWeight: 'bold',
                   position: 'insideTopLeft',
                 }}
@@ -1564,8 +1565,19 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
         </div>
       </div>
 
+      {/* Mobile Accordion Toggle for Detailed Daily Log Table (< sm) */}
+      <div className="sm:hidden text-center pt-1">
+        <button
+          onClick={() => setMobileShowTable(!mobileShowTable)}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-900 text-xs font-bold text-neutral-200 hover:text-white transition-all shadow-md active:scale-95"
+        >
+          <Activity className="h-4 w-4 text-[#facc15]" />
+          <span>{mobileShowTable ? 'Masquer le tableau journalier' : 'Afficher le journal détaillé (tableau)'}</span>
+        </button>
+      </div>
+
       {/* 6. DAILY LOG INSPECTOR (Tableau détaillé et filtrable de chaque jour) */}
-      <div className="rounded-3xl border border-neutral-800 bg-[#0d1117] p-5 shadow-2xl space-y-4">
+      <div className={`rounded-3xl border border-neutral-800 bg-[#0d1117] p-3.5 sm:p-5 shadow-2xl space-y-4 ${mobileShowTable ? 'block' : 'hidden sm:block'}`}>
         {/* Table header with filters and search */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
