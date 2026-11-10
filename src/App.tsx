@@ -15,6 +15,7 @@ import { MilestoneCalendar } from './components/MilestoneCalendar';
 import { Navbar, NavTab } from './components/Navbar';
 import { NotificationToast, ToastMessage } from './components/NotificationToast';
 import { MonthlyObjectiveCard } from './components/MonthlyObjectiveCard';
+import { NetworkAndJsonBinModal } from './components/NetworkAndJsonBinModal';
 import { SecurityModal } from './components/SecurityModal';
 import { SettingsView } from './components/SettingsView';
 import { SyncLog } from './components/SyncLog';
@@ -26,7 +27,7 @@ import {
   GameMode,
   SyncRecord,
 } from './types/chess';
-import { reconcileCloudSync, saveServerData } from './utils/cloudSync';
+import { fetchJsonBinStatus, reconcileCloudSync, saveServerData } from './utils/cloudSync';
 import { fetchChessComData } from './utils/chessApi';
 import {
   calculateDailyObjective,
@@ -89,6 +90,13 @@ export default function App() {
   });
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
+  // Network & JSONBin online status states
+  const [networkModalOpen, setNetworkModalOpen] = useState(false);
+  const [jsonBinStatus, setJsonBinStatus] = useState<'synced' | 'pending_keys' | 'error' | 'syncing'>('pending_keys');
+  const [isNetworkOnline, setIsNetworkOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+
   // Apply theme to document element
   useEffect(() => {
     const root = document.documentElement;
@@ -98,6 +106,33 @@ export default function App() {
       root.classList.remove('dark');
     }
   }, [settings.theme]);
+
+  // Monitor Network online/offline events & periodic JSONBin status refresh
+  useEffect(() => {
+    const handleOnline = () => setIsNetworkOnline(true);
+    const handleOffline = () => setIsNetworkOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    const checkJsonBin = async () => {
+      try {
+        const info = await fetchJsonBinStatus(settings.username);
+        if (info) {
+          setJsonBinStatus(info.lastStatus);
+        }
+      } catch {}
+    };
+
+    checkJsonBin();
+    const interval = setInterval(checkJsonBin, 30000);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(interval);
+    };
+  }, [settings.username]);
 
   // Periodic check for admin session validity & BroadcastChannel synchronization
   useEffect(() => {
@@ -526,14 +561,15 @@ export default function App() {
         onSync={() => performSync(true)}
         isSyncing={isSyncing}
         lastSyncTime={lastSyncTime}
-        theme={settings.theme}
-        onToggleTheme={handleToggleTheme}
         profile={profile}
         username={settings.username}
         isAdmin={isAdmin}
         isIframe={isIframe}
         onOpenSecurityModal={handleOpenSecurityModal}
         onLockAdmin={handleLockAdmin}
+        onOpenNetworkModal={() => setNetworkModalOpen(true)}
+        jsonBinStatus={jsonBinStatus}
+        isNetworkOnline={isNetworkOnline}
       />
 
       {/* Main Content Viewport - Fully responsive for Mobile & Tablet */}
@@ -634,6 +670,10 @@ export default function App() {
             onSettingsUpdate={handleSettingsUpdate}
             onShowMessage={showToast}
             onPurgeAccountData={handlePurgeAccountData}
+            onHistoryUpdate={(updated) => {
+              setSyncHistory(updated);
+              saveServerData(settings.username, updated, settings).catch(() => {});
+            }}
             isAdmin={isAdmin}
             isIframe={isIframe}
             onOpenSecurityModal={handleOpenSecurityModal}
@@ -653,6 +693,27 @@ export default function App() {
           onSuccess={handleSecuritySuccess}
           actionTitle={securityModalTitle}
           onShowMessage={showToast}
+        />
+      )}
+
+      {/* Network & JSONBin Status and Configuration Modal */}
+      {networkModalOpen && (
+        <NetworkAndJsonBinModal
+          isOpen={networkModalOpen}
+          onClose={() => setNetworkModalOpen(false)}
+          username={settings.username}
+          onHistoryUpdate={(updated) => {
+            setSyncHistory(updated);
+            saveServerData(settings.username, updated, settings).catch(() => {});
+          }}
+          onShowMessage={showToast}
+          onOpenSettings={() => {
+            if (!isAdmin) {
+              handleOpenSecurityModal('Accès aux Paramètres Cloud (2FA)', () => setCurrentTab('settings'));
+            } else {
+              setCurrentTab('settings');
+            }
+          }}
         />
       )}
 

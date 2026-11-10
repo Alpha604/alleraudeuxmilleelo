@@ -680,6 +680,11 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
 
       fs.writeFileSync(filePath, JSON.stringify(payloadToSave, null, 2), 'utf-8');
 
+      // Trigger automatic background sync to JSONBin.io if configured
+      pushToJsonBin(username, payloadToSave).catch((err) => {
+        console.warn('[RoadTo2000] Background JSONBin push warning:', err?.message);
+      });
+
       res.json({
         success: true,
         username,
@@ -691,6 +696,559 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
     } catch (err: any) {
       console.error('[RoadTo2000] Failed to save user data:', err);
       res.status(500).json({ error: 'Failed to save user data' });
+    }
+  });
+
+  // 8c. JSONBin.io Cloud Cache Integration
+  const storageDir = fs.existsSync(DATA_DIR) ? DATA_DIR : os.tmpdir();
+  const JSONBIN_CONFIG_FILE = path.resolve(storageDir, 'roadto2000_jsonbin_config.json');
+
+  interface JsonBinServerConfig {
+    binId: string;
+    apiKey: string;
+    enabled: boolean;
+    lastSyncTime: number | null;
+    lastStatus: 'synced' | 'pending_keys' | 'error' | 'syncing';
+    lastError?: string;
+    lastPushedSignature?: string;
+    requestsToday: number;
+    savedRequests: number;
+    lastDayTracked: string;
+    lastSkippedReason?: string;
+  }
+
+  function loadJsonBinConfig(): JsonBinServerConfig {
+    const envBinId = (process.env.JSONBIN_BIN_ID || '').trim();
+    const envApiKey = (process.env.JSONBIN_API_KEY || '').trim();
+    let fileConfig: Partial<JsonBinServerConfig> = {};
+    if (fs.existsSync(JSONBIN_CONFIG_FILE)) {
+      try {
+        fileConfig = JSON.parse(fs.readFileSync(JSONBIN_CONFIG_FILE, 'utf-8'));
+      } catch {}
+    }
+    const binId = (fileConfig.binId || envBinId).trim();
+    const apiKey = (fileConfig.apiKey || envApiKey).trim();
+    return {
+      binId,
+      apiKey,
+      enabled: fileConfig.enabled !== false,
+      lastSyncTime: fileConfig.lastSyncTime || null,
+      lastStatus: fileConfig.lastStatus || (binId ? 'synced' : 'pending_keys'),
+      lastError: fileConfig.lastError,
+      lastPushedSignature: fileConfig.lastPushedSignature,
+      requestsToday: fileConfig.requestsToday || 0,
+      savedRequests: fileConfig.savedRequests || 0,
+      lastDayTracked: fileConfig.lastDayTracked || new Date().toISOString().split('T')[0],
+      lastSkippedReason: fileConfig.lastSkippedReason,
+    };
+  }
+
+  let jsonBinState: JsonBinServerConfig = loadJsonBinConfig();
+
+  function saveJsonBinConfigToDisk(config: JsonBinServerConfig) {
+    try {
+      fs.writeFileSync(JSONBIN_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('Failed to save jsonbin config file:', err);
+    }
+  }
+
+  // Quota Saver: Computes a signature of the data to avoid calling JSONBin when data is unchanged
+  function computeDataSignature(username: string, data: any): string {
+    const records = Array.isArray(data.history) ? data.history : [];
+    const topRecords = records.slice(0, 10).map((r: any) => `${r.id}_${r.timestamp}_${r.bestRating}_${r.bestMode}`).join(';');
+    const s = data.settings || {};
+    const settingsStr = `${s.username}_${s.startElo}_${s.targetElo}_${s.selectedMode}`;
+    return crypto.createHash('md5').update(`${username}:::${topRecords}:::${settingsStr}`).digest('hex');
+  }
+
+  const OFFICIAL_DAILY_RECORDS = [
+    {
+      timestamp: '2026-11-10T17:24:45.922Z',
+      username: 'alpharomeo1500',
+      bullet: 1605,
+      blitz: 1504,
+      rapid: 1300,
+      bestRating: 1605,
+      bestMode: 'bullet',
+      source: 'API Chess.com directe',
+      id: 'sync_1794331486338_pfphq',
+    },
+    {
+      timestamp: '2026-11-09T19:40:08.913Z',
+      username: 'alpharomeo1500',
+      bullet: 1605,
+      blitz: 1504,
+      rapid: 1300,
+      bestRating: 1605,
+      bestMode: 'bullet',
+      source: 'API Chess.com directe',
+      id: 'sync_1794253209385_972kv',
+    },
+    {
+      timestamp: '2026-11-08T18:51:41.620Z',
+      username: 'alpharomeo1500',
+      bullet: 1533,
+      blitz: 1504,
+      rapid: 1300,
+      bestRating: 1533,
+      bestMode: 'bullet',
+      source: 'API Chess.com directe',
+      id: 'sync_1794163902789_s8f9x',
+    },
+    {
+      timestamp: '2026-11-07T11:52:48.268Z',
+      username: 'alpharomeo1500',
+      bullet: 1533,
+      blitz: 1504,
+      rapid: 1278,
+      bestRating: 1533,
+      bestMode: 'bullet',
+      source: 'API Chess.com directe',
+      id: 'sync_1794052368563_6nb0h',
+    },
+    {
+      timestamp: '2026-11-06T14:53:53.491Z',
+      username: 'alpharomeo1500',
+      bullet: 1533,
+      blitz: 1504,
+      rapid: 1289,
+      bestRating: 1533,
+      bestMode: 'bullet',
+      source: 'API Chess.com directe',
+      id: 'sync_1793976833877_wqwqy',
+    },
+    {
+      timestamp: '2026-11-05T17:37:23.531Z',
+      username: 'alpharomeo1500',
+      bullet: 1533,
+      blitz: 1504,
+      rapid: 1289,
+      bestRating: 1533,
+      bestMode: 'bullet',
+      source: 'API Chess.com directe',
+      id: 'sync_1793900244303_1mipg',
+    },
+    {
+      id: 'sync_1793819905222_fjot6',
+      username: 'alpharomeo1500',
+      timestamp: '2026-11-04T19:18:20.064Z',
+      bullet: 1517,
+      blitz: 1504,
+      rapid: 1277,
+      bestRating: 1517,
+      bestMode: 'bullet',
+      source: 'Import fichier',
+    },
+    {
+      id: 'sync_1793738071765_ne021',
+      username: 'alpharomeo1500',
+      timestamp: '2026-11-03T20:34:30.854Z',
+      bullet: 1509,
+      blitz: 1504,
+      rapid: 1289,
+      bestRating: 1509,
+      bestMode: 'bullet',
+      source: 'Import fichier',
+    },
+    {
+      id: 'sync_1793652444978_gh17m',
+      username: 'alpharomeo1500',
+      timestamp: '2026-11-02T20:47:24.663Z',
+      bullet: 1509,
+      blitz: 1458,
+      rapid: 1289,
+      bestRating: 1509,
+      bestMode: 'bullet',
+      source: 'Import fichier',
+    },
+  ];
+
+  function getBaseJsonTemplate(username = 'alpharomeo1500') {
+    const rawRecords = username === 'alpharomeo1500' ? OFFICIAL_DAILY_RECORDS : [
+      {
+        id: `sync_initial_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        username,
+        bullet: 1500,
+        blitz: 1458,
+        rapid: 1289,
+        bestRating: 1500,
+        bestMode: 'bullet',
+        source: 'Initialisation du projet',
+      },
+    ];
+
+    const records = rawRecords.map((r) => ({
+      ...r,
+      username,
+    }));
+
+    return {
+      exportedAt: new Date().toISOString(),
+      project: 'Road to 2000 Elo',
+      username,
+      version: '2.0',
+      recordsCount: records.length,
+      records,
+      history: records,
+      player: {
+        username,
+        targetElo: 2000,
+        targetDate: '2027-12-31T23:59:59.000Z',
+        startDate: '2026-11-06',
+        startRatings: {
+          bullet: 1500,
+          blitz: 1458,
+          rapid: 1289,
+        },
+        currentRatings: {
+          bullet: records[0]?.bullet ?? 1605,
+          blitz: records[0]?.blitz ?? 1504,
+          rapid: records[0]?.rapid ?? 1300,
+        },
+        bestMode: records[0]?.bestMode ?? 'bullet',
+        bestRating: records[0]?.bestRating ?? 1605,
+      },
+      settings: {
+        username,
+        startElo: 1500,
+        targetElo: 2000,
+        startDate: '2026-11-06',
+        targetDate: '2027-12-31',
+        selectedMode: 'auto',
+        autoSyncMinutes: 15,
+        theme: 'dark',
+        timezone: 'Europe/Paris',
+      },
+    };
+  }
+
+  async function pushToJsonBin(username: string, data: any, force = false): Promise<boolean> {
+    if (!jsonBinState.enabled) return false;
+    if (!jsonBinState.binId) {
+      jsonBinState.lastStatus = 'pending_keys';
+      return false;
+    }
+
+    // Reset daily counter if a new calendar day has started
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (jsonBinState.lastDayTracked !== todayStr) {
+      jsonBinState.lastDayTracked = todayStr;
+      jsonBinState.requestsToday = 0;
+    }
+
+    // Quota Optimization 1: Compare content signature
+    const currentSig = computeDataSignature(username, data);
+    if (!force && jsonBinState.lastPushedSignature === currentSig) {
+      jsonBinState.savedRequests = (jsonBinState.savedRequests || 0) + 1;
+      jsonBinState.lastSkippedReason = 'Données strictement identiques : 0 requête consommée pour préserver votre quota';
+      jsonBinState.lastStatus = 'synced';
+      saveJsonBinConfigToDisk(jsonBinState);
+      return false;
+    }
+
+    // Quota Optimization 2: Minimum 5-minute interval between automatic background pushes
+    if (!force && jsonBinState.lastSyncTime && Date.now() - jsonBinState.lastSyncTime < 5 * 60 * 1000) {
+      jsonBinState.savedRequests = (jsonBinState.savedRequests || 0) + 1;
+      jsonBinState.lastSkippedReason = 'Intervalle de temporisation actif (5 min) : requête économisée';
+      saveJsonBinConfigToDisk(jsonBinState);
+      return false;
+    }
+
+    try {
+      jsonBinState.lastStatus = 'syncing';
+      const cleanBinId = jsonBinState.binId.trim();
+      const targetUrl = `https://api.jsonbin.io/v3/b/${cleanBinId}`;
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (jsonBinState.apiKey) {
+        headers['X-Master-Key'] = jsonBinState.apiKey.trim();
+        headers['X-Access-Key'] = jsonBinState.apiKey.trim();
+      }
+
+      const rawList = Array.isArray(data.records)
+        ? data.records
+        : (Array.isArray(data.history) && data.history.length > 0
+            ? data.history
+            : (username === 'alpharomeo1500' ? OFFICIAL_DAILY_RECORDS : []));
+
+      const records = rawList.map((r: any) => ({
+        ...r,
+        username,
+      }));
+
+      const latest = records[0] || {};
+
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        project: 'Road to 2000 Elo',
+        username,
+        version: '2.0',
+        recordsCount: records.length,
+        records,
+        history: records,
+        player: {
+          username,
+          targetElo: 2000,
+          targetDate: '2027-12-31T23:59:59.000Z',
+          startDate: '2026-11-06',
+          startRatings: {
+            bullet: 1500,
+            blitz: 1458,
+            rapid: 1289,
+          },
+          currentRatings: {
+            bullet: latest.bullet ?? 1605,
+            blitz: latest.blitz ?? 1504,
+            rapid: latest.rapid ?? 1300,
+          },
+          bestMode: latest.bestMode ?? 'bullet',
+          bestRating: latest.bestRating ?? 1605,
+        },
+        settings: data.settings || {
+          username,
+          startElo: 1500,
+          targetElo: 2000,
+          startDate: '2026-11-06',
+          targetDate: '2027-12-31',
+          selectedMode: 'auto',
+          autoSyncMinutes: 15,
+          theme: 'dark',
+          timezone: 'Europe/Paris',
+        },
+      };
+
+      const res = await fetch(targetUrl, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`JSONBin error ${res.status}: ${errText.substring(0, 100)}`);
+      }
+
+      jsonBinState.requestsToday = (jsonBinState.requestsToday || 0) + 1;
+      jsonBinState.lastSyncTime = Date.now();
+      jsonBinState.lastPushedSignature = currentSig;
+      jsonBinState.lastSkippedReason = undefined;
+      jsonBinState.lastStatus = 'synced';
+      jsonBinState.lastError = undefined;
+      saveJsonBinConfigToDisk(jsonBinState);
+      return true;
+    } catch (err: any) {
+      jsonBinState.lastStatus = 'error';
+      jsonBinState.lastError = err?.message || 'Erreur de connexion JSONBin';
+      saveJsonBinConfigToDisk(jsonBinState);
+      throw err;
+    }
+  }
+
+  // Get JSONBin status & base template
+  app.get('/api/jsonbin/status', (req: Request, res: Response) => {
+    const username = (String(req.query.username || '') || 'alpharomeo1500').trim().toLowerCase();
+    res.json({
+      configured: Boolean(jsonBinState.binId),
+      binId: jsonBinState.binId || null,
+      hasApiKey: Boolean(jsonBinState.apiKey),
+      enabled: jsonBinState.enabled,
+      lastSyncTime: jsonBinState.lastSyncTime,
+      lastStatus: jsonBinState.lastStatus,
+      lastError: jsonBinState.lastError || null,
+      quotaInfo: {
+        requestsToday: jsonBinState.requestsToday || 0,
+        savedRequests: jsonBinState.savedRequests || 0,
+        quotaSaverActive: true,
+        lastSkippedReason: jsonBinState.lastSkippedReason || null,
+      },
+      template: getBaseJsonTemplate(username),
+    });
+  });
+
+  // Get Base JSON content directly
+  app.get('/api/jsonbin/template', (req: Request, res: Response) => {
+    const username = (String(req.query.username || '') || 'alpharomeo1500').trim().toLowerCase();
+    res.setHeader('Content-Type', 'application/json');
+    res.send(JSON.stringify(getBaseJsonTemplate(username), null, 2));
+  });
+
+  // Update JSONBin credentials (Bin ID & API Key)
+  app.post('/api/jsonbin/config', async (req: Request, res: Response) => {
+    try {
+      const { binId, apiKey, enabled } = req.body || {};
+      if (typeof binId === 'string') {
+        jsonBinState.binId = binId.trim();
+      }
+      if (typeof apiKey === 'string') {
+        jsonBinState.apiKey = apiKey.trim();
+      }
+      if (typeof enabled === 'boolean') {
+        jsonBinState.enabled = enabled;
+      }
+
+      // If credentials provided, test connection
+      if (jsonBinState.binId) {
+        try {
+          const testHeaders: Record<string, string> = {};
+          if (jsonBinState.apiKey) {
+            testHeaders['X-Master-Key'] = jsonBinState.apiKey;
+            testHeaders['X-Access-Key'] = jsonBinState.apiKey;
+          }
+          const testRes = await fetch(`https://api.jsonbin.io/v3/b/${jsonBinState.binId}/latest`, {
+            headers: testHeaders,
+          });
+          if (testRes.ok) {
+            jsonBinState.lastStatus = 'synced';
+            jsonBinState.lastError = undefined;
+          } else {
+            jsonBinState.lastStatus = 'error';
+            jsonBinState.lastError = `Statut ${testRes.status}: Clé ou Bin invalide`;
+          }
+        } catch (testErr: any) {
+          jsonBinState.lastStatus = 'error';
+          jsonBinState.lastError = testErr?.message || 'Connexion impossible à jsonbin.io';
+        }
+      } else {
+        jsonBinState.lastStatus = 'pending_keys';
+        jsonBinState.lastError = undefined;
+      }
+
+      saveJsonBinConfigToDisk(jsonBinState);
+      res.json({
+        success: true,
+        configured: Boolean(jsonBinState.binId),
+        binId: jsonBinState.binId || null,
+        hasApiKey: Boolean(jsonBinState.apiKey),
+        lastStatus: jsonBinState.lastStatus,
+        lastError: jsonBinState.lastError || null,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Config update failed' });
+    }
+  });
+
+  // Manual or automatic trigger to push current state to JSONBin
+  app.post('/api/jsonbin/sync', async (req: Request, res: Response) => {
+    try {
+      const { username: reqUser, force } = req.body || {};
+      const username = (reqUser || 'alpharomeo1500').trim().toLowerCase();
+      const filePath = getUserDataFilePath(username);
+
+      let currentData: any = { history: [], settings: null };
+      if (fs.existsSync(filePath)) {
+        try {
+          currentData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        } catch {}
+      }
+
+      const didPush = await pushToJsonBin(username, currentData, Boolean(force));
+
+      res.json({
+        success: true,
+        pushed: didPush,
+        skipped: !didPush,
+        reason: jsonBinState.lastSkippedReason || null,
+        lastSyncTime: jsonBinState.lastSyncTime,
+        status: jsonBinState.lastStatus,
+      });
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        error: err.message || 'Échec de synchronisation vers JSONBin',
+      });
+    }
+  });
+
+  // Pull latest records from JSONBin and merge into server storage
+  app.post('/api/jsonbin/pull', async (req: Request, res: Response) => {
+    try {
+      if (!jsonBinState.binId) {
+        res.status(400).json({ error: 'Bin ID non configuré' });
+        return;
+      }
+
+      const headers: Record<string, string> = {};
+      if (jsonBinState.apiKey) {
+        headers['X-Master-Key'] = jsonBinState.apiKey;
+        headers['X-Access-Key'] = jsonBinState.apiKey;
+      }
+
+      const pullRes = await fetch(`https://api.jsonbin.io/v3/b/${jsonBinState.binId}/latest`, {
+        headers,
+      });
+
+      if (!pullRes.ok) {
+        res.status(pullRes.status).json({ error: 'Échec de lecture depuis JSONBin' });
+        return;
+      }
+
+      const body = await pullRes.json();
+      const binRecord = body.record || body;
+      const incomingHistory = Array.isArray(binRecord.records)
+        ? binRecord.records
+        : (Array.isArray(binRecord.history) ? binRecord.history : []);
+      const username = (binRecord.username || binRecord.player?.username || 'alpharomeo1500').trim().toLowerCase();
+
+      const filePath = getUserDataFilePath(username);
+      let existingHistory: any[] = [];
+      let existingSettings: any = null;
+
+      if (fs.existsSync(filePath)) {
+        try {
+          const raw = fs.readFileSync(filePath, 'utf-8');
+          const data = JSON.parse(raw);
+          if (Array.isArray(data.history)) existingHistory = data.history;
+          if (data.settings) existingSettings = data.settings;
+        } catch {}
+      }
+
+      const combined = [...incomingHistory, ...existingHistory];
+      const validRecords = combined.filter((r) => {
+        if (!r || typeof r.bestRating !== 'number' || r.bestRating <= 0) return false;
+        if (username === 'alpharomeo1500' && r.bestRating === 1938) return false;
+        if (r.username && r.username.toLowerCase() !== username) return false;
+        return true;
+      });
+
+      validRecords.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      const seenDays = new Set<string>();
+      const onePerDay: any[] = [];
+      for (const r of validRecords) {
+        const d = new Date(r.timestamp);
+        if (isNaN(d.getTime())) continue;
+        const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (!seenDays.has(dayKey)) {
+          seenDays.add(dayKey);
+          onePerDay.push(r);
+        }
+      }
+
+      const updatedPayload = {
+        username,
+        history: onePerDay.slice(0, 500),
+        settings: binRecord.settings || existingSettings,
+        lastUpdated: Date.now(),
+      };
+
+      fs.writeFileSync(filePath, JSON.stringify(updatedPayload, null, 2), 'utf-8');
+
+      jsonBinState.lastSyncTime = Date.now();
+      jsonBinState.lastStatus = 'synced';
+      saveJsonBinConfigToDisk(jsonBinState);
+
+      res.json({
+        success: true,
+        history: updatedPayload.history,
+        settings: updatedPayload.settings,
+        count: updatedPayload.history.length,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Erreur lors du pull JSONBin' });
     }
   });
 

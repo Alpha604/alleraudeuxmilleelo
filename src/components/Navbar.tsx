@@ -9,14 +9,16 @@ import {
   BarChart2,
   Calendar,
   CheckCircle2,
+  Cloud,
   Code2,
   Crown,
+  Database,
   Lock,
-  Moon,
   RefreshCw,
   Settings,
   ShieldCheck,
-  Sun,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import { ChessComProfileResponse } from '../types/chess';
 
@@ -28,14 +30,17 @@ interface NavbarProps {
   onSync: () => void;
   isSyncing: boolean;
   lastSyncTime: string | null;
-  theme: 'dark' | 'light';
-  onToggleTheme: () => void;
+  theme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
   profile?: ChessComProfileResponse;
   username: string;
   isAdmin: boolean;
   isIframe: boolean;
   onOpenSecurityModal: (title?: string) => void;
   onLockAdmin: () => void;
+  onOpenNetworkModal?: () => void;
+  jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  isNetworkOnline?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -44,14 +49,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSync,
   isSyncing,
   lastSyncTime,
-  theme,
-  onToggleTheme,
   profile,
   username,
   isAdmin,
   isIframe,
   onOpenSecurityModal,
   onLockAdmin,
+  onOpenNetworkModal,
+  jsonBinStatus = 'pending_keys',
+  isNetworkOnline = true,
 }) => {
   const formattedSyncTime = lastSyncTime
     ? new Date(lastSyncTime).toLocaleTimeString('fr-FR', {
@@ -183,13 +189,33 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {/* Theme toggle */}
+          {/* Live Network & JSONBin Status Button */}
           <button
-            onClick={onToggleTheme}
-            className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900 text-neutral-300 hover:text-white transition-colors"
-            title={theme === 'dark' ? 'Activer le mode clair' : 'Activer le mode sombre'}
+            onClick={onOpenNetworkModal}
+            className={`flex h-8 w-8 sm:h-auto sm:w-auto items-center justify-center gap-1.5 rounded-xl border px-2 sm:px-2.5 py-1.5 text-xs font-bold transition-all ${
+              !isNetworkOnline
+                ? 'border-[#ef4444]/40 bg-[#ef4444]/15 text-[#ef4444] hover:bg-[#ef4444]/25'
+                : jsonBinStatus === 'synced'
+                ? 'border-[#10b981]/40 bg-[#10b981]/15 text-[#10b981] hover:bg-[#10b981]/25'
+                : 'border-[#facc15]/40 bg-[#facc15]/10 text-[#facc15] hover:bg-[#facc15]/20'
+            }`}
+            title={`Réseau : ${isNetworkOnline ? 'En ligne' : 'Déconnecté'} · JSONBin : ${
+              jsonBinStatus === 'synced' ? 'Synchronisé' : jsonBinStatus === 'syncing' ? 'Synchro en cours...' : 'En attente de clés'
+            } (Cliquez pour afficher les détails)`}
           >
-            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            <Database className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden md:inline">
+              {jsonBinStatus === 'synced' ? 'JSONBin OK' : 'JSONBin'}
+            </span>
+            <span
+              className={`h-2 w-2 rounded-full shrink-0 ${
+                !isNetworkOnline
+                  ? 'bg-[#ef4444]'
+                  : jsonBinStatus === 'synced'
+                  ? 'bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.7)]'
+                  : 'bg-[#facc15] shadow-[0_0_8px_rgba(250,204,21,0.7)]'
+              }`}
+            />
           </button>
 
           {/* Player Avatar */}

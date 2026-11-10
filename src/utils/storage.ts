@@ -182,6 +182,108 @@ export function saveStoredSettings(settings: AppSettings): boolean {
   return safeSetItem(SETTINGS_KEY, JSON.stringify(clean));
 }
 
+export const OFFICIAL_DAILY_RECORDS: SyncRecord[] = [
+  {
+    timestamp: '2026-11-10T17:24:45.922Z',
+    username: 'alpharomeo1500',
+    bullet: 1605,
+    blitz: 1504,
+    rapid: 1300,
+    bestRating: 1605,
+    bestMode: 'bullet',
+    source: 'API Chess.com directe',
+    id: 'sync_1794331486338_pfphq',
+  },
+  {
+    timestamp: '2026-11-09T19:40:08.913Z',
+    username: 'alpharomeo1500',
+    bullet: 1605,
+    blitz: 1504,
+    rapid: 1300,
+    bestRating: 1605,
+    bestMode: 'bullet',
+    source: 'API Chess.com directe',
+    id: 'sync_1794253209385_972kv',
+  },
+  {
+    timestamp: '2026-11-08T18:51:41.620Z',
+    username: 'alpharomeo1500',
+    bullet: 1533,
+    blitz: 1504,
+    rapid: 1300,
+    bestRating: 1533,
+    bestMode: 'bullet',
+    source: 'API Chess.com directe',
+    id: 'sync_1794163902789_s8f9x',
+  },
+  {
+    timestamp: '2026-11-07T11:52:48.268Z',
+    username: 'alpharomeo1500',
+    bullet: 1533,
+    blitz: 1504,
+    rapid: 1278,
+    bestRating: 1533,
+    bestMode: 'bullet',
+    source: 'API Chess.com directe',
+    id: 'sync_1794052368563_6nb0h',
+  },
+  {
+    timestamp: '2026-11-06T14:53:53.491Z',
+    username: 'alpharomeo1500',
+    bullet: 1533,
+    blitz: 1504,
+    rapid: 1289,
+    bestRating: 1533,
+    bestMode: 'bullet',
+    source: 'API Chess.com directe',
+    id: 'sync_1793976833877_wqwqy',
+  },
+  {
+    timestamp: '2026-11-05T17:37:23.531Z',
+    username: 'alpharomeo1500',
+    bullet: 1533,
+    blitz: 1504,
+    rapid: 1289,
+    bestRating: 1533,
+    bestMode: 'bullet',
+    source: 'API Chess.com directe',
+    id: 'sync_1793900244303_1mipg',
+  },
+  {
+    id: 'sync_1793819905222_fjot6',
+    username: 'alpharomeo1500',
+    timestamp: '2026-11-04T19:18:20.064Z',
+    bullet: 1517,
+    blitz: 1504,
+    rapid: 1277,
+    bestRating: 1517,
+    bestMode: 'bullet',
+    source: 'Import fichier',
+  },
+  {
+    id: 'sync_1793738071765_ne021',
+    username: 'alpharomeo1500',
+    timestamp: '2026-11-03T20:34:30.854Z',
+    bullet: 1509,
+    blitz: 1504,
+    rapid: 1289,
+    bestRating: 1509,
+    bestMode: 'bullet',
+    source: 'Import fichier',
+  },
+  {
+    id: 'sync_1793652444978_gh17m',
+    username: 'alpharomeo1500',
+    timestamp: '2026-11-02T20:47:24.663Z',
+    bullet: 1509,
+    blitz: 1458,
+    rapid: 1289,
+    bestRating: 1509,
+    bestMode: 'bullet',
+    source: 'Import fichier',
+  },
+];
+
 /**
  * Reads sync history strictly isolated by username.
  * Guarantees that records from another account or corrupted entries (e.g. 1938) are never returned.
@@ -191,10 +293,22 @@ export function getStoredSyncHistory(username?: string): SyncRecord[] {
   const userKey = getUserHistoryKey(targetUser);
   const raw = safeGetItem(userKey);
 
-  if (!raw) return [];
+  if (!raw) {
+    if (targetUser === 'alpharomeo1500') {
+      safeSetItem(userKey, JSON.stringify(OFFICIAL_DAILY_RECORDS));
+      return OFFICIAL_DAILY_RECORDS;
+    }
+    return [];
+  }
   try {
     const list = JSON.parse(raw);
-    if (!Array.isArray(list)) return [];
+    if (!Array.isArray(list)) {
+      if (targetUser === 'alpharomeo1500') {
+        safeSetItem(userKey, JSON.stringify(OFFICIAL_DAILY_RECORDS));
+        return OFFICIAL_DAILY_RECORDS;
+      }
+      return [];
+    }
 
     const filtered = list.filter((r: SyncRecord) => {
       if (!r || typeof r.bestRating !== 'number') return false;

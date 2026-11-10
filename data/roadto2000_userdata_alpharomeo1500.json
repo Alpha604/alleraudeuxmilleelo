@@ -2,17 +2,200 @@
   "username": "alpharomeo1500",
   "history": [
     {
-      "id": "test_1",
+      "timestamp": "2026-11-10T17:55:25.114Z",
       "username": "alpharomeo1500",
-      "timestamp": "2026-11-09T10:00:00.000Z",
-      "bullet": 1500,
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "API Chess.com directe",
+      "id": "sync_1794333325578_g45va"
+    },
+    {
+      "timestamp": "2026-11-09T20:36:53.114Z",
+      "username": "alpharomeo1500",
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "API Chess.com directe",
+      "id": "sync_1794256614068_1kufe"
+    },
+    {
+      "timestamp": "2026-11-08T18:51:41.620Z",
+      "username": "alpharomeo1500",
+      "bullet": 1533,
+      "blitz": 1504,
+      "rapid": 1300,
+      "bestRating": 1533,
+      "bestMode": "bullet",
+      "source": "API Chess.com directe",
+      "id": "sync_1794163902789_s8f9x"
+    },
+    {
+      "timestamp": "2026-11-07T11:59:59.966Z",
+      "username": "alpharomeo1500",
+      "bullet": 1533,
+      "blitz": 1504,
+      "rapid": 1278,
+      "bestRating": 1533,
+      "bestMode": "bullet",
+      "source": "API Chess.com directe",
+      "id": "sync_1794052800242_1zf96"
+    },
+    {
+      "timestamp": "2026-11-06T14:53:53.491Z",
+      "username": "alpharomeo1500",
+      "bullet": 1533,
+      "blitz": 1504,
+      "rapid": 1289,
+      "bestRating": 1533,
+      "bestMode": "bullet",
+      "source": "API Chess.com directe",
+      "id": "sync_1793976833877_wqwqy"
+    },
+    {
+      "timestamp": "2026-11-05T17:37:23.531Z",
+      "username": "alpharomeo1500",
+      "bullet": 1533,
+      "blitz": 1504,
+      "rapid": 1289,
+      "bestRating": 1533,
+      "bestMode": "bullet",
+      "source": "API Chess.com directe",
+      "id": "sync_1793900244303_1mipg"
+    },
+    {
+      "id": "sync_1793819905222_fjot6",
+      "username": "alpharomeo1500",
+      "timestamp": "2026-11-04T19:18:20.064Z",
+      "bullet": 1517,
+      "blitz": 1504,
+      "rapid": 1277,
+      "bestRating": 1517,
+      "bestMode": "bullet",
+      "source": "Import fichier"
+    },
+    {
+      "id": "sync_1793738071765_ne021",
+      "username": "alpharomeo1500",
+      "timestamp": "2026-11-03T20:34:30.854Z",
+      "bullet": 1509,
+      "blitz": 1504,
+      "rapid": 1289,
+      "bestRating": 1509,
+      "bestMode": "bullet",
+      "source": "Import fichier"
+    },
+    {
+      "timestamp": "2026-11-02T20:48:02.224Z",
+      "username": "alpharomeo1500",
+      "bullet": 1509,
       "blitz": 1458,
       "rapid": 1289,
-      "bestRating": 1500,
+      "bestRating": 1509,
       "bestMode": "bullet",
-      "source": "API Chess.com"
+      "source": "API Chess.com directe",
+      "id": "sync_1793652482585_fg0vr"
     }
   ],
-  "settings": null,
-  "lastUpdated": 1794254114728
+  "settings": {
+    "username": "alpharomeo1500",
+    "startElo": 1500,
+    "targetElo": 2000,
+    "startDate": "2026-10-31",
+    "targetDate": "2027-12-31T23:59:59",
+    "timezone": "Europe/Paris",
+    "selectedMode": "auto",
+    "trajectoryModel": "linear",
+    "autoSyncMinutes": 15,
+    "theme": "dark",
+    "notifications": {
+      "newPeak": true,
+      "milestoneReached": true,
+      "goalReached": true,
+      "syncErrors": true,
+      "significantDelay": true
+    },
+    "customMilestones": [
+      {
+        "monthKey": "2026-10",
+        "label": "Octobre 2026",
+        "targetElo": 1501
+      },
+      {
+        "monthKey": "2026-11",
+        "label": "Novembre 2026",
+        "targetElo": 1536
+      },
+      {
+        "monthKey": "2026-12",
+        "label": "Décembre 2026",
+        "targetElo": 1573
+      },
+      {
+        "monthKey": "2027-01",
+        "label": "Janvier 2027",
+        "targetElo": 1609
+      },
+      {
+        "monthKey": "2027-02",
+        "label": "Février 2027",
+        "targetElo": 1642
+      },
+      {
+        "monthKey": "2027-03",
+        "label": "Mars 2027",
+        "targetElo": 1678
+      },
+      {
+        "monthKey": "2027-04",
+        "label": "Avril 2027",
+        "targetElo": 1713
+      },
+      {
+        "monthKey": "2027-05",
+        "label": "Mai 2027",
+        "targetElo": 1749
+      },
+      {
+        "monthKey": "2027-06",
+        "label": "Juin 2027",
+        "targetElo": 1785
+      },
+      {
+        "monthKey": "2027-07",
+        "label": "Juillet 2027",
+        "targetElo": 1821
+      },
+      {
+        "monthKey": "2027-08",
+        "label": "Août 2027",
+        "targetElo": 1857
+      },
+      {
+        "monthKey": "2027-09",
+        "label": "Septembre 2027",
+        "targetElo": 1892
+      },
+      {
+        "monthKey": "2027-10",
+        "label": "Octobre 2027",
+        "targetElo": 1929
+      },
+      {
+        "monthKey": "2027-11",
+        "label": "Novembre 2027",
+        "targetElo": 1964
+      },
+      {
+        "monthKey": "2027-12",
+        "label": "Décembre 2027",
+        "targetElo": 2000
+      }
+    ]
+  },
+  "lastUpdated": 1794333529024
 }
