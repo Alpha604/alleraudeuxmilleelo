@@ -16,6 +16,7 @@ import {
   Filter,
   History,
   Lock,
+  Pencil,
   PlusCircle,
   RotateCcw,
   ShieldAlert,
@@ -73,8 +74,9 @@ export const SyncLog: React.FC<SyncLogProps> = ({
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Manual Add Modal state (Admin only)
+  // Manual Add / Edit Modal state (Admin only)
   const [manualModalOpen, setManualModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [manualDateKey, setManualDateKey] = useState<string>('');
   const [manualBullet, setManualBullet] = useState<string>('1533');
   const [manualBlitz, setManualBlitz] = useState<string>('1504');
@@ -175,28 +177,72 @@ export const SyncLog: React.FC<SyncLogProps> = ({
   const syncedDaysCount = allDays.filter((d) => d.status === 'synced').length;
   const missingDaysCount = allDays.filter((d) => d.status === 'missing').length;
 
-  // Trigger manual completion of a missing date (Admin only)
-  const handleOpenAddModal = (dateKey: string) => {
+  // Trigger manual completion of a missing date with pre-fill from the sync right above (Admin only)
+  const handleOpenAddModal = (dateKey: string, index: number) => {
     if (isIframe) return;
     if (!isAdmin) {
       if (onOpenSecurityModal) {
-        onOpenSecurityModal('Ajouter une synchronisation manquée (2FA)');
+        onOpenSecurityModal('Ajouter une synchronisation manquée (2FA requis)');
       }
       return;
     }
 
-    // Set pre-filled date and guess reasonable starting ratings from latest record
+    setIsEditMode(false);
     setManualDateKey(dateKey);
-    const latest = history.length > 0 ? history[0] : null;
-    if (latest) {
-      setManualBullet(String(latest.bullet || 1533));
-      setManualBlitz(String(latest.blitz || 1504));
-      setManualRapid(String(latest.rapid || 1289));
+
+    // Look for the sync record directly above in the displayed list
+    let referenceRecord: SyncRecord | null = null;
+    for (let i = index - 1; i >= 0; i--) {
+      if (filteredDays[i].record) {
+        referenceRecord = filteredDays[i].record!;
+        break;
+      }
+    }
+    // If none found above (e.g. top of list), look at the closest one below
+    if (!referenceRecord) {
+      for (let i = index + 1; i < filteredDays.length; i++) {
+        if (filteredDays[i].record) {
+          referenceRecord = filteredDays[i].record!;
+          break;
+        }
+      }
+    }
+    // Fallback to latest history record if any
+    if (!referenceRecord && history.length > 0) {
+      referenceRecord = history[0];
+    }
+
+    if (referenceRecord) {
+      setManualBullet(String(referenceRecord.bullet ?? 1533));
+      setManualBlitz(String(referenceRecord.blitz ?? 1504));
+      setManualRapid(String(referenceRecord.rapid ?? 1289));
+    } else {
+      setManualBullet('1533');
+      setManualBlitz('1504');
+      setManualRapid('1289');
     }
     setManualModalOpen(true);
   };
 
-  // Save manual record
+  // Trigger modification of an existing sync (Admin only)
+  const handleOpenEditModal = (day: DayEntry) => {
+    if (isIframe) return;
+    if (!isAdmin) {
+      if (onOpenSecurityModal) {
+        onOpenSecurityModal('Modifier une synchronisation existante (2FA requis)');
+      }
+      return;
+    }
+
+    setIsEditMode(true);
+    setManualDateKey(day.dateKey);
+    setManualBullet(String(day.record?.bullet ?? ''));
+    setManualBlitz(String(day.record?.blitz ?? ''));
+    setManualRapid(String(day.record?.rapid ?? ''));
+    setManualModalOpen(true);
+  };
+
+  // Save manual record (Create or Update)
   const handleSaveManualRecord = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualDateKey) return;
@@ -210,11 +256,12 @@ export const SyncLog: React.FC<SyncLogProps> = ({
     if (bestRating === blitz) bestMode = 'blitz';
     else if (bestRating === rapid) bestMode = 'rapid';
 
-    // Construct ISO timestamp for noon on that date
-    const timestamp = `${manualDateKey}T12:00:00.000Z`;
+    // Preserve existing record's original timestamp or use noon on that date
+    const existingRecord = recordsByDateKey.get(manualDateKey);
+    const timestamp = existingRecord?.timestamp || `${manualDateKey}T12:00:00.000Z`;
 
     const newRecord: SyncRecord = {
-      id: `sync_manual_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: existingRecord?.id || `sync_manual_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       timestamp,
       username,
       bullet,
@@ -222,10 +269,10 @@ export const SyncLog: React.FC<SyncLogProps> = ({
       rapid,
       bestRating,
       bestMode,
-      source: 'Saisie manuelle',
+      source: existingRecord?.source || 'Saisie manuelle',
     };
 
-    // Remove any existing record for this date and prepend new one
+    // Remove any previous record for this date and prepend new/updated one
     const updated = [newRecord, ...history.filter((r) => {
       const rd = new Date(r.timestamp);
       const k = `${rd.getFullYear()}-${String(rd.getMonth() + 1).padStart(2, '0')}-${String(rd.getDate()).padStart(2, '0')}`;
@@ -235,7 +282,12 @@ export const SyncLog: React.FC<SyncLogProps> = ({
     saveStoredSyncHistory(updated, username);
     onHistoryUpdate(updated);
     setManualModalOpen(false);
-    onShowMessage(`Synchronisation du ${manualDateKey} enregistrée avec succès !`, 'success');
+    onShowMessage(
+      isEditMode
+        ? `Synchronisation du ${manualDateKey} modifiée avec succès !`
+        : `Synchronisation du ${manualDateKey} enregistrée avec succès !`,
+      'success'
+    );
   };
 
   const handleExportJSON = () => {
@@ -498,7 +550,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredDays.map((day) => {
+                filteredDays.map((day, index) => {
                   const isMissing = day.status === 'missing';
                   const rec = day.record;
 
@@ -586,12 +638,12 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                         )}
                       </td>
 
-                      {/* Action / Source */}
+                      {/* Action / Source with Modifier button */}
                       <td className="py-3 px-4 text-right whitespace-nowrap font-sans">
                         {isMissing ? (
                           <button
                             type="button"
-                            onClick={() => handleOpenAddModal(day.dateKey)}
+                            onClick={() => handleOpenAddModal(day.dateKey, index)}
                             title={isAdmin ? "Compléter et enregistrer cette synchronisation" : "Action réservée à l'administrateur (2FA requis)"}
                             className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#ef4444]/15 border border-[#ef4444]/40 text-[#ef4444] hover:bg-[#ef4444]/25 text-xs font-bold transition-all shadow-sm active:scale-95"
                           >
@@ -600,10 +652,24 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                             {!isAdmin && <Lock className="h-2.5 w-2.5" />}
                           </button>
                         ) : (
-                          <div className="text-[11px] text-neutral-400">
-                            <span>{rec?.source || 'API Chess.com'}</span>
-                            {rec?.username && (
-                              <div className="text-[9px] text-neutral-400 font-mono">@{rec.username}</div>
+                          <div className="flex items-center justify-end gap-2.5">
+                            <div className="text-[11px] text-neutral-400 text-right">
+                              <span>{rec?.source || 'API Chess.com'}</span>
+                              {rec?.username && (
+                                <div className="text-[9px] text-neutral-500 font-mono">@{rec.username}</div>
+                              )}
+                            </div>
+                            {!isIframe && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditModal(day)}
+                                title={isAdmin ? "Modifier les scores de cette synchronisation" : "Action réservée à l'administrateur (2FA requis)"}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-neutral-900 border border-neutral-700/80 hover:border-[#facc15] hover:text-[#facc15] text-neutral-300 text-xs font-bold transition-all shadow-sm active:scale-95"
+                              >
+                                <Pencil className="h-3 w-3 text-[#facc15]" />
+                                <span>Modifier</span>
+                                {!isAdmin && <Lock className="h-2.5 w-2.5 text-neutral-500" />}
+                              </button>
                             )}
                           </div>
                         )}
@@ -617,14 +683,20 @@ export const SyncLog: React.FC<SyncLogProps> = ({
         </div>
       </div>
 
-      {/* Manual Sync Modal (Admin Only) */}
+      {/* Manual Sync Modal (Add or Edit) */}
       {manualModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
           <div className="relative w-full max-w-md rounded-3xl border border-neutral-800 bg-[#0c0f14] p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2">
-                <PlusCircle className="h-5 w-5 text-[#facc15]" />
-                <h3 className="text-base font-bold text-white">Compléter la synchronisation</h3>
+                {isEditMode ? (
+                  <Pencil className="h-5 w-5 text-[#facc15]" />
+                ) : (
+                  <PlusCircle className="h-5 w-5 text-[#facc15]" />
+                )}
+                <h3 className="text-base font-bold text-white">
+                  {isEditMode ? 'Modifier la synchronisation' : 'Compléter la synchronisation'}
+                </h3>
               </div>
               <button
                 onClick={() => setManualModalOpen(false)}
@@ -635,7 +707,10 @@ export const SyncLog: React.FC<SyncLogProps> = ({
             </div>
 
             <p className="text-xs text-neutral-300 leading-relaxed">
-              Date ciblée : <strong className="text-[#facc15] font-mono">{manualDateKey}</strong>. Saisissez les classements Elo de cette journée pour sauvegarder ce jour dans l'historique et le cloud.
+              Date ciblée : <strong className="text-[#facc15] font-mono">{manualDateKey}</strong>.{' '}
+              {isEditMode
+                ? 'Mettez à jour les classements Elo enregistrés pour cette journée.'
+                : 'Pré-rempli automatiquement avec les scores de la synchronisation juste au-dessus pour aller plus vite.'}
             </p>
 
             <form onSubmit={handleSaveManualRecord} className="space-y-4">
@@ -698,7 +773,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-[#facc15] text-black text-xs font-extrabold hover:bg-[#eab308] transition-all shadow-md active:scale-95"
                 >
-                  Enregistrer ce jour
+                  {isEditMode ? 'Enregistrer les modifications' : 'Enregistrer ce jour'}
                 </button>
               </div>
             </form>
