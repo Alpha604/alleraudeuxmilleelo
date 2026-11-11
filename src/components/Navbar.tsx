@@ -13,8 +13,6 @@ import {
   Crown,
   Database,
   Lock,
-  PanelLeftClose,
-  PanelLeftOpen,
   RefreshCw,
   Settings,
   ShieldCheck,
@@ -40,8 +38,6 @@ interface NavbarProps {
   onOpenNetworkModal?: () => void;
   jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
   isNetworkOnline?: boolean;
-  isSidebarExpanded?: boolean;
-  onToggleSidebar?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -59,8 +55,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenNetworkModal,
   jsonBinStatus = 'pending_keys',
   isNetworkOnline = true,
-  isSidebarExpanded = true,
-  onToggleSidebar,
 }) => {
   const formattedSyncTime = lastSyncTime
     ? new Date(lastSyncTime).toLocaleTimeString('fr-FR', {
@@ -98,7 +92,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-30 w-full border-b border-neutral-800 bg-[#07090e]/95 backdrop-blur-xl transition-all">
-      <div className="mx-auto flex h-14 sm:h-16 max-w-7xl items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8">
+      <div className="w-full flex h-14 sm:h-16 items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8">
         {/* Brand identity: White, Black & Yellow Crown (comme avant) */}
         <button
           onClick={() => onSelectTab('dashboard')}
@@ -120,7 +114,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </button>
 
-        {/* Action Controls & Left Sidebar Toggle */}
+        {/* Action Controls pushed to the right extremity */}
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           {/* Classic Sync Button: 100% UNLOCKED - NO 2FA BARRIER */}
           {!isIframe && (
@@ -208,27 +202,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             )}
           </div>
-
-          {/* Desktop Left Sidebar Collapse/Expand Toggle Button */}
-          {onToggleSidebar && (
-            <button
-              onClick={onToggleSidebar}
-              className="hidden lg:flex items-center gap-2 h-9 px-3 rounded-xl border border-neutral-800 bg-neutral-900 text-neutral-300 hover:text-[#facc15] hover:border-[#facc15]/40 hover:bg-[#facc15]/5 transition-all ml-1 shadow-sm"
-              title={isSidebarExpanded ? 'Fermer le menu latéral' : 'Ouvrir le menu latéral'}
-            >
-              {isSidebarExpanded ? (
-                <>
-                  <PanelLeftClose className="h-4 w-4 text-[#facc15]" />
-                  <span className="text-xs font-bold">Menu</span>
-                </>
-              ) : (
-                <>
-                  <PanelLeftOpen className="h-4 w-4 text-neutral-400" />
-                  <span className="text-xs font-bold text-neutral-400">Menu</span>
-                </>
-              )}
-            </button>
-          )}
         </div>
       </div>
 

@@ -617,8 +617,6 @@ export default function App() {
         onOpenNetworkModal={() => setNetworkModalOpen(true)}
         jsonBinStatus={jsonBinStatus}
         isNetworkOnline={isNetworkOnline}
-        isSidebarExpanded={isSidebarExpanded}
-        onToggleSidebar={handleToggleSidebar}
       />
 
       {/* Main Content Viewport - Fully responsive for Mobile, Tablet & PC */}
