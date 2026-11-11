@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <rect width="48" height="48" rx="14" fill="#07090e"/>
+  <rect width="48" height="48" rx="14" fill="none" stroke="#facc15" stroke-width="2"/>
+  <!-- Elegant Golden Chess Crown -->
+  <path d="M12 34h24v3H12v-3zm2-4l-3-15 8 6 5-9 5 9 8-6-3 15H14z" fill="#facc15"/>
+  <circle cx="11" cy="14" r="2.2" fill="#facc15"/>
+  <circle cx="24" cy="14" r="2.2" fill="#facc15"/>
+  <circle cx="37" cy="14" r="2.2" fill="#facc15"/>
+</svg>

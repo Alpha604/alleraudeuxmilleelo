@@ -16,6 +16,7 @@ import { Navbar, NavTab } from './components/Navbar';
 import { NotificationToast, ToastMessage } from './components/NotificationToast';
 import { MonthlyObjectiveCard } from './components/MonthlyObjectiveCard';
 import { NetworkAndJsonBinModal } from './components/NetworkAndJsonBinModal';
+import { Sidebar } from './components/Sidebar';
 import { SecurityModal } from './components/SecurityModal';
 import { SettingsView } from './components/SettingsView';
 import { SyncLog } from './components/SyncLog';
@@ -96,6 +97,27 @@ export default function App() {
   const [isNetworkOnline, setIsNetworkOnline] = useState<boolean>(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
+
+  // Desktop Right Sidebar collapse/expand state with persistence
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const stored = localStorage.getItem('roadto2000_sidebar_expanded');
+      return stored !== null ? stored === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const handleToggleSidebar = useCallback(() => {
+    setIsSidebarExpanded((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('roadto2000_sidebar_expanded', String(next));
+      } catch {}
+      return next;
+    });
+  }, []);
 
   // Apply theme to document element
   useEffect(() => {
@@ -548,12 +570,37 @@ export default function App() {
   }, [syncHistory, currentElo, settings.startElo, settings.targetElo, activeBestMode]);
 
   return (
-    <div className="min-h-screen bg-[#07090e] text-neutral-100 flex flex-col font-sans transition-colors relative selection:bg-[#facc15]/30 selection:text-white">
+    <div
+      className={`min-h-screen bg-[#07090e] text-neutral-100 flex flex-col font-sans transition-all duration-300 relative selection:bg-[#facc15]/30 selection:text-white ${
+        isSidebarExpanded ? 'lg:pl-64' : 'lg:pl-20'
+      }`}
+    >
       {/* Subtle Ambient Lighting in deep carbon and yellow tones */}
       <div className="fixed inset-0 pointer-events-none z-0">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[450px] bg-gradient-to-b from-white/[0.04] via-[#facc15]/[0.03] to-transparent blur-3xl opacity-70" />
         <div className="absolute top-[600px] right-0 w-[500px] h-[500px] bg-[#10b981]/[0.02] blur-3xl rounded-full" />
       </div>
+
+      {/* PC Web Left Sidebar (Ouvert: icônes + labels, Réduit: icônes seules avec tooltips) */}
+      <Sidebar
+        currentTab={currentTab}
+        onSelectTab={setCurrentTab}
+        onSync={() => performSync(true)}
+        isSyncing={isSyncing}
+        lastSyncTime={lastSyncTime}
+        isAdmin={isAdmin}
+        isIframe={isIframe}
+        onOpenSecurityModal={handleOpenSecurityModal}
+        onLockAdmin={handleLockAdmin}
+        onOpenNetworkModal={() => setNetworkModalOpen(true)}
+        jsonBinStatus={jsonBinStatus}
+        isNetworkOnline={isNetworkOnline}
+        profile={profile}
+        username={settings.username}
+        isExpanded={isSidebarExpanded}
+        onToggleExpanded={handleToggleSidebar}
+      />
+
       {/* Top Bar Navigation */}
       <Navbar
         currentTab={currentTab}
@@ -570,9 +617,11 @@ export default function App() {
         onOpenNetworkModal={() => setNetworkModalOpen(true)}
         jsonBinStatus={jsonBinStatus}
         isNetworkOnline={isNetworkOnline}
+        isSidebarExpanded={isSidebarExpanded}
+        onToggleSidebar={handleToggleSidebar}
       />
 
-      {/* Main Content Viewport - Fully responsive for Mobile & Tablet */}
+      {/* Main Content Viewport - Fully responsive for Mobile, Tablet & PC */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-24 sm:pb-8 space-y-5 sm:space-y-8">
         {/* TAB 1: DASHBOARD */}
         {currentTab === 'dashboard' && (

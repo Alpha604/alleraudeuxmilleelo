@@ -9,16 +9,15 @@ import {
   BarChart2,
   Calendar,
   CheckCircle2,
-  Cloud,
   Code2,
   Crown,
   Database,
   Lock,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCw,
   Settings,
   ShieldCheck,
-  Wifi,
-  WifiOff,
 } from 'lucide-react';
 import { ChessComProfileResponse } from '../types/chess';
 
@@ -41,6 +40,8 @@ interface NavbarProps {
   onOpenNetworkModal?: () => void;
   jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
   isNetworkOnline?: boolean;
+  isSidebarExpanded?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -58,6 +59,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenNetworkModal,
   jsonBinStatus = 'pending_keys',
   isNetworkOnline = true,
+  isSidebarExpanded = true,
+  onToggleSidebar,
 }) => {
   const formattedSyncTime = lastSyncTime
     ? new Date(lastSyncTime).toLocaleTimeString('fr-FR', {
@@ -79,10 +82,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const handleSyncClick = () => {
     if (isIframe) return;
-    if (!isAdmin) {
-      onOpenSecurityModal('Synchronisation Chess.com');
-      return;
-    }
+    // Classic sync button is completely unlocked (no 2FA requirement)
     onSync();
   };
 
@@ -97,9 +97,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-neutral-800 bg-[#07090e]/95 backdrop-blur-xl transition-all">
-      <div className="mx-auto flex h-14 sm:h-18 max-w-7xl items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8">
-        {/* Brand identity: White, Black & Yellow Crown */}
+    <header className="sticky top-0 z-30 w-full border-b border-neutral-800 bg-[#07090e]/95 backdrop-blur-xl transition-all">
+      <div className="mx-auto flex h-14 sm:h-16 max-w-7xl items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8">
+        {/* Brand identity: White, Black & Yellow Crown (comme avant) */}
         <button
           onClick={() => onSelectTab('dashboard')}
           className="group flex items-center gap-2.5 sm:gap-3 text-left transition-opacity hover:opacity-90 shrink-0"
@@ -120,69 +120,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </button>
 
-        {/* Central Segmented Navigation (Noir, Blanc, Jaune) - Desktop */}
-        <nav className="hidden lg:flex items-center p-1 rounded-2xl bg-neutral-900 border border-neutral-800 shadow-inner">
-          {navItems.map((item) => {
-            const isActive = currentTab === item.key;
-            return (
-              <button
-                key={item.key}
-                onClick={() => handleTabClick(item.key)}
-                className={`relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                  isActive
-                    ? 'bg-[#facc15] text-black shadow-md'
-                    : 'text-neutral-300 hover:text-white hover:bg-white/[0.05]'
-                }`}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-                {item.protected && !isAdmin && (
-                  <Lock className={`h-3 w-3 ${isActive ? 'text-black' : 'text-[#facc15]'}`} />
-                )}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Action Controls & User Identity */}
+        {/* Action Controls & Left Sidebar Toggle */}
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-          {/* Admin 2FA Badge: Green if active, Yellow if locked */}
-          {!isIframe && (
-            <div>
-              {isAdmin ? (
-                <button
-                  onClick={onLockAdmin}
-                  className="flex h-8 w-8 sm:h-auto sm:w-auto items-center justify-center gap-1.5 rounded-xl border border-[#10b981]/40 bg-[#10b981]/15 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-[#10b981] hover:bg-[#10b981]/25 transition-all"
-                  title="Session active. Cliquez pour verrouiller."
-                >
-                  <ShieldCheck className="h-4 w-4 text-[#10b981]" />
-                  <span className="hidden sm:inline">Admin Actif</span>
-                  <span className="text-[10px] opacity-75 border-l border-[#10b981]/40 pl-1.5 hidden md:inline">Verrouiller</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => onOpenSecurityModal('Espace Administrateur')}
-                  className="flex h-8 w-8 sm:h-auto sm:w-auto items-center justify-center gap-1.5 rounded-xl border border-[#facc15]/40 bg-[#facc15]/10 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-[#facc15] hover:bg-[#facc15]/20 transition-all shadow-[0_0_12px_rgba(250,204,21,0.15)]"
-                  title="Accès protégé par 2FA Authenticator. Cliquez pour déverrouiller."
-                >
-                  <Lock className="h-3.5 w-3.5 text-[#facc15]" />
-                  <span className="hidden sm:inline">2FA Verrouillé</span>
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Sync Button */}
+          {/* Classic Sync Button: 100% UNLOCKED - NO 2FA BARRIER */}
           {!isIframe && (
             <button
               onClick={handleSyncClick}
               disabled={isSyncing}
-              className={`flex h-8 w-8 sm:h-auto sm:w-auto items-center justify-center gap-2 rounded-xl px-2.5 sm:px-3.5 py-1.5 text-xs font-bold transition-all disabled:opacity-50 border ${
-                isAdmin
-                  ? 'border-[#facc15]/40 bg-neutral-900 text-[#facc15] hover:bg-[#facc15]/10 hover:border-[#facc15]'
-                  : 'border-neutral-800 bg-neutral-900 text-neutral-200 hover:text-white hover:border-neutral-700'
-              }`}
-              title={isAdmin ? 'Synchroniser les statistiques Chess.com' : 'Synchronisation protégée par 2FA'}
+              className="flex h-8 sm:h-9 items-center justify-center gap-2 rounded-xl px-2.5 sm:px-3.5 py-1.5 text-xs font-bold transition-all disabled:opacity-50 border border-[#facc15]/40 bg-neutral-900 text-[#facc15] hover:bg-[#facc15]/10 hover:border-[#facc15] shadow-[0_0_10px_rgba(250,204,21,0.12)] active:scale-95"
+              title="Synchroniser immédiatement avec l'API Chess.com (Libre d'accès)"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin text-[#facc15]' : ''}`} />
               <span className="hidden sm:inline">{isSyncing ? 'Sync...' : 'Synchroniser'}</span>
@@ -192,7 +138,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Live Network & JSONBin Status Button */}
           <button
             onClick={onOpenNetworkModal}
-            className={`flex h-8 w-8 sm:h-auto sm:w-auto items-center justify-center gap-1.5 rounded-xl border px-2 sm:px-2.5 py-1.5 text-xs font-bold transition-all ${
+            className={`flex h-8 sm:h-9 items-center justify-center gap-1.5 rounded-xl border px-2 sm:px-2.5 py-1.5 text-xs font-bold transition-all ${
               !isNetworkOnline
                 ? 'border-[#ef4444]/40 bg-[#ef4444]/15 text-[#ef4444] hover:bg-[#ef4444]/25'
                 : jsonBinStatus === 'synced'
@@ -205,7 +151,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <Database className="h-3.5 w-3.5 shrink-0" />
             <span className="hidden md:inline">
-              {jsonBinStatus === 'synced' ? 'JSONBin OK' : 'JSONBin'}
+              {jsonBinStatus === 'synced' ? 'JSONBin' : 'JSONBin'}
             </span>
             <span
               className={`h-2 w-2 rounded-full shrink-0 ${
@@ -218,6 +164,31 @@ export const Navbar: React.FC<NavbarProps> = ({
             />
           </button>
 
+          {/* Admin 2FA Badge: Green if active, Yellow if locked */}
+          {!isIframe && (
+            <div>
+              {isAdmin ? (
+                <button
+                  onClick={onLockAdmin}
+                  className="flex h-8 sm:h-9 items-center justify-center gap-1.5 rounded-xl border border-[#10b981]/40 bg-[#10b981]/15 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-[#10b981] hover:bg-[#10b981]/25 transition-all"
+                  title="Session active. Cliquez pour verrouiller."
+                >
+                  <ShieldCheck className="h-4 w-4 text-[#10b981]" />
+                  <span className="hidden md:inline">Admin</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => onOpenSecurityModal('Espace Administrateur')}
+                  className="flex h-8 sm:h-9 items-center justify-center gap-1.5 rounded-xl border border-[#facc15]/40 bg-[#facc15]/10 px-2 sm:px-2.5 py-1.5 text-xs font-bold text-[#facc15] hover:bg-[#facc15]/20 transition-all shadow-[0_0_12px_rgba(250,204,21,0.15)]"
+                  title="Accès protégé par 2FA Authenticator. Cliquez pour déverrouiller."
+                >
+                  <Lock className="h-3.5 w-3.5 text-[#facc15]" />
+                  <span className="hidden md:inline">2FA</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Player Avatar */}
           <div className="flex items-center pl-1 border-l border-neutral-800">
             {profile?.avatar ? (
@@ -225,18 +196,39 @@ export const Navbar: React.FC<NavbarProps> = ({
                 src={profile.avatar}
                 alt={profile.name || username}
                 referrerPolicy="no-referrer"
-                className="h-8 w-8 sm:h-9 sm:w-9 rounded-full border-2 border-[#facc15] object-cover shadow-[0_0_10px_rgba(250,204,21,0.25)]"
+                className="h-8 w-8 sm:h-9 sm:w-9 rounded-full border border-[#facc15] object-cover shadow-[0_0_10px_rgba(250,204,21,0.25)]"
                 title={`${profile.name || username} (@${username})`}
               />
             ) : (
               <div
-                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border-2 border-[#facc15] bg-neutral-900 text-xs font-black text-[#facc15]"
+                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border border-[#facc15] bg-neutral-900 text-xs font-black text-[#facc15]"
                 title={`@${username}`}
               >
                 {username.substring(0, 2).toUpperCase()}
               </div>
             )}
           </div>
+
+          {/* Desktop Left Sidebar Collapse/Expand Toggle Button */}
+          {onToggleSidebar && (
+            <button
+              onClick={onToggleSidebar}
+              className="hidden lg:flex items-center gap-2 h-9 px-3 rounded-xl border border-neutral-800 bg-neutral-900 text-neutral-300 hover:text-[#facc15] hover:border-[#facc15]/40 hover:bg-[#facc15]/5 transition-all ml-1 shadow-sm"
+              title={isSidebarExpanded ? 'Fermer le menu latéral' : 'Ouvrir le menu latéral'}
+            >
+              {isSidebarExpanded ? (
+                <>
+                  <PanelLeftClose className="h-4 w-4 text-[#facc15]" />
+                  <span className="text-xs font-bold">Menu</span>
+                </>
+              ) : (
+                <>
+                  <PanelLeftOpen className="h-4 w-4 text-neutral-400" />
+                  <span className="text-xs font-bold text-neutral-400">Menu</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
