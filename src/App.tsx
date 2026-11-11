@@ -695,6 +695,7 @@ export default function App() {
             isAdmin={isAdmin}
             isIframe={isIframe}
             onOpenSecurityModal={handleOpenSecurityModal}
+            startDateStr={settings.startDate}
           />
         )}
 

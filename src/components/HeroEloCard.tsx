@@ -81,14 +81,31 @@ export const HeroEloCard: React.FC<HeroEloCardProps> = ({
     timeZone: 'Europe/Paris',
   });
 
-  const milestones = [
-    { elo: 1500, label: 'Départ', pct: 0 },
-    { elo: 1600, label: 'Club', pct: 20 },
-    { elo: 1700, label: 'Intermédiaire', pct: 40 },
-    { elo: 1800, label: 'Avancé', pct: 60 },
-    { elo: 1900, label: 'Expert', pct: 80 },
-    { elo: 2000, label: 'Candidat Maître', pct: 100 },
-  ];
+  // Calculate exact mathematical positions for milestones along the progress bar
+  const milestoneRange = Math.max(1, targetElo - startElo);
+  const baseMilestones = [1500, 1600, 1700, 1800, 1900, 2000];
+  const allElos = Array.from(new Set([startElo, ...baseMilestones, targetElo]))
+    .filter((e) => e >= startElo && e <= targetElo)
+    .sort((a, b) => a - b);
+
+  const getMilestoneLabel = (elo: number) => {
+    if (elo === startElo) return 'Départ';
+    if (elo === targetElo) return 'Candidat Maître';
+    if (elo === 1600) return 'Club';
+    if (elo === 1700) return 'Intermédiaire';
+    if (elo === 1800) return 'Avancé';
+    if (elo === 1900) return 'Expert';
+    return `${elo}`;
+  };
+
+  const milestones = allElos.map((elo) => {
+    const rawPct = ((elo - startElo) / milestoneRange) * 100;
+    return {
+      elo,
+      label: getMilestoneLabel(elo),
+      pct: Math.min(100, Math.max(0, rawPct)),
+    };
+  });
 
   return (
     <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-[#0c0f14] shadow-2xl transition-all">
@@ -234,46 +251,93 @@ export const HeroEloCard: React.FC<HeroEloCardProps> = ({
             </div>
           </div>
 
-          {/* Master Progress Bar (Jaune vif #facc15) */}
-          <div className="relative h-3.5 sm:h-4 w-full rounded-full bg-neutral-950 p-0.5 border border-neutral-800 shadow-inner overflow-hidden">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-[#facc15] via-[#fde047] to-white transition-all duration-700 ease-out shadow-[0_0_15px_rgba(250,204,21,0.6)]"
-              style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}
-            />
-          </div>
+          {/* Master Progress Bar (Jaune vif #facc15) with Tick Marks */}
+          <div className="relative pt-2 pb-1">
+            <div className="relative h-4 sm:h-5 w-full rounded-full bg-neutral-950 p-0.5 border border-neutral-800 shadow-inner overflow-hidden">
+              {/* Glowing Progress Fill */}
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[#facc15] via-[#fde047] to-white transition-all duration-700 ease-out shadow-[0_0_15px_rgba(250,204,21,0.6)]"
+                style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}
+              />
 
-          {/* Steppers along the road */}
-          <div className="grid grid-cols-6 text-center text-xs font-mono pt-1.5 sm:pt-2">
-            {milestones.map((m) => {
-              const isPassed = currentElo >= m.elo;
-              const isTarget = !isPassed && currentElo >= m.elo - 100;
+              {/* Precise Vertical Tick Marks on the Bar (Petits traits sur la barre) */}
+              {milestones.map((m) => {
+                const isPassed = currentElo >= m.elo;
+                if (m.pct <= 0.5 || m.pct >= 99.5) return null;
+                return (
+                  <div
+                    key={`bar-tick-${m.elo}`}
+                    className={`absolute top-0 bottom-0 w-0.5 pointer-events-none transition-colors z-10 ${
+                      isPassed ? 'bg-black/40' : 'bg-white/20'
+                    }`}
+                    style={{ left: `${m.pct}%`, transform: 'translateX(-50%)' }}
+                    title={`${m.elo} Elo (${m.label})`}
+                  />
+                );
+              })}
+            </div>
 
-              return (
-                <div key={m.elo} className="flex flex-col items-center">
-                  <div className="flex items-center gap-0.5 sm:gap-1">
-                    {isPassed ? (
-                      <CheckCircle2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[#10b981]" />
-                    ) : isTarget ? (
-                      <span className="inline-block h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-[#facc15] animate-ping" />
-                    ) : (
-                      <span className="inline-block h-1 w-1 sm:h-1.5 sm:w-1.5 rounded-full bg-neutral-700" />
-                    )}
-                    <span
-                      className={`text-[11px] sm:text-xs font-bold ${
+            {/* Milestone Markers & Labels accurately positioned with tick marks */}
+            <div className="relative h-12 w-full mt-1.5 select-none">
+              {milestones.map((m) => {
+                const isPassed = currentElo >= m.elo;
+                const isTarget = !isPassed && currentElo >= m.elo - 100;
+
+                // Adjust horizontal transform so labels at 0% or 100% don't clip outside card
+                let transformStyle = 'translateX(-50%)';
+                if (m.pct <= 3) transformStyle = 'translateX(0%)';
+                else if (m.pct >= 97) transformStyle = 'translateX(-100%)';
+
+                return (
+                  <div
+                    key={m.elo}
+                    className="absolute top-0 flex flex-col items-center pointer-events-auto group"
+                    style={{
+                      left: `${m.pct}%`,
+                      transform: transformStyle,
+                    }}
+                  >
+                    {/* Tick Mark protruding directly below the bar */}
+                    <div
+                      className={`w-0.5 h-2 transition-colors ${
                         isPassed
-                          ? 'text-[#10b981]'
+                          ? 'bg-[#10b981]'
                           : isTarget
-                          ? 'text-[#facc15] font-black'
-                          : 'text-neutral-500'
+                          ? 'bg-[#facc15]'
+                          : 'bg-neutral-600'
                       }`}
-                    >
-                      {m.elo}
+                    />
+
+                    {/* Milestone badge / number */}
+                    <div className="flex items-center gap-0.5 mt-0.5">
+                      {isPassed ? (
+                        <CheckCircle2 className="h-3 w-3 text-[#10b981] shrink-0" />
+                      ) : isTarget ? (
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#facc15] animate-ping shrink-0" />
+                      ) : (
+                        <span className="inline-block h-1 w-1 rounded-full bg-neutral-600 shrink-0" />
+                      )}
+                      <span
+                        className={`text-[11px] sm:text-xs font-mono font-bold ${
+                          isPassed
+                            ? 'text-[#10b981]'
+                            : isTarget
+                            ? 'text-[#facc15] font-black'
+                            : 'text-neutral-500 group-hover:text-neutral-300'
+                        }`}
+                      >
+                        {m.elo}
+                      </span>
+                    </div>
+
+                    {/* Label */}
+                    <span className="text-[9px] sm:text-[10px] text-neutral-400 font-mono tracking-tight whitespace-nowrap mt-0.5 hidden sm:inline">
+                      {m.label}
                     </span>
                   </div>
-                  <span className="text-[10px] text-neutral-400 mt-0.5 hidden sm:inline">{m.label}</span>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
