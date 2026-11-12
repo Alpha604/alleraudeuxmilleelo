@@ -41,6 +41,8 @@ import {
 } from './utils/eloEngine';
 import { LoginPage } from './components/LoginPage';
 import { CreateAccountModal } from './components/CreateAccountModal';
+import { ProfileView } from './components/ProfileView';
+import { AdminAccountsManagerModal } from './components/AdminAccountsManagerModal';
 import {
   clearUserSession,
   getActiveUserSession,
@@ -69,6 +71,9 @@ export default function App() {
 
   // Account creation wizard state (Admin only)
   const [createAccountModalOpen, setCreateAccountModalOpen] = useState(false);
+
+  // Admin players and accounts manager state (Admin only)
+  const [adminAccountsManagerOpen, setAdminAccountsManagerOpen] = useState(false);
 
   // Admin 2FA Session state
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminSessionActive());
@@ -298,6 +303,16 @@ export default function App() {
   // Perform Chess.com synchronization
   const performSync = useCallback(
     async (manual = false, overrideUsername?: string) => {
+      if (userSession?.isSpectator) {
+        if (manual) {
+          showToast(
+            'Synchronisation désactivée en mode Spectateur pour préserver le quota JSONBin.',
+            'warning',
+            'Mode Spectateur'
+          );
+        }
+        return;
+      }
       const activeUser = (overrideUsername || settings.username).trim().toLowerCase();
       setIsSyncing(true);
       try {
@@ -391,7 +406,7 @@ export default function App() {
         setIsSyncing(false);
       }
     },
-    [settings, showToast]
+    [settings, showToast, userSession?.isSpectator]
   );
 
   // Cloud Reconciliation: Pull any syncs done on PC to Phone, or vice versa
@@ -742,6 +757,7 @@ export default function App() {
         onLogout={handleLogout}
         onSwitchAccount={handleSwitchAccount}
         onOpenCreateAccount={handleOpenCreateAccount}
+        onOpenAdminAccountsManager={() => setAdminAccountsManagerOpen(true)}
         sessionExpiresAt={userSession.expiresAt}
       />
 
@@ -766,6 +782,7 @@ export default function App() {
         onLogout={handleLogout}
         onSwitchAccount={handleSwitchAccount}
         onOpenCreateAccount={handleOpenCreateAccount}
+        onOpenAdminAccountsManager={() => setAdminAccountsManagerOpen(true)}
         sessionExpiresAt={userSession.expiresAt}
       />
 
@@ -898,6 +915,19 @@ export default function App() {
             onLockAdmin={handleLockAdmin}
           />
         )}
+
+        {/* TAB 8: PROFILE VIEW (On-site screen with player banner, big avatar photo, and stats) */}
+        {currentTab === 'profile' && (
+          <ProfileView
+            username={settings.username}
+            profile={profile}
+            stats={stats}
+            settings={settings}
+            isAdmin={isAdmin}
+            isSpectator={isSpectator}
+            onBackToDashboard={() => setCurrentTab('dashboard')}
+          />
+        )}
       </main>
 
       {/* Discrete Notification Toasts */}
@@ -944,6 +974,16 @@ export default function App() {
             showToast(`Compte @${newAcc} créé avec succès !`, 'success', 'Création de Compte');
           }}
           onShowMessage={showToast}
+        />
+      )}
+
+      {/* Admin-only Accounts & Players Manager Modal (Ban, Suspend, Regenerate A2F, Delete) */}
+      {adminAccountsManagerOpen && (
+        <AdminAccountsManagerModal
+          isOpen={adminAccountsManagerOpen}
+          onClose={() => setAdminAccountsManagerOpen(false)}
+          onOpenCreateAccount={() => setCreateAccountModalOpen(true)}
+          onNotify={showToast}
         />
       )}
 

@@ -44,6 +44,7 @@ interface SidebarProps {
   onLogout?: () => void;
   onSwitchAccount?: (newUsername: string) => void;
   onOpenCreateAccount?: () => void;
+  onOpenAdminAccountsManager?: () => void;
   sessionExpiresAt?: number;
 }
 
@@ -69,6 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout = () => {},
   onSwitchAccount = () => {},
   onOpenCreateAccount,
+  onOpenAdminAccountsManager,
   sessionExpiresAt,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -193,8 +195,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Action Controls Section: Classic Sync, JSONBin Status, 2FA */}
       <div className="border-t border-neutral-800/80 p-2.5 space-y-2 bg-[#090c12]/60">
-        {/* 1. Classic Sync Button: 100% UNLOCKED */}
-        {!isIframe && (
+        {/* Spectator Mode Indicator */}
+        {isSpectator && (
+          <div
+            className={`w-full flex items-center rounded-xl font-bold text-xs border border-sky-500/40 bg-sky-500/10 text-sky-400 ${
+              isExpanded ? 'gap-2.5 px-3 py-2' : 'justify-center p-2.5'
+            }`}
+          >
+            <span className="h-2 w-2 rounded-full bg-sky-400 shrink-0" />
+            {isExpanded && <span className="text-[11px] truncate font-sans">Mode Spectateur</span>}
+          </div>
+        )}
+
+        {/* 1. Classic Sync Button (Blocked in spectator mode) */}
+        {!isIframe && !isSpectator && (
           <button
             type="button"
             onClick={onSync}
@@ -224,49 +238,51 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         )}
 
-        {/* 2. JSONBin & Network Status */}
-        <button
-          type="button"
-          onClick={onOpenNetworkModal}
-          title={`Réseau : ${isNetworkOnline ? 'En ligne' : 'Déconnecté'} · JSONBin : ${
-            jsonBinStatus === 'synced' ? 'Synchronisé' : 'En attente'
-          }`}
-          className={`w-full flex items-center rounded-xl font-bold text-xs transition-all border ${
-            isExpanded
-              ? 'gap-2.5 px-3 py-2 bg-black/40 hover:bg-neutral-900/90'
-              : 'justify-center p-2.5 bg-black/40 hover:bg-neutral-900/90'
-          } ${
-            !isNetworkOnline
-              ? 'border-[#ef4444]/40 text-[#ef4444]'
-              : jsonBinStatus === 'synced'
-              ? 'border-[#10b981]/40 text-[#10b981]'
-              : 'border-[#facc15]/40 text-[#facc15]'
-          }`}
-        >
-          <Database className="h-4 w-4 shrink-0" />
-          {isExpanded && (
-            <div className="flex-1 flex items-center justify-between text-left leading-tight">
-              <span className="text-neutral-200">Cache Cloud</span>
-              <span
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono ${
-                  jsonBinStatus === 'synced'
-                    ? 'bg-[#10b981]/20 text-[#10b981]'
-                    : 'bg-[#facc15]/20 text-[#facc15]'
-                }`}
-              >
+        {/* 2. JSONBin & Network Status (Hidden in spectator mode) */}
+        {!isSpectator && (
+          <button
+            type="button"
+            onClick={onOpenNetworkModal}
+            title={`Réseau : ${isNetworkOnline ? 'En ligne' : 'Déconnecté'} · JSONBin : ${
+              jsonBinStatus === 'synced' ? 'Synchronisé' : 'En attente'
+            }`}
+            className={`w-full flex items-center rounded-xl font-bold text-xs transition-all border ${
+              isExpanded
+                ? 'gap-2.5 px-3 py-2 bg-black/40 hover:bg-neutral-900/90'
+                : 'justify-center p-2.5 bg-black/40 hover:bg-neutral-900/90'
+            } ${
+              !isNetworkOnline
+                ? 'border-[#ef4444]/40 text-[#ef4444]'
+                : jsonBinStatus === 'synced'
+                ? 'border-[#10b981]/40 text-[#10b981]'
+                : 'border-[#facc15]/40 text-[#facc15]'
+            }`}
+          >
+            <Database className="h-4 w-4 shrink-0" />
+            {isExpanded && (
+              <div className="flex-1 flex items-center justify-between text-left leading-tight">
+                <span className="text-neutral-200">Cache Cloud</span>
                 <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    jsonBinStatus === 'synced' ? 'bg-[#10b981]' : 'bg-[#facc15]'
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                    jsonBinStatus === 'synced'
+                      ? 'bg-[#10b981]/20 text-[#10b981]'
+                      : 'bg-[#facc15]/20 text-[#facc15]'
                   }`}
-                />
-                {jsonBinStatus === 'synced' ? 'OK' : 'Attente'}
-              </span>
-            </div>
-          )}
-        </button>
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      jsonBinStatus === 'synced' ? 'bg-[#10b981]' : 'bg-[#facc15]'
+                    }`}
+                  />
+                  {jsonBinStatus === 'synced' ? 'OK' : 'Attente'}
+                </span>
+              </div>
+            )}
+          </button>
+        )}
 
-        {/* 3. Admin 2FA */}
-        {!isIframe && (
+        {/* 3. Admin 2FA (Hidden in spectator mode) */}
+        {!isIframe && !isSpectator && (
           <div>
             {isAdmin ? (
               <button
@@ -355,6 +371,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onSwitchAccount={onSwitchAccount}
           sessionExpiresAt={sessionExpiresAt}
           onOpenCreateAccount={onOpenCreateAccount}
+          onOpenAdminAccountsManager={onOpenAdminAccountsManager}
           placement="sidebar-bottom"
         />
       </div>

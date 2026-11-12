@@ -12,15 +12,17 @@ import {
   Code2,
   Crown,
   Database,
+  Eye,
   Lock,
   RefreshCw,
   Settings,
   ShieldCheck,
+  User,
 } from 'lucide-react';
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
 import { UserDropdown } from './UserDropdown';
 
-export type NavTab = 'dashboard' | 'charts' | 'calendar' | 'history' | 'tests' | 'iframe' | 'settings';
+export type NavTab = 'dashboard' | 'charts' | 'calendar' | 'history' | 'tests' | 'iframe' | 'settings' | 'profile';
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -44,6 +46,7 @@ interface NavbarProps {
   onLogout?: () => void;
   onSwitchAccount?: (newUsername: string) => void;
   onOpenCreateAccount?: () => void;
+  onOpenAdminAccountsManager?: () => void;
   sessionExpiresAt?: number;
 }
 
@@ -67,6 +70,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout = () => {},
   onSwitchAccount = () => {},
   onOpenCreateAccount,
+  onOpenAdminAccountsManager,
   sessionExpiresAt,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -93,7 +97,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const handleSyncClick = () => {
     if (isIframe || isSpectator) return;
-    // Classic sync button is completely unlocked (no 2FA requirement)
     onSync();
   };
 
@@ -133,50 +136,58 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Action Controls pushed to the right extremity */}
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-          {/* Classic Sync Button: 100% UNLOCKED - NO 2FA BARRIER */}
-          {!isIframe && (
+          {/* Spectator Mode Indicator */}
+          {isSpectator && (
+            <div className="flex h-8 sm:h-9 items-center justify-center gap-1.5 rounded-xl border border-sky-500/40 bg-sky-500/15 px-2.5 sm:px-3 text-xs font-bold text-sky-400">
+              <Eye className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Spectateur (Lecture Seule)</span>
+            </div>
+          )}
+
+          {/* Classic Sync Button (Blocked in spectator mode to preserve quota) */}
+          {!isIframe && !isSpectator && (
             <button
               onClick={handleSyncClick}
               disabled={isSyncing}
               className="flex h-8 sm:h-9 items-center justify-center gap-2 rounded-xl px-2.5 sm:px-3.5 py-1.5 text-xs font-bold transition-all disabled:opacity-50 border border-[#facc15]/40 bg-neutral-900 text-[#facc15] hover:bg-[#facc15]/10 hover:border-[#facc15] shadow-[0_0_10px_rgba(250,204,21,0.12)] active:scale-95"
-              title="Synchroniser immédiatement avec l'API Chess.com (Libre d'accès)"
+              title="Synchroniser immédiatement avec l'API Chess.com"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin text-[#facc15]' : ''}`} />
               <span className="hidden sm:inline">{isSyncing ? 'Sync...' : 'Synchroniser'}</span>
             </button>
           )}
 
-          {/* Live Network & JSONBin Status Button */}
-          <button
-            onClick={onOpenNetworkModal}
-            className={`flex h-8 sm:h-9 items-center justify-center gap-1.5 rounded-xl border px-2 sm:px-2.5 py-1.5 text-xs font-bold transition-all ${
-              !isNetworkOnline
-                ? 'border-[#ef4444]/40 bg-[#ef4444]/15 text-[#ef4444] hover:bg-[#ef4444]/25'
-                : jsonBinStatus === 'synced'
-                ? 'border-[#10b981]/40 bg-[#10b981]/15 text-[#10b981] hover:bg-[#10b981]/25'
-                : 'border-[#facc15]/40 bg-[#facc15]/10 text-[#facc15] hover:bg-[#facc15]/20'
-            }`}
-            title={`Réseau : ${isNetworkOnline ? 'En ligne' : 'Déconnecté'} · JSONBin : ${
-              jsonBinStatus === 'synced' ? 'Synchronisé' : jsonBinStatus === 'syncing' ? 'Synchro en cours...' : 'En attente de clés'
-            } (Cliquez pour afficher les détails)`}
-          >
-            <Database className="h-3.5 w-3.5 shrink-0" />
-            <span className="hidden md:inline">
-              {jsonBinStatus === 'synced' ? 'JSONBin' : 'JSONBin'}
-            </span>
-            <span
-              className={`h-2 w-2 rounded-full shrink-0 ${
+          {/* Live Network & JSONBin Status Button (Completely HIDDEN in spectator mode to protect bin ID & credentials) */}
+          {!isSpectator && (
+            <button
+              onClick={onOpenNetworkModal}
+              className={`flex h-8 sm:h-9 items-center justify-center gap-1.5 rounded-xl border px-2 sm:px-2.5 py-1.5 text-xs font-bold transition-all ${
                 !isNetworkOnline
-                  ? 'bg-[#ef4444]'
+                  ? 'border-[#ef4444]/40 bg-[#ef4444]/15 text-[#ef4444] hover:bg-[#ef4444]/25'
                   : jsonBinStatus === 'synced'
-                  ? 'bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.7)]'
-                  : 'bg-[#facc15] shadow-[0_0_8px_rgba(250,204,21,0.7)]'
+                  ? 'border-[#10b981]/40 bg-[#10b981]/15 text-[#10b981] hover:bg-[#10b981]/25'
+                  : 'border-[#facc15]/40 bg-[#facc15]/10 text-[#facc15] hover:bg-[#facc15]/20'
               }`}
-            />
-          </button>
+              title={`Réseau : ${isNetworkOnline ? 'En ligne' : 'Déconnecté'} · JSONBin : ${
+                jsonBinStatus === 'synced' ? 'Synchronisé' : jsonBinStatus === 'syncing' ? 'Synchro en cours...' : 'En attente de clés'
+              }`}
+            >
+              <Database className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden md:inline">JSONBin</span>
+              <span
+                className={`h-2 w-2 rounded-full shrink-0 ${
+                  !isNetworkOnline
+                    ? 'bg-[#ef4444]'
+                    : jsonBinStatus === 'synced'
+                    ? 'bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.7)]'
+                    : 'bg-[#facc15] shadow-[0_0_8px_rgba(250,204,21,0.7)]'
+                }`}
+              />
+            </button>
+          )}
 
-          {/* Admin 2FA Badge: Green if active, Yellow if locked */}
-          {!isIframe && (
+          {/* Admin 2FA Badge: Green if active, Yellow if locked (Hidden in spectator mode) */}
+          {!isIframe && !isSpectator && (
             <div>
               {isAdmin ? (
                 <button
@@ -239,6 +250,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               onSwitchAccount={onSwitchAccount}
               sessionExpiresAt={sessionExpiresAt}
               onOpenCreateAccount={onOpenCreateAccount}
+              onOpenAdminAccountsManager={onOpenAdminAccountsManager}
               placement="bottom-right"
             />
           </div>

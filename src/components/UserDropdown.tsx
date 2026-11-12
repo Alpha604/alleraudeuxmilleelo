@@ -11,8 +11,9 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
+  Crown,
   ExternalLink,
-  Flame,
+  Eye,
   KeyRound,
   Lock,
   LogOut,
@@ -20,7 +21,9 @@ import {
   ShieldAlert,
   ShieldCheck,
   User,
+  UserCheck,
   UserPlus,
+  Users,
   Zap,
 } from 'lucide-react';
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
@@ -40,6 +43,7 @@ interface UserDropdownProps {
   onLogout: () => void;
   onSwitchAccount: (newUsername: string) => void;
   onOpenCreateAccount?: () => void;
+  onOpenAdminAccountsManager?: () => void;
   sessionExpiresAt?: number;
   placement?: 'bottom-right' | 'top-right' | 'sidebar-bottom';
 }
@@ -58,6 +62,7 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
   onLogout,
   onSwitchAccount,
   onOpenCreateAccount,
+  onOpenAdminAccountsManager,
   sessionExpiresAt,
   placement = 'bottom-right',
 }) => {
@@ -137,6 +142,103 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
     positionClasses = 'right-0 bottom-full mb-2';
   }
 
+  // ========================================================
+  // 1. STRICTLY RESTRICTED MINIMAL DROPDOWN FOR SPECTATOR MODE
+  // "je ne veux pas non plus qu'il puisse ouvrir le menu déroulant
+  //  du compte visioné en entier donc met seulemment :
+  //  changer de compte, profil etc mais pas le reste"
+  // ========================================================
+  if (isSpectator) {
+    return (
+      <div
+        ref={dropdownRef}
+        className={`absolute ${positionClasses} z-50 w-72 sm:w-80 rounded-2xl border border-sky-500/30 bg-[#0c0f14]/98 backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.85)] overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-left`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header minimal info */}
+        <div className="relative p-4 border-b border-neutral-800/80 bg-sky-950/20">
+          <div className="flex items-center gap-3">
+            {profile?.avatar ? (
+              <img
+                src={profile.avatar}
+                alt={profile.name || username}
+                referrerPolicy="no-referrer"
+                className="h-10 w-10 rounded-xl border border-sky-400 object-cover shrink-0 shadow-md"
+              />
+            ) : (
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-sky-400 bg-neutral-900 text-xs font-black text-sky-400 shrink-0">
+                {username.substring(0, 2).toUpperCase()}
+              </div>
+            )}
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-white truncate">
+                  {profile?.name || username}
+                </span>
+                <span className="px-1.5 py-0.2 rounded bg-sky-500/20 border border-sky-500/40 text-sky-400 text-[9px] font-black uppercase shrink-0">
+                  Spectateur
+                </span>
+              </div>
+              <span className="text-[11px] font-mono text-neutral-400 truncate block">
+                @{username}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Minimal Actions for Spectator */}
+        <div className="p-2 space-y-1 text-xs">
+          {/* 1. Profil on-site */}
+          <button
+            type="button"
+            onClick={() => handleTabClick('profile')}
+            className="w-full flex items-center justify-between p-2 rounded-xl text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition-colors"
+          >
+            <div className="flex items-center gap-2.5">
+              <User className="h-4 w-4 text-[#facc15]" />
+              <span>Voir le Profil & Stats</span>
+            </div>
+            <ArrowRight className="h-3.5 w-3.5 text-neutral-500" />
+          </button>
+
+          {/* 2. Changer de compte */}
+          <button
+            type="button"
+            onClick={() => {
+              onLogout();
+              onClose();
+            }}
+            className="w-full flex items-center justify-between p-2 rounded-xl text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition-colors"
+          >
+            <div className="flex items-center gap-2.5">
+              <KeyRound className="h-4 w-4 text-sky-400" />
+              <span>Changer de Compte</span>
+            </div>
+          </button>
+
+          {/* Quitter mode spectateur */}
+          <div className="pt-1 border-t border-neutral-800/80 mt-1">
+            <button
+              type="button"
+              onClick={() => {
+                onLogout();
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 p-2 rounded-xl text-[#ef4444] hover:bg-[#ef4444]/15 transition-colors font-bold"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Quitter le Mode Spectateur</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ========================================================
+  // 2. FULL AUTHORIZED USER DROPDOWN (CONNECTED)
+  // ========================================================
   return (
     <div
       ref={dropdownRef}
@@ -180,10 +282,6 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
                 {isAlphaRomeo ? (
                   <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-[#facc15]/20 border border-[#facc15]/40 text-[#facc15] text-[9px] font-black uppercase tracking-wider shrink-0">
                     Admin
-                  </span>
-                ) : isSpectator ? (
-                  <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-sky-500/20 border border-sky-500/40 text-sky-400 text-[9px] font-black uppercase tracking-wider shrink-0">
-                    Spectateur
                   </span>
                 ) : (
                   <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-[9px] font-black uppercase tracking-wider shrink-0">
@@ -234,21 +332,22 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
 
       {/* 2. Menu Items List */}
       <div className="p-2 space-y-1 text-xs">
-        {/* Profile on Chess.com */}
-        <a
-          href={`https://www.chess.com/member/${username}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="w-full flex items-center justify-between p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800/70 transition-colors group"
+        {/* On-Site Profile with Hero & Big Photo ("Profil Chess.com") */}
+        <button
+          type="button"
+          onClick={() => handleTabClick('profile')}
+          className="w-full flex items-center justify-between p-2 rounded-xl text-neutral-200 hover:text-white hover:bg-neutral-800/70 transition-colors group"
         >
           <div className="flex items-center gap-2.5">
             <User className="h-4 w-4 text-[#facc15]" />
-            <span>Profil Chess.com</span>
+            <span className="font-bold">Page Profil & Grande Bannière</span>
           </div>
-          <ExternalLink className="h-3.5 w-3.5 text-neutral-500 group-hover:text-white" />
-        </a>
+          <span className="text-[10px] px-2 py-0.5 rounded-md bg-[#facc15]/10 text-[#facc15] font-mono">
+            Voir
+          </span>
+        </button>
 
-        {/* Statistiques / Dashboard */}
+        {/* Statistiques / Courbe Elo */}
         <button
           type="button"
           onClick={() => handleTabClick('charts')}
@@ -273,23 +372,21 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
         </button>
 
         {/* Paramètres */}
-        {!isSpectator && (
-          <button
-            type="button"
-            onClick={() => handleTabClick('settings')}
-            className="w-full flex items-center justify-between p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800/70 transition-colors"
-          >
-            <div className="flex items-center gap-2.5">
-              <Settings className="h-4 w-4 text-[#facc15]" />
-              <span>Paramètres du Projet</span>
-            </div>
-            {!isAdmin && <Lock className="h-3 w-3 text-neutral-500" />}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => handleTabClick('settings')}
+          className="w-full flex items-center justify-between p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800/70 transition-colors"
+        >
+          <div className="flex items-center gap-2.5">
+            <Settings className="h-4 w-4 text-[#facc15]" />
+            <span>Paramètres du Projet</span>
+          </div>
+          {!isAdmin && <Lock className="h-3 w-3 text-neutral-500" />}
+        </button>
 
         {/* Panel ADMIN (AlphaRoméo exclusif) */}
         {isAlphaRomeo && (
-          <div className="pt-1 border-t border-neutral-800/60 my-1">
+          <div className="pt-1 border-t border-neutral-800/60 my-1 space-y-1">
             <div className="px-2 py-1 flex items-center justify-between text-[11px] font-bold text-[#facc15]">
               <span className="flex items-center gap-1.5">
                 <ShieldAlert className="h-3.5 w-3.5" />
@@ -301,7 +398,7 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
                   onClick={onLockAdmin}
                   className="text-[10px] px-2 py-0.5 rounded bg-[#10b981]/20 text-[#10b981] border border-[#10b981]/40 hover:bg-[#10b981]/30 transition-colors"
                 >
-                  2FA Déverrouillé (Verrouiller)
+                  2FA Déverrouillé
                 </button>
               ) : (
                 <button
@@ -309,18 +406,25 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
                   onClick={() => onOpenSecurityModal('Panel Administrateur')}
                   className="text-[10px] px-2 py-0.5 rounded bg-[#facc15] text-black font-black hover:bg-[#eab308] transition-colors"
                 >
-                  Déverrouiller 2FA
+                  Déverrouiller
                 </button>
               )}
             </div>
 
+            {/* Admin Accounts Manager: Ban / Suspend / Regenerate A2F / Delete */}
             <button
               type="button"
-              onClick={() => handleTabClick('tests')}
-              className="w-full flex items-center gap-2.5 p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800/70 transition-colors text-xs"
+              onClick={() => {
+                onClose();
+                if (onOpenAdminAccountsManager) onOpenAdminAccountsManager();
+              }}
+              className="w-full flex items-center justify-between p-2 rounded-xl text-neutral-200 hover:text-white bg-neutral-900/80 hover:bg-neutral-800 border border-neutral-800 transition-all text-xs font-bold"
             >
-              <CheckCircle2 className="h-4 w-4 text-[#10b981]" />
-              <span>Suite de Tests & Diagnostics Moteur</span>
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-[#facc15]" />
+                <span>Gestion des Joueurs & Comptes</span>
+              </div>
+              <span className="text-[10px] text-[#facc15] font-mono">Ban / A2F</span>
             </button>
 
             {/* Create Account Wizard (Admin only) */}
@@ -330,13 +434,23 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
                 onClose();
                 if (onOpenCreateAccount) onOpenCreateAccount();
               }}
-              className="w-full flex items-center justify-between p-2 rounded-xl text-neutral-200 hover:text-white bg-[#facc15]/10 hover:bg-[#facc15]/20 border border-[#facc15]/30 transition-all text-xs font-bold mt-1"
+              className="w-full flex items-center justify-between p-2 rounded-xl text-neutral-200 hover:text-white bg-[#facc15]/10 hover:bg-[#facc15]/20 border border-[#facc15]/30 transition-all text-xs font-bold"
             >
               <div className="flex items-center gap-2">
                 <UserPlus className="h-4 w-4 text-[#facc15]" />
                 <span>Créer un Compte Joueur</span>
               </div>
               <span className="text-[10px] text-[#facc15] font-black uppercase tracking-wider">A2F + Bin</span>
+            </button>
+
+            {/* Diagnostic Tests */}
+            <button
+              type="button"
+              onClick={() => handleTabClick('tests')}
+              className="w-full flex items-center gap-2.5 p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800/70 transition-colors text-xs"
+            >
+              <CheckCircle2 className="h-4 w-4 text-[#10b981]" />
+              <span>Suite de Tests & Diagnostics</span>
             </button>
           </div>
         )}
