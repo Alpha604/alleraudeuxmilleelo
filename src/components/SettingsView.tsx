@@ -18,6 +18,7 @@ import {
   Globe,
   KeyRound,
   Lock,
+  Monitor,
   Moon,
   Plus,
   RefreshCw,
@@ -126,6 +127,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       binId: binIdInput.trim(),
       apiKey: apiKeyInput.trim(),
       enabled: true,
+      username: form.username,
     });
     setIsSavingBin(false);
     if (res.success) {
@@ -586,30 +588,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <label className="block text-xs font-medium text-neutral-300 mb-2">
                 Thème d'affichage
               </label>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setForm({ ...form, theme: 'dark' })}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
                     form.theme === 'dark'
-                      ? 'border-[#facc15] bg-[#facc15]/15 text-[#facc15]'
-                      : 'border-neutral-800 bg-neutral-950 text-neutral-400'
+                      ? 'border-[#facc15] bg-[#facc15]/15 text-[#facc15] shadow-sm'
+                      : 'border-neutral-800 bg-neutral-950 text-neutral-400 hover:text-white'
                   }`}
                 >
                   <Moon className="h-4 w-4" />
-                  <span>Noir Charbon / Or Doux (Défaut)</span>
+                  <span>Sombre</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setForm({ ...form, theme: 'light' })}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
                     form.theme === 'light'
-                      ? 'border-[#facc15] bg-[#facc15]/15 text-[#facc15]'
-                      : 'border-neutral-800 bg-neutral-950 text-neutral-400'
+                      ? 'border-[#facc15] bg-[#facc15]/15 text-[#facc15] shadow-sm'
+                      : 'border-neutral-800 bg-neutral-950 text-neutral-400 hover:text-white'
                   }`}
                 >
                   <Sun className="h-4 w-4" />
-                  <span>Mode Clair</span>
+                  <span>Clair</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, theme: 'system' })}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
+                    form.theme === 'system'
+                      ? 'border-[#facc15] bg-[#facc15]/15 text-[#facc15] shadow-sm'
+                      : 'border-neutral-800 bg-neutral-950 text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  <Monitor className="h-4 w-4" />
+                  <span>Système</span>
                 </button>
               </div>
             </div>

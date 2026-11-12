@@ -39,10 +39,16 @@ import {
   getProjectTimeMetrics,
   MODE_START_ELOS,
 } from './utils/eloEngine';
+import { LoginPage } from './components/LoginPage';
+import { CreateAccountModal } from './components/CreateAccountModal';
 import {
+  clearUserSession,
+  getActiveUserSession,
   isAdminSessionActive,
   isRunningInIframe,
   revokeAdminSession,
+  saveUserSession,
+  UserSession,
 } from './utils/security';
 import {
   addSyncRecord,
@@ -58,15 +64,25 @@ export default function App() {
   // Strict Iframe & Embed Mode Detection
   const isIframe = useMemo(() => isRunningInIframe(), []);
 
+  // Active 24-hour User Session state
+  const [userSession, setUserSession] = useState<UserSession | null>(() => getActiveUserSession());
+
+  // Account creation wizard state (Admin only)
+  const [createAccountModalOpen, setCreateAccountModalOpen] = useState(false);
+
   // Admin 2FA Session state
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminSessionActive());
   const [securityModalOpen, setSecurityModalOpen] = useState(false);
   const [securityModalTitle, setSecurityModalTitle] = useState('Accès Protégé');
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
-  // Load settings from local persistent storage
+  // Load settings from local persistent storage (bound to active user session if available)
   const [settings, setSettings] = useState<AppSettings>(() => {
     const s = getStoredSettings();
+    const active = getActiveUserSession();
+    if (active && active.username) {
+      s.username = active.username;
+    }
     purgeLegacyAndStaleData(s.username);
     return s;
   });
@@ -74,7 +90,9 @@ export default function App() {
   // Sync history strictly bound to active username
   const [syncHistory, setSyncHistory] = useState<SyncRecord[]>(() => {
     const s = getStoredSettings();
-    return getStoredSyncHistory(s.username);
+    const active = getActiveUserSession();
+    const targetUser = active?.username || s.username;
+    return getStoredSyncHistory(targetUser);
   });
 
   // Navigation tab
@@ -86,7 +104,9 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
     const s = getStoredSettings();
-    const history = getStoredSyncHistory(s.username);
+    const active = getActiveUserSession();
+    const targetUser = active?.username || s.username;
+    const history = getStoredSyncHistory(targetUser);
     return history.length > 0 ? history[0].timestamp : null;
   });
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -119,13 +139,37 @@ export default function App() {
     });
   }, []);
 
-  // Apply theme to document element
+  // Apply theme to document element (supporting dark, light, and system auto-detection)
   useEffect(() => {
     const root = document.documentElement;
-    if (settings.theme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
+    const applyTheme = (theme: 'dark' | 'light' | 'system') => {
+      if (theme === 'system') {
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (prefersDark) {
+          root.classList.add('dark');
+        } else {
+          root.classList.remove('dark');
+        }
+      } else if (theme === 'dark') {
+        root.classList.add('dark');
+      } else {
+        root.classList.remove('dark');
+      }
+    };
+
+    applyTheme(settings.theme);
+
+    if (settings.theme === 'system') {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const handler = (e: MediaQueryListEvent) => {
+        if (e.matches) {
+          root.classList.add('dark');
+        } else {
+          root.classList.remove('dark');
+        }
+      };
+      mediaQuery.addEventListener('change', handler);
+      return () => mediaQuery.removeEventListener('change', handler);
     }
   }, [settings.theme]);
 
@@ -184,13 +228,6 @@ export default function App() {
     };
   }, []);
 
-  // In iframe mode, ensure user cannot remain on settings or tests tab
-  useEffect(() => {
-    if (isIframe && (currentTab === 'settings' || currentTab === 'tests')) {
-      setCurrentTab('dashboard');
-    }
-  }, [isIframe, currentTab]);
-
   // Toast notification helper
   const showToast = useCallback((message: string, type: 'info' | 'success' | 'warning' = 'info', title = 'Road to 2000') => {
     const newToast: ToastMessage = {
@@ -208,6 +245,22 @@ export default function App() {
   const dismissToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  // In spectator or iframe mode, ensure user cannot access restricted tabs
+  useEffect(() => {
+    if (userSession?.isSpectator) {
+      if (currentTab === 'history' || currentTab === 'iframe' || currentTab === 'settings' || currentTab === 'tests') {
+        setCurrentTab('dashboard');
+        showToast(
+          'Accès restreint : le Journal Syncs et les réglages sont réservés aux comptes connectés.',
+          'warning',
+          'Mode Spectateur'
+        );
+      }
+    } else if (isIframe && (currentTab === 'settings' || currentTab === 'tests')) {
+      setCurrentTab('dashboard');
+    }
+  }, [userSession?.isSpectator, isIframe, currentTab, showToast]);
 
   // Open Security Modal with custom title and optional callback upon unlock
   const handleOpenSecurityModal = useCallback((title: string = 'Accès Protégé', onGranted?: () => void) => {
@@ -456,9 +509,81 @@ export default function App() {
     performSync(true, activeUser);
   };
 
-  // Toggle Theme
+  // Handle successful login from LoginPage (with credentials / 2FA / spectator)
+  const handleLoginSuccess = useCallback(
+    (loggedUser: string, adminUnlocked: boolean, isSpectator = false) => {
+      const cleanUser = loggedUser.trim().toLowerCase();
+      saveUserSession(cleanUser, isSpectator);
+      setUserSession(getActiveUserSession());
+      if (adminUnlocked) {
+        setIsAdmin(true);
+      } else {
+        setIsAdmin(false);
+      }
+
+      // Switch active account and reset stats
+      setStats(null);
+      setProfile(undefined);
+      setLastSyncTime(null);
+
+      const updatedSettings: AppSettings = {
+        ...settings,
+        username: cleanUser,
+      };
+      setSettings(updatedSettings);
+      saveStoredSettings(updatedSettings);
+
+      handleAccountSwitch(cleanUser);
+      const newUserHistory = getStoredSyncHistory(cleanUser);
+      setSyncHistory(newUserHistory);
+
+      showToast(
+        isSpectator
+          ? `Accès en mode Spectateur pour @${cleanUser} (Lecture Seule).`
+          : `Bienvenue @${cleanUser} ! Session active pour 24 heures.`,
+        'success',
+        isSpectator ? 'Mode Spectateur' : 'Connexion réussie'
+      );
+
+      performSync(true, cleanUser);
+    },
+    [settings, performSync, showToast]
+  );
+
+  // User logout
+  const handleLogout = useCallback(() => {
+    clearUserSession();
+    revokeAdminSession();
+    setIsAdmin(false);
+    setUserSession(null);
+    showToast('Vous avez été déconnecté avec succès.', 'info', 'Déconnexion');
+  }, [showToast]);
+
+  // Account switch from user dropdown
+  const handleSwitchAccount = useCallback(
+    (newUsername: string) => {
+      handleLoginSuccess(newUsername, false, false);
+    },
+    [handleLoginSuccess]
+  );
+
+  // Open Account Creation Wizard (Protected by Admin 2FA)
+  const handleOpenCreateAccount = useCallback(() => {
+    if (!isAdmin) {
+      handleOpenSecurityModal('Création de Compte Joueur (2FA)', () => setCreateAccountModalOpen(true));
+    } else {
+      setCreateAccountModalOpen(true);
+    }
+  }, [isAdmin, handleOpenSecurityModal]);
+
+  // Toggle Theme cycling (dark -> light -> system)
   const handleToggleTheme = () => {
-    const nextTheme = settings.theme === 'dark' ? 'light' : 'dark';
+    const cycleMap: Record<'dark' | 'light' | 'system', 'dark' | 'light' | 'system'> = {
+      dark: 'light',
+      light: 'system',
+      system: 'dark',
+    };
+    const nextTheme = cycleMap[settings.theme] || 'dark';
     const updated: AppSettings = { ...settings, theme: nextTheme };
     setSettings(updated);
     saveStoredSettings(updated);
@@ -569,6 +694,19 @@ export default function App() {
     };
   }, [syncHistory, currentElo, settings.startElo, settings.targetElo, activeBestMode]);
 
+  // When no active user session exists, display the complete Login Page
+  if (!userSession) {
+    return (
+      <LoginPage
+        onLoginSuccess={handleLoginSuccess}
+        defaultUsername={settings.username}
+      />
+    );
+  }
+
+  const isSpectator = !!userSession.isSpectator;
+  const effectiveIsIframe = isIframe || isSpectator;
+
   return (
     <div
       className={`min-h-screen bg-[#07090e] text-neutral-100 flex flex-col font-sans transition-all duration-300 relative selection:bg-[#facc15]/30 selection:text-white ${
@@ -581,7 +719,7 @@ export default function App() {
         <div className="absolute top-[600px] right-0 w-[500px] h-[500px] bg-[#10b981]/[0.02] blur-3xl rounded-full" />
       </div>
 
-      {/* PC Web Left Sidebar (Ouvert: icônes + labels, Réduit: icônes seules avec tooltips) */}
+      {/* PC Web Left Sidebar (with integrated Dropdown Menu on account click) */}
       <Sidebar
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
@@ -589,19 +727,25 @@ export default function App() {
         isSyncing={isSyncing}
         lastSyncTime={lastSyncTime}
         isAdmin={isAdmin}
-        isIframe={isIframe}
+        isIframe={effectiveIsIframe}
+        isSpectator={isSpectator}
         onOpenSecurityModal={handleOpenSecurityModal}
         onLockAdmin={handleLockAdmin}
         onOpenNetworkModal={() => setNetworkModalOpen(true)}
         jsonBinStatus={jsonBinStatus}
         isNetworkOnline={isNetworkOnline}
         profile={profile}
+        stats={stats}
         username={settings.username}
         isExpanded={isSidebarExpanded}
         onToggleExpanded={handleToggleSidebar}
+        onLogout={handleLogout}
+        onSwitchAccount={handleSwitchAccount}
+        onOpenCreateAccount={handleOpenCreateAccount}
+        sessionExpiresAt={userSession.expiresAt}
       />
 
-      {/* Top Bar Navigation */}
+      {/* Top Bar Navigation (with integrated Dropdown Menu on account click) */}
       <Navbar
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
@@ -609,18 +753,44 @@ export default function App() {
         isSyncing={isSyncing}
         lastSyncTime={lastSyncTime}
         profile={profile}
+        stats={stats}
         username={settings.username}
         isAdmin={isAdmin}
-        isIframe={isIframe}
+        isIframe={effectiveIsIframe}
+        isSpectator={isSpectator}
         onOpenSecurityModal={handleOpenSecurityModal}
         onLockAdmin={handleLockAdmin}
         onOpenNetworkModal={() => setNetworkModalOpen(true)}
         jsonBinStatus={jsonBinStatus}
         isNetworkOnline={isNetworkOnline}
+        onLogout={handleLogout}
+        onSwitchAccount={handleSwitchAccount}
+        onOpenCreateAccount={handleOpenCreateAccount}
+        sessionExpiresAt={userSession.expiresAt}
       />
 
       {/* Main Content Viewport - Fully responsive for Mobile, Tablet & PC */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-24 sm:pb-8 space-y-5 sm:space-y-8">
+        {/* Spectator Mode Notice Banner */}
+        {isSpectator && (
+          <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-sky-200 backdrop-blur-sm">
+            <div className="flex items-center gap-2.5">
+              <span className="h-2 w-2 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
+              <div>
+                <strong className="text-white font-bold">Mode Spectateur (Lecture Seule)</strong>
+                <span className="text-sky-300/80 ml-2">
+                  Accès restreint au Tableau de bord, Graphiques et Calendrier. Le Journal Syncs et les modifications sont verrouillés.
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="px-3 py-1.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-200 text-xs font-bold transition-all shrink-0"
+            >
+              Se connecter
+            </button>
+          </div>
+        )}
         {/* TAB 1: DASHBOARD */}
         {currentTab === 'dashboard' && (
           <div className="space-y-5 sm:space-y-8">
@@ -765,6 +935,18 @@ export default function App() {
         />
       )}
 
+      {/* Admin-only Create Account Wizard Modal */}
+      {createAccountModalOpen && (
+        <CreateAccountModal
+          isOpen={createAccountModalOpen}
+          onClose={() => setCreateAccountModalOpen(false)}
+          onAccountCreated={(newAcc) => {
+            showToast(`Compte @${newAcc} créé avec succès !`, 'success', 'Création de Compte');
+          }}
+          onShowMessage={showToast}
+        />
+      )}
+
       {/* Editorial Clean Footer - Responsive for Mobile & Tablet */}
       <footer className="relative z-10 border-t border-white/[0.06] bg-[#070a10]/90 py-4 sm:py-6 text-center text-xs text-neutral-400 transition-colors backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3 text-center sm:text-left">
@@ -776,6 +958,12 @@ export default function App() {
               <>
                 <span aria-hidden="true" className="text-neutral-600">·</span>
                 <span className="text-[#facc15] font-bold">[Iframe]</span>
+              </>
+            )}
+            {isSpectator && (
+              <>
+                <span aria-hidden="true" className="text-neutral-600">·</span>
+                <span className="text-sky-400 font-bold">[Spectateur]</span>
               </>
             )}
           </div>
@@ -828,19 +1016,21 @@ export default function App() {
           <span className="text-[10px] tracking-tight">Calendrier</span>
         </button>
 
-        <button
-          onClick={() => setCurrentTab('history')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
-            currentTab === 'history'
-              ? 'text-[#facc15] font-black'
-              : 'text-neutral-400 hover:text-white'
-          }`}
-        >
-          <History className="h-5 w-5 mb-0.5" />
-          <span className="text-[10px] tracking-tight">Historique</span>
-        </button>
+        {!isSpectator && (
+          <button
+            onClick={() => setCurrentTab('history')}
+            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+              currentTab === 'history'
+                ? 'text-[#facc15] font-black'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <History className="h-5 w-5 mb-0.5" />
+            <span className="text-[10px] tracking-tight">Historique</span>
+          </button>
+        )}
 
-        {!isIframe && (
+        {!isIframe && !isSpectator && (
           <button
             onClick={() => {
               if (!isAdmin) {

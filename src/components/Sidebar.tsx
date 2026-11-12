@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Activity,
   BarChart2,
@@ -18,8 +18,9 @@ import {
   Settings,
   ShieldCheck,
 } from 'lucide-react';
-import { ChessComProfileResponse } from '../types/chess';
+import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
 import { NavTab } from './Navbar';
+import { UserDropdown } from './UserDropdown';
 
 interface SidebarProps {
   currentTab: NavTab;
@@ -29,15 +30,21 @@ interface SidebarProps {
   lastSyncTime: string | null;
   isAdmin: boolean;
   isIframe: boolean;
+  isSpectator?: boolean;
   onOpenSecurityModal: (title?: string) => void;
   onLockAdmin: () => void;
   onOpenNetworkModal?: () => void;
   jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
   isNetworkOnline?: boolean;
   profile?: ChessComProfileResponse;
+  stats?: ChessComStatsResponse | null;
   username: string;
   isExpanded: boolean;
   onToggleExpanded: () => void;
+  onLogout?: () => void;
+  onSwitchAccount?: (newUsername: string) => void;
+  onOpenCreateAccount?: () => void;
+  sessionExpiresAt?: number;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -48,17 +55,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
   lastSyncTime,
   isAdmin,
   isIframe,
+  isSpectator = false,
   onOpenSecurityModal,
   onLockAdmin,
   onOpenNetworkModal,
   jsonBinStatus = 'pending_keys',
   isNetworkOnline = true,
   profile,
+  stats,
   username,
   isExpanded,
   onToggleExpanded,
+  onLogout = () => {},
+  onSwitchAccount = () => {},
+  onOpenCreateAccount,
+  sessionExpiresAt,
 }) => {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const handleTabClick = (tab: NavTab) => {
+    if (isSpectator && (tab === 'history' || tab === 'iframe' || tab === 'settings' || tab === 'tests')) {
+      return;
+    }
     if (isIframe && (tab === 'settings' || tab === 'tests')) {
       return;
     }
@@ -73,12 +90,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { key: 'dashboard', label: 'Tableau de bord', icon: <Activity className="h-4 w-4" /> },
     { key: 'charts', label: 'Graphique', icon: <BarChart2 className="h-4 w-4" /> },
     { key: 'calendar', label: 'Calendrier', icon: <Calendar className="h-4 w-4" /> },
-    { key: 'history', label: 'Journal Syncs', icon: <RefreshCw className="h-4 w-4" /> },
-    ...(!isIframe
+    ...(!isSpectator ? [{ key: 'history' as NavTab, label: 'Journal Syncs', icon: <RefreshCw className="h-4 w-4" /> }] : []),
+    ...(!isIframe && !isSpectator
       ? [{ key: 'tests' as NavTab, label: 'Tests', icon: <CheckCircle2 className="h-4 w-4" />, protected: true }]
       : []),
-    { key: 'iframe', label: 'Iframe', icon: <Code2 className="h-4 w-4" /> },
-    ...(!isIframe
+    ...(!isSpectator ? [{ key: 'iframe' as NavTab, label: 'Iframe', icon: <Code2 className="h-4 w-4" /> }] : []),
+    ...(!isIframe && !isSpectator
       ? [{ key: 'settings' as NavTab, label: 'Paramètres', icon: <Settings className="h-4 w-4" />, protected: true }]
       : []),
   ];
@@ -290,31 +307,56 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* User Account Footer */}
-      <div className="border-t border-neutral-800/80 p-3 flex items-center gap-2.5 bg-[#07090e]">
-        {profile?.avatar ? (
-          <img
-            src={profile.avatar}
-            alt={profile.name || username}
-            referrerPolicy="no-referrer"
-            className="h-8 w-8 rounded-full border border-[#facc15] object-cover shrink-0"
-          />
-        ) : (
-          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#facc15] bg-neutral-900 text-xs font-black text-[#facc15] shrink-0">
-            {username.substring(0, 2).toUpperCase()}
-          </div>
-        )}
+      {/* User Account Footer with Dropdown Menu */}
+      <div className="relative border-t border-neutral-800/80">
+        <button
+          type="button"
+          onClick={() => setDropdownOpen(!dropdownOpen)}
+          title="Ouvrir le menu déroulant de votre compte"
+          className="p-3 flex items-center gap-2.5 bg-[#07090e] hover:bg-neutral-900/60 transition-colors w-full text-left group"
+        >
+          {profile?.avatar ? (
+            <img
+              src={profile.avatar}
+              alt={profile.name || username}
+              referrerPolicy="no-referrer"
+              className="h-8 w-8 rounded-full border border-[#facc15] object-cover shrink-0 group-hover:scale-105 transition-transform"
+            />
+          ) : (
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#facc15] bg-neutral-900 text-xs font-black text-[#facc15] shrink-0 group-hover:scale-105 transition-transform">
+              {username.substring(0, 2).toUpperCase()}
+            </div>
+          )}
 
-        {isExpanded && (
-          <div className="flex flex-col leading-tight min-w-0 flex-1">
-            <span className="text-xs font-bold text-white truncate">
-              {profile?.name || username}
-            </span>
-            <span className="text-[10px] font-mono text-neutral-400 truncate">
-              @{username}
-            </span>
-          </div>
-        )}
+          {isExpanded && (
+            <div className="flex flex-col leading-tight min-w-0 flex-1">
+              <span className="text-xs font-bold text-white truncate group-hover:text-[#facc15] transition-colors">
+                {profile?.name || username}
+              </span>
+              <span className="text-[10px] font-mono text-neutral-400 truncate">
+                @{username}
+              </span>
+            </div>
+          )}
+        </button>
+
+        <UserDropdown
+          isOpen={dropdownOpen}
+          onClose={() => setDropdownOpen(false)}
+          profile={profile}
+          stats={stats}
+          username={username}
+          isAdmin={isAdmin}
+          isSpectator={isSpectator}
+          onOpenSecurityModal={onOpenSecurityModal}
+          onLockAdmin={onLockAdmin}
+          onSelectTab={onSelectTab}
+          onLogout={onLogout}
+          onSwitchAccount={onSwitchAccount}
+          sessionExpiresAt={sessionExpiresAt}
+          onOpenCreateAccount={onOpenCreateAccount}
+          placement="sidebar-bottom"
+        />
       </div>
     </aside>
   );

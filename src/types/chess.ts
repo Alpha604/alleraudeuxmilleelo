@@ -85,7 +85,7 @@ export interface AppSettings {
   selectedMode: 'auto' | GameMode;
   trajectoryModel: TrajectoryModel;
   autoSyncMinutes: number; // 0 for manual only
-  theme: 'dark' | 'light';
+  theme: 'dark' | 'light' | 'system';
   notifications: {
     newPeak: boolean;
     milestoneReached: boolean;

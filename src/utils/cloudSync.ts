@@ -28,16 +28,24 @@ const STORAGE_KEYS = {
   metrics: 'roadto2000_jsonbin_metrics_v2',
 };
 
-export function getClientJsonBinCredentials(): { binId: string; apiKey: string; enabled: boolean } {
-  let binId = DEFAULT_BIN_ID;
-  let apiKey = DEFAULT_API_KEY;
+export function getClientJsonBinCredentials(username?: string): { binId: string; apiKey: string; enabled: boolean } {
+  const cleanUser = username ? username.trim().toLowerCase() : '';
+  const isAlpha = cleanUser === 'alpharomeo1500';
+
+  const userBinKey = cleanUser ? `roadto2000_jsonbin_binid_${cleanUser}` : STORAGE_KEYS.binId;
+  const userKeyKey = cleanUser ? `roadto2000_jsonbin_apikey_${cleanUser}` : STORAGE_KEYS.apiKey;
+  const userEnabledKey = cleanUser ? `roadto2000_jsonbin_enabled_${cleanUser}` : STORAGE_KEYS.enabled;
+
+  // Default to official bin only for AlphaRoméo; other accounts start with their own private configuration
+  let binId = isAlpha ? DEFAULT_BIN_ID : '';
+  let apiKey = isAlpha ? DEFAULT_API_KEY : '';
   let enabled = true;
 
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
-      const storedBin = window.localStorage.getItem(STORAGE_KEYS.binId);
-      const storedKey = window.localStorage.getItem(STORAGE_KEYS.apiKey);
-      const storedEnabled = window.localStorage.getItem(STORAGE_KEYS.enabled);
+      const storedBin = window.localStorage.getItem(userBinKey) || (isAlpha ? window.localStorage.getItem(STORAGE_KEYS.binId) : null);
+      const storedKey = window.localStorage.getItem(userKeyKey) || (isAlpha ? window.localStorage.getItem(STORAGE_KEYS.apiKey) : null);
+      const storedEnabled = window.localStorage.getItem(userEnabledKey);
       if (storedBin && storedBin.trim()) binId = storedBin.trim();
       if (storedKey && storedKey.trim()) apiKey = storedKey.trim();
       if (storedEnabled !== null) enabled = storedEnabled === 'true';
@@ -308,18 +316,27 @@ export async function saveJsonBinConfig(config: {
   binId?: string;
   apiKey?: string;
   enabled?: boolean;
+  username?: string;
 }): Promise<{ success: boolean; lastStatus?: string; lastError?: string | null }> {
+  const cleanUser = config.username ? config.username.trim().toLowerCase() : '';
+  const userBinKey = cleanUser ? `roadto2000_jsonbin_binid_${cleanUser}` : STORAGE_KEYS.binId;
+  const userKeyKey = cleanUser ? `roadto2000_jsonbin_apikey_${cleanUser}` : STORAGE_KEYS.apiKey;
+  const userEnabledKey = cleanUser ? `roadto2000_jsonbin_enabled_${cleanUser}` : STORAGE_KEYS.enabled;
+
   // Save locally in browser immediately
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       if (typeof config.binId === 'string') {
-        window.localStorage.setItem(STORAGE_KEYS.binId, config.binId.trim());
+        window.localStorage.setItem(userBinKey, config.binId.trim());
+        if (cleanUser === 'alpharomeo1500') window.localStorage.setItem(STORAGE_KEYS.binId, config.binId.trim());
       }
       if (typeof config.apiKey === 'string') {
-        window.localStorage.setItem(STORAGE_KEYS.apiKey, config.apiKey.trim());
+        window.localStorage.setItem(userKeyKey, config.apiKey.trim());
+        if (cleanUser === 'alpharomeo1500') window.localStorage.setItem(STORAGE_KEYS.apiKey, config.apiKey.trim());
       }
       if (typeof config.enabled === 'boolean') {
-        window.localStorage.setItem(STORAGE_KEYS.enabled, String(config.enabled));
+        window.localStorage.setItem(userEnabledKey, String(config.enabled));
+        if (cleanUser === 'alpharomeo1500') window.localStorage.setItem(STORAGE_KEYS.enabled, String(config.enabled));
       }
     }
   } catch {}
@@ -334,7 +351,7 @@ export async function saveJsonBinConfig(config: {
   } catch {}
 
   // Test the bin credentials directly with JSONBin.io (CORS supported)
-  const creds = getClientJsonBinCredentials();
+  const creds = getClientJsonBinCredentials(cleanUser);
   if (creds.binId) {
     try {
       const headers: Record<string, string> = {};

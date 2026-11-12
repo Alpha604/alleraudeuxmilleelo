@@ -11,8 +11,8 @@ const ADMIN_TRUSTED_IP_KEY = 'roadto2000_trusted_ip_v1';
 const ADMIN_TRUSTED_IPS_KEY = 'roadto2000_trusted_ips_v2';
 const DEFAULT_MASTER_PASSWORD = 'alpha604';
 
-// 30 minutes session duration
-export const SESSION_DURATION_MS = 30 * 60 * 1000;
+// 24 hours session duration (expires after 24h unless user logs out)
+export const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 // Memory fallback for SSR / testing environments
 const memoryStore: Record<string, string> = {};
@@ -538,3 +538,301 @@ export function getTotpUri(account = 'Romeo', issuer = 'RoadTo2000Elo', secret?:
   const activeSecret = secret || getTotpSecret();
   return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${activeSecret}&issuer=${encodeURIComponent(issuer)}&digits=6&period=30`;
 }
+
+// ==========================================
+// 24-HOUR USER ACCOUNT SESSION MANAGEMENT
+// ==========================================
+const USER_SESSION_KEY = 'roadto2000_user_session_v1';
+export const USER_SESSION_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+export interface UserSession {
+  username: string;
+  connectedAt: number;
+  expiresAt: number;
+  isSpectator?: boolean;
+}
+
+export function getActiveUserSession(): UserSession | null {
+  try {
+    const raw = safeGet(USER_SESSION_KEY);
+    if (!raw) return null;
+    const session: UserSession = JSON.parse(raw);
+    if (!session || !session.username || Date.now() > session.expiresAt) {
+      safeRemove(USER_SESSION_KEY);
+      return null;
+    }
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+export function saveUserSession(username: string, isSpectator = false): UserSession {
+  const clean = username.trim().toLowerCase();
+  const now = Date.now();
+  const session: UserSession = {
+    username: clean,
+    connectedAt: now,
+    expiresAt: now + USER_SESSION_DURATION_MS,
+    isSpectator,
+  };
+  safeSet(USER_SESSION_KEY, JSON.stringify(session));
+  return session;
+}
+
+export function clearUserSession(): void {
+  safeRemove(USER_SESSION_KEY);
+}
+
+// ==========================================
+// MANAGED ACCOUNTS REGISTRY & PER-ACCOUNT 2FA
+// ==========================================
+const ACCOUNTS_REGISTRY_KEY = 'roadto2000_managed_accounts_list_v2';
+
+export function getManagedAccounts(): string[] {
+  try {
+    const raw = safeGet(ACCOUNTS_REGISTRY_KEY);
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        return Array.from(new Set(['alpharomeo1500', ...list.map((u) => String(u).trim().toLowerCase())]));
+      }
+    }
+  } catch {}
+  return ['alpharomeo1500'];
+}
+
+export function isAccountRegistered(username: string): boolean {
+  const clean = username.trim().toLowerCase();
+  if (clean === 'alpharomeo1500' || clean === 'alpharomeo') return true;
+  const accounts = getManagedAccounts();
+  return accounts.includes(clean);
+}
+
+export function getUserTotpSecret(username: string): string | null {
+  const clean = username.trim().toLowerCase();
+  if (clean === 'alpharomeo1500') {
+    return getTotpSecret();
+  }
+  return safeGet(`roadto2000_totp_secret_${clean}`);
+}
+
+export function setUserTotpSecret(username: string, secret: string): void {
+  const clean = username.trim().toLowerCase();
+  safeSet(`roadto2000_totp_secret_${clean}`, secret);
+}
+
+export interface CreateAccountParams {
+  username: string;
+  password: string;
+  jsonBinId: string;
+  jsonBinApiKey?: string;
+  startElo?: number;
+  targetElo?: number;
+  startDate?: string;
+  targetDate?: string;
+  selectedMode?: string;
+  trajectoryModel?: string;
+}
+
+export interface CreateAccountResult {
+  success: boolean;
+  username?: string;
+  secret?: string;
+  otpUri?: string;
+  qrDataUrl?: string;
+  error?: string;
+}
+
+/**
+ * Admin-only account creation:
+ * Generates unique credentials, dedicated JSONBin link, per-account TOTP secret and 2FA QR code.
+ */
+export async function createManagedAccount(params: CreateAccountParams): Promise<CreateAccountResult> {
+  const cleanUser = params.username.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+
+  if (!cleanUser || cleanUser.length < 3) {
+    return { success: false, error: 'Le pseudo Chess.com doit comporter au moins 3 caractères alphanumériques.' };
+  }
+
+  if (cleanUser === 'alpharomeo1500') {
+    return { success: false, error: 'Le compte officiel @alpharomeo1500 est déjà le compte administrateur maître.' };
+  }
+
+  if (isAccountRegistered(cleanUser)) {
+    return { success: false, error: `Le compte @${cleanUser} existe déjà.` };
+  }
+
+  if (!params.password || params.password.trim().length < 4) {
+    return { success: false, error: 'Le mot de passe doit comporter au moins 4 caractères.' };
+  }
+
+  if (!params.jsonBinId || params.jsonBinId.trim().length < 10) {
+    return { success: false, error: "Veuillez renseigner un Bin ID JSONBin valide pour ce compte." };
+  }
+
+  try {
+    // 1. Hash & Store Password
+    const pwdHash = await hashPassword(params.password.trim());
+    safeSet(`roadto2000_acc_pwd_${cleanUser}`, pwdHash);
+
+    // 2. Generate unique TOTP 2FA secret for this account
+    const secret = generateRandomBase32Secret(16);
+    setUserTotpSecret(cleanUser, secret);
+
+    // 3. Generate QR code for Google Authenticator / Microsoft Authenticator
+    const otpUri = `otpauth://totp/RoadTo2000Elo:${encodeURIComponent(cleanUser)}?secret=${secret}&issuer=RoadTo2000Elo&digits=6&period=30`;
+    const qrDataUrl = await generateQrCodeDataUrl(otpUri);
+
+    // 4. Save account-isolated JSONBin configuration
+    safeSet(`roadto2000_jsonbin_binid_${cleanUser}`, params.jsonBinId.trim());
+    if (params.jsonBinApiKey && params.jsonBinApiKey.trim()) {
+      safeSet(`roadto2000_jsonbin_apikey_${cleanUser}`, params.jsonBinApiKey.trim());
+    }
+    safeSet(`roadto2000_jsonbin_enabled_${cleanUser}`, 'true');
+
+    // 5. Save custom user objectives
+    const userSettings = {
+      username: cleanUser,
+      startElo: params.startElo ?? 1500,
+      targetElo: params.targetElo ?? 2000,
+      startDate: params.startDate || new Date().toISOString().split('T')[0],
+      targetDate: params.targetDate || '2027-12-31',
+      selectedMode: params.selectedMode || 'auto',
+      trajectoryModel: params.trajectoryModel || 'linear',
+      autoSyncMinutes: 0,
+      notifications: { newPeak: true, goalReached: true, syncErrors: true },
+      theme: 'dark',
+      customMilestones: [],
+    };
+    safeSet(`roadto2000_settings_${cleanUser}`, JSON.stringify(userSettings));
+
+    // 6. Register account in managed list
+    const currentList = getManagedAccounts();
+    const updatedList = Array.from(new Set([...currentList, cleanUser]));
+    safeSet(ACCOUNTS_REGISTRY_KEY, JSON.stringify(updatedList));
+
+    return {
+      success: true,
+      username: cleanUser,
+      secret,
+      otpUri,
+      qrDataUrl,
+    };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Erreur lors de la création du compte." };
+  }
+}
+
+/**
+ * Authenticates user credentials:
+ * - For alpharomeo1500: accepts Microsoft Authenticator TOTP 6-digit code OR master passwords (alpha604 / Alpha2000!)
+ * - For managed accounts: verifies password + 2FA TOTP code generated from user's QR code
+ */
+export async function authenticateAccount(
+  username: string,
+  passwordOrCode: string,
+  totpCode?: string
+): Promise<{ success: boolean; error?: string; isAdmin?: boolean; requireTotp?: boolean }> {
+  const cleanUser = username.trim().toLowerCase();
+  const cleanInput = passwordOrCode.trim();
+
+  if (!cleanUser) {
+    return { success: false, error: 'Veuillez saisir votre pseudo ou nom de compte.' };
+  }
+
+  // AlphaRoméo Official Master Account
+  if (cleanUser === 'alpharomeo1500' || cleanUser === 'alpharomeo') {
+    if (!cleanInput) {
+      return {
+        success: false,
+        error: 'Veuillez renseigner votre code Microsoft Authenticator ou votre mot de passe maître (alpha604).',
+      };
+    }
+
+    // 1. Check 6-digit TOTP (Microsoft Authenticator)
+    if (/^\d{6}$/.test(cleanInput)) {
+      const isTotpValid = await verifyTotpCode(cleanInput);
+      if (isTotpValid) {
+        setAdminSession();
+        return { success: true, isAdmin: true };
+      }
+    }
+
+    // 2. Check master admin passwords
+    const isMasterPwd =
+      cleanInput.toLowerCase() === 'alpha604' ||
+      cleanInput.toLowerCase() === 'alpha2000' ||
+      cleanInput === 'Alpha2000!' ||
+      cleanInput === 'alpha2000!' ||
+      (await verifyAdminPassword(cleanInput));
+
+    if (isMasterPwd) {
+      setAdminSession();
+      return { success: true, isAdmin: true };
+    }
+
+    return {
+      success: false,
+      error:
+        'Code ou mot de passe incorrect. Pour @alpharomeo1500, utilisez votre code à 6 chiffres Microsoft Authenticator ou votre mot de passe maître (alpha604).',
+    };
+  }
+
+  // Any other user account: ONLY admin-created accounts are permitted
+  if (!isAccountRegistered(cleanUser)) {
+    return {
+      success: false,
+      error: "Ce compte n'a pas été créé par l'administrateur. Seul AlphaRoméo peut créer de nouveaux comptes pour ce projet.",
+    };
+  }
+
+  const storageKey = `roadto2000_acc_pwd_${cleanUser}`;
+  const storedHash = safeGet(storageKey);
+
+  if (!cleanInput) {
+    return { success: false, error: 'Veuillez renseigner votre mot de passe.' };
+  }
+
+  if (!storedHash) {
+    return {
+      success: false,
+      error: "Compte non initialisé. Veuillez demander à l'administrateur de configurer vos identifiants.",
+    };
+  }
+
+  // Verify password
+  const candidateHash = await hashPassword(cleanInput);
+  if (candidateHash !== storedHash) {
+    return {
+      success: false,
+      error: 'Mot de passe incorrect pour ce compte.',
+    };
+  }
+
+  // Check 2FA (A2F) for managed accounts
+  const userSecret = getUserTotpSecret(cleanUser);
+  if (userSecret) {
+    const cleanTotp = (totpCode || '').trim();
+    if (!cleanTotp || cleanTotp.length !== 6) {
+      return {
+        success: false,
+        requireTotp: true,
+        error: "Code A2F requis : saisissez le code à 6 chiffres de votre application Microsoft Authenticator ou Google Authenticator.",
+      };
+    }
+
+    const isTotpValid = await verifyTotpCode(cleanTotp, userSecret);
+    if (!isTotpValid) {
+      return {
+        success: false,
+        requireTotp: true,
+        error: "Code A2F invalide. Veuillez vérifier le code affiché dans votre application Authenticator.",
+      };
+    }
+  }
+
+  return { success: true, isAdmin: false };
+}
+
+
