@@ -42,7 +42,6 @@ interface SidebarProps {
   isExpanded: boolean;
   onToggleExpanded: () => void;
   onLogout?: () => void;
-  onSwitchAccount?: (newUsername: string) => void;
   onOpenCreateAccount?: () => void;
   onOpenAdminAccountsManager?: () => void;
   sessionExpiresAt?: number;
@@ -68,7 +67,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isExpanded,
   onToggleExpanded,
   onLogout = () => {},
-  onSwitchAccount = () => {},
   onOpenCreateAccount,
   onOpenAdminAccountsManager,
   sessionExpiresAt,
@@ -368,7 +366,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onLockAdmin={onLockAdmin}
           onSelectTab={onSelectTab}
           onLogout={onLogout}
-          onSwitchAccount={onSwitchAccount}
           sessionExpiresAt={sessionExpiresAt}
           onOpenCreateAccount={onOpenCreateAccount}
           onOpenAdminAccountsManager={onOpenAdminAccountsManager}

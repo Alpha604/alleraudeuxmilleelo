@@ -3,28 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
-  Activity,
   ArrowRight,
   BarChart2,
   Calendar,
   CheckCircle2,
-  Clock,
-  Crown,
-  ExternalLink,
-  Eye,
-  KeyRound,
   Lock,
   LogOut,
   Settings,
   ShieldAlert,
-  ShieldCheck,
   User,
-  UserCheck,
   UserPlus,
   Users,
-  Zap,
 } from 'lucide-react';
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
 import { NavTab } from './Navbar';
@@ -41,7 +32,6 @@ interface UserDropdownProps {
   onLockAdmin: () => void;
   onSelectTab: (tab: NavTab) => void;
   onLogout: () => void;
-  onSwitchAccount: (newUsername: string) => void;
   onOpenCreateAccount?: () => void;
   onOpenAdminAccountsManager?: () => void;
   sessionExpiresAt?: number;
@@ -60,15 +50,12 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
   onLockAdmin,
   onSelectTab,
   onLogout,
-  onSwitchAccount,
   onOpenCreateAccount,
   onOpenAdminAccountsManager,
   sessionExpiresAt,
   placement = 'bottom-right',
 }) => {
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const [showSwitchInput, setShowSwitchInput] = useState(false);
-  const [newUsernameInput, setNewUsernameInput] = useState('');
 
   const isAlphaRomeo = username.toLowerCase() === 'alpharomeo1500';
 
@@ -120,15 +107,6 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
       })
     : '24h active';
 
-  const handleSwitchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newUsernameInput.trim()) return;
-    onSwitchAccount(newUsernameInput.trim().toLowerCase());
-    setShowSwitchInput(false);
-    setNewUsernameInput('');
-    onClose();
-  };
-
   const handleTabClick = (tab: NavTab) => {
     onSelectTab(tab);
     onClose();
@@ -144,9 +122,6 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
 
   // ========================================================
   // 1. STRICTLY RESTRICTED MINIMAL DROPDOWN FOR SPECTATOR MODE
-  // "je ne veux pas non plus qu'il puisse ouvrir le menu déroulant
-  //  du compte visioné en entier donc met seulemment :
-  //  changer de compte, profil etc mais pas le reste"
   // ========================================================
   if (isSpectator) {
     return (
@@ -187,9 +162,8 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
           </div>
         </div>
 
-        {/* Minimal Actions for Spectator */}
+        {/* Minimal Actions for Spectator (No account switch, only Profile & Logout) */}
         <div className="p-2 space-y-1 text-xs">
-          {/* 1. Profil on-site */}
           <button
             type="button"
             onClick={() => handleTabClick('profile')}
@@ -202,22 +176,6 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
             <ArrowRight className="h-3.5 w-3.5 text-neutral-500" />
           </button>
 
-          {/* 2. Changer de compte */}
-          <button
-            type="button"
-            onClick={() => {
-              onLogout();
-              onClose();
-            }}
-            className="w-full flex items-center justify-between p-2 rounded-xl text-neutral-200 hover:text-white hover:bg-neutral-800/80 transition-colors"
-          >
-            <div className="flex items-center gap-2.5">
-              <KeyRound className="h-4 w-4 text-sky-400" />
-              <span>Changer de Compte</span>
-            </div>
-          </button>
-
-          {/* Quitter mode spectateur */}
           <div className="pt-1 border-t border-neutral-800/80 mt-1">
             <button
               type="button"
@@ -228,7 +186,7 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
               className="w-full flex items-center gap-2.5 p-2 rounded-xl text-[#ef4444] hover:bg-[#ef4444]/15 transition-colors font-bold"
             >
               <LogOut className="h-4 w-4" />
-              <span>Quitter le Mode Spectateur</span>
+              <span>Déconnexion</span>
             </button>
           </div>
         </div>
@@ -247,7 +205,6 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
     >
       {/* 1. Header Profile Banner with Blurred Photo Background & Base Info */}
       <div className="relative p-4.5 border-b border-neutral-800/80 overflow-hidden">
-        {/* Blurred background photo layer */}
         {profile?.avatar ? (
           <div
             className="absolute inset-0 bg-cover bg-center blur-xl scale-125 opacity-25 pointer-events-none transition-all"
@@ -258,7 +215,6 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
         )}
         <div className="absolute inset-0 bg-gradient-to-b from-[#0c0f14]/50 via-[#0c0f14]/85 to-[#0c0f14]" />
 
-        {/* Foreground Content */}
         <div className="relative z-10 space-y-3">
           <div className="flex items-center gap-3">
             {profile?.avatar ? (
@@ -306,7 +262,6 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
             </div>
           </div>
 
-          {/* Quick Elo Ratings Row */}
           <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-neutral-800/60 font-mono text-center">
             <div className="p-1.5 rounded-xl bg-neutral-900/80 border border-neutral-800/80 backdrop-blur-sm">
               <span className="text-[9px] text-neutral-400 block font-sans uppercase">Bullet</span>
@@ -332,7 +287,6 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
 
       {/* 2. Menu Items List */}
       <div className="p-2 space-y-1 text-xs">
-        {/* On-Site Profile with Hero & Big Photo ("Profil Chess.com") */}
         <button
           type="button"
           onClick={() => handleTabClick('profile')}
@@ -347,7 +301,6 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
           </span>
         </button>
 
-        {/* Statistiques / Courbe Elo */}
         <button
           type="button"
           onClick={() => handleTabClick('charts')}
@@ -359,7 +312,6 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
           </div>
         </button>
 
-        {/* Calendrier des jalons */}
         <button
           type="button"
           onClick={() => handleTabClick('calendar')}
@@ -371,7 +323,6 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
           </div>
         </button>
 
-        {/* Paramètres */}
         <button
           type="button"
           onClick={() => handleTabClick('settings')}
@@ -411,7 +362,6 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
               )}
             </div>
 
-            {/* Admin Accounts Manager: Ban / Suspend / Regenerate A2F / Delete */}
             <button
               type="button"
               onClick={() => {
@@ -424,10 +374,9 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
                 <Users className="h-4 w-4 text-[#facc15]" />
                 <span>Gestion des Joueurs & Comptes</span>
               </div>
-              <span className="text-[10px] text-[#facc15] font-mono">Ban / A2F</span>
+              <span className="text-[10px] text-[#facc15] font-mono">Ban / Statut</span>
             </button>
 
-            {/* Create Account Wizard (Admin only) */}
             <button
               type="button"
               onClick={() => {
@@ -440,10 +389,9 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
                 <UserPlus className="h-4 w-4 text-[#facc15]" />
                 <span>Créer un Compte Joueur</span>
               </div>
-              <span className="text-[10px] text-[#facc15] font-black uppercase tracking-wider">A2F + Bin</span>
+              <span className="text-[10px] text-[#facc15] font-black uppercase tracking-wider">JSONBin</span>
             </button>
 
-            {/* Diagnostic Tests */}
             <button
               type="button"
               onClick={() => handleTabClick('tests')}
@@ -455,45 +403,6 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
           </div>
         )}
 
-        {/* Changer de Compte */}
-        <div className="pt-1 border-t border-neutral-800/60 my-1">
-          {!showSwitchInput ? (
-            <button
-              type="button"
-              onClick={() => setShowSwitchInput(true)}
-              className="w-full flex items-center justify-between p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800/70 transition-colors"
-            >
-              <div className="flex items-center gap-2.5">
-                <KeyRound className="h-4 w-4 text-[#facc15]" />
-                <span>Changer de Compte</span>
-              </div>
-            </button>
-          ) : (
-            <form onSubmit={handleSwitchSubmit} className="p-2 space-y-2 bg-neutral-900/60 rounded-xl border border-neutral-800">
-              <span className="text-[10px] font-bold text-neutral-400 block uppercase">
-                Bascule vers un autre pseudo
-              </span>
-              <div className="flex gap-1.5">
-                <input
-                  type="text"
-                  autoFocus
-                  value={newUsernameInput}
-                  onChange={(e) => setNewUsernameInput(e.target.value)}
-                  placeholder="Pseudo Chess.com..."
-                  className="flex-1 rounded-lg border border-neutral-800 bg-neutral-950 px-2.5 py-1.5 text-xs text-white focus:border-[#facc15] focus:outline-none font-mono"
-                />
-                <button
-                  type="submit"
-                  disabled={!newUsernameInput.trim()}
-                  className="px-2.5 py-1.5 rounded-lg bg-[#facc15] text-black font-bold text-xs disabled:opacity-50"
-                >
-                  OK
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-
         {/* Session status info */}
         <div className="px-2.5 py-1.5 rounded-xl bg-neutral-950/60 border border-neutral-800/60 flex items-center justify-between text-[10px] text-neutral-400">
           <div className="flex items-center gap-1.5">
@@ -503,8 +412,8 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
           <span className="font-mono text-[9px]">{sessionExpFormatted}</span>
         </div>
 
-        {/* Déconnexion */}
-        <div className="pt-1">
+        {/* Déconnexion uniquement (Changer de compte supprimé) */}
+        <div className="pt-1 border-t border-neutral-800/60 mt-1">
           <button
             type="button"
             onClick={() => {
@@ -514,7 +423,7 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
             className="w-full flex items-center gap-2.5 p-2 rounded-xl text-[#ef4444] hover:bg-[#ef4444]/15 transition-colors font-bold"
           >
             <LogOut className="h-4 w-4" />
-            <span>Se Déconnecter</span>
+            <span>Déconnexion</span>
           </button>
         </div>
       </div>

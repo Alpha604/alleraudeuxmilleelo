@@ -46,7 +46,6 @@ import {
   getTrustedIps,
   removeTrustedIp,
   setTrustedIps,
-  updateAdminPassword,
 } from '../utils/security';
 import {
   fetchJsonBinStatus,
@@ -83,12 +82,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isSaved, setIsSaved] = useState(false);
   const [secureModalOpen, setSecureModalOpen] = useState(false);
   const [secureModalAction, setSecureModalAction] = useState<'purge' | 'reset'>('purge');
-
-  // Change password state
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [passwordSuccess, setPasswordSuccess] = useState(false);
-  const [passwordError, setPasswordError] = useState('');
 
   // Multiple Trusted IPs state
   const [trustedIps, setTrustedIpsState] = useState<string[]>(() => getTrustedIps());
@@ -248,33 +241,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         onPurgeAccountData();
       }
       onShowMessage(`Cache de @${form.username} purgé avec succès après double validation A2F.`, 'success');
-    }
-  };
-
-  const handleChangePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPasswordError('');
-    setPasswordSuccess(false);
-
-    if (newPassword.length < 4) {
-      setPasswordError('Le nouveau mot de passe doit comporter au moins 4 caractères.');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setPasswordError('Les deux mots de passe ne correspondent pas.');
-      return;
-    }
-
-    const ok = await updateAdminPassword(newPassword);
-    if (ok) {
-      setPasswordSuccess(true);
-      setNewPassword('');
-      setConfirmPassword('');
-      onShowMessage('Mot de passe administrateur 2FA modifié avec succès !', 'success');
-      setTimeout(() => setPasswordSuccess(false), 4000);
-    } else {
-      setPasswordError('Impossible de mettre à jour le mot de passe.');
     }
   };
 
@@ -729,14 +695,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </form>
 
-      {/* Section 5: Modification du mot de passe Administrateur 2FA */}
+      {/* Section 5: Sécurité A2F Principale Unique */}
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm space-y-4">
         <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
             <KeyRound className="h-4 w-4" />
-            <span>Sécurité 2FA : Modifier Le Mot De Passe Maître</span>
+            <span>Sécurité : A2F Principale Unique</span>
           </div>
-          <span className="text-[11px] text-neutral-500 font-mono">Insensible à la casse</span>
+          <span className="text-[11px] text-emerald-400 font-mono">Sans mot de passe</span>
         </div>
 
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-4 space-y-2">
@@ -750,7 +716,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </span>
           </div>
           <p className="text-xs text-neutral-300 leading-relaxed">
-            Seul votre smartphone peut générer les codes à 6 chiffres. Le QR code de jumelage est <strong>strictement masqué</strong> pour empêcher quiconque d'autre de cloner vos accès.
+            Seule votre application Authenticator générant les codes à 6 chiffres de l'<strong>A2F principale</strong> permet de vous connecter et de déverrouiller les accès. Aucun mot de passe maître n'est accepté.
           </p>
           <div className="pt-1">
             <button
@@ -759,64 +725,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-200 hover:text-white transition-colors"
             >
               <Smartphone className="h-3.5 w-3.5 text-[#facc15]" />
-              <span>Jumeler un nouveau téléphone / Reconfigurer</span>
+              <span>Jumeler un nouveau téléphone / Afficher le QR Code</span>
             </button>
           </div>
         </div>
-
-        <form onSubmit={handleChangePassword} className="space-y-4 max-w-xl">
-          <p className="text-xs text-neutral-300 leading-relaxed">
-            Ce mot de passe maître confidentiel est requis pour autoriser l'affichage du QR code de jumelage ou modifier les paramètres sensibles.
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1">Nouveau mot de passe maître</label>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="4 caractères minimum"
-                required
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1">Confirmer le mot de passe</label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirmer"
-                required
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
-              />
-            </div>
-          </div>
-
-          {passwordError && (
-            <div className="flex items-center gap-1.5 text-xs text-rose-400">
-              <AlertTriangle className="h-3.5 w-3.5" />
-              <span>{passwordError}</span>
-            </div>
-          )}
-
-          {passwordSuccess && (
-            <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              <span>Nouveau mot de passe maître enregistré avec succès !</span>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            className="flex items-center gap-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white px-4 py-2 text-xs font-semibold transition-colors"
-          >
-            <Lock className="h-3.5 w-3.5 text-[#facc15]" />
-            <span>Changer le mot de passe 2FA</span>
-          </button>
-        </form>
       </div>
 
       {/* Section 6: Gestion de multiples IPs de Confiance pour scan instantané */}

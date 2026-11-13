@@ -28,7 +28,6 @@ import {
   isTotpEnrolled,
   setAdminSession,
   setTotpEnrolled,
-  verifyAdminPassword,
   verifyTotpCode,
 } from '../utils/security';
 
@@ -59,10 +58,10 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
   const [secretKey, setSecretKey] = useState<string>(() => getTotpSecret());
   const [copiedSecret, setCopiedSecret] = useState<boolean>(false);
 
-  // Admin password unlock for revealing QR code (anti-tamper)
-  const [adminUnlockPassword, setAdminUnlockPassword] = useState<string>('');
+  // 2FA verification for revealing QR code (no password needed)
+  const [qrVerifyCode, setQrVerifyCode] = useState<string>('');
   const [isAuthorizingQrReveal, setIsAuthorizingQrReveal] = useState<boolean>(false);
-  const [showAdminPasswordInput, setShowAdminPasswordInput] = useState<boolean>(false);
+  const [showQrVerifyInput, setShowQrVerifyInput] = useState<boolean>(false);
   const [qrRevealError, setQrRevealError] = useState<string>('');
 
   // Live visual unlock animation
@@ -182,20 +181,25 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     }
   };
 
-  // Authorize QR code reveal with master password
+  // Authorize QR code reveal with current 6-digit A2F code (no password)
   const handleAuthorizeQrReveal = async (e: React.FormEvent) => {
     e.preventDefault();
     setQrRevealError('');
+    const cleaned = qrVerifyCode.trim().replace(/\D/g, '');
+    if (cleaned.length !== 6) {
+      setQrRevealError('Entrez votre code A2F à 6 chiffres actuel.');
+      return;
+    }
     setIsAuthorizingQrReveal(true);
 
     try {
-      const isValid = await verifyAdminPassword(adminUnlockPassword);
+      const isValid = await verifyTotpCode(cleaned, secretKey);
       if (isValid) {
         setShowPairingQr(true);
-        setShowAdminPasswordInput(false);
-        setAdminUnlockPassword('');
+        setShowQrVerifyInput(false);
+        setQrVerifyCode('');
       } else {
-        setQrRevealError('Mot de passe administrateur incorrect.');
+        setQrRevealError('Code A2F à 6 chiffres incorrect ou expiré.');
       }
     } catch {
       setQrRevealError('Erreur de vérification.');
@@ -353,7 +357,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowAdminPasswordInput(true)}
+                  onClick={() => setShowQrVerifyInput(true)}
                   className="text-[11px] font-medium text-neutral-400 hover:text-white underline underline-offset-2"
                 >
                   Afficher à nouveau le QR
@@ -361,17 +365,17 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
               </div>
             ) : null}
 
-            {/* PASSWORD PROMPT TO REVEAL QR CODE */}
-            {showAdminPasswordInput && !showPairingQr && (
+            {/* 2FA CODE PROMPT TO REVEAL QR CODE */}
+            {showQrVerifyInput && !showPairingQr && (
               <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-4 space-y-3 animate-in fade-in">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-white flex items-center gap-1.5">
-                    <Lock className="h-3.5 w-3.5 text-[#facc15]" />
-                    <span>Entrez votre mot de passe pour réafficher le QR Code</span>
+                    <KeyRound className="h-3.5 w-3.5 text-[#facc15]" />
+                    <span>Entrez votre code A2F actuel pour réafficher le QR Code</span>
                   </span>
                   <button
                     type="button"
-                    onClick={() => setShowAdminPasswordInput(false)}
+                    onClick={() => setShowQrVerifyInput(false)}
                     className="text-[11px] text-neutral-400 hover:text-white"
                   >
                     Annuler
@@ -381,15 +385,17 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                 <form onSubmit={handleAuthorizeQrReveal} className="space-y-2">
                   <div className="flex gap-2">
                     <input
-                      type="password"
-                      value={adminUnlockPassword}
-                      onChange={(e) => setAdminUnlockPassword(e.target.value)}
-                      placeholder="Mot de passe"
-                      className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:border-[#facc15] focus:outline-none"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={qrVerifyCode}
+                      onChange={(e) => setQrVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="Code A2F (6 chiffres)"
+                      className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-[#facc15] font-mono tracking-widest placeholder-neutral-500 focus:border-[#facc15] focus:outline-none"
                     />
                     <button
                       type="submit"
-                      disabled={isAuthorizingQrReveal || !adminUnlockPassword}
+                      disabled={isAuthorizingQrReveal || qrVerifyCode.length !== 6}
                       className="rounded-lg bg-[#facc15] hover:bg-[#eab308] text-black px-3 py-1.5 text-xs font-bold transition-all disabled:opacity-40"
                     >
                       {isAuthorizingQrReveal ? '...' : 'Révéler'}
@@ -478,10 +484,10 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
             {/* RE-PAIRING / PRIVACY OPTIONS */}
             {!showPairingQr && (
               <div className="pt-2 border-t border-neutral-800 text-center space-y-2">
-                {!showAdminPasswordInput ? (
+                {!showQrVerifyInput ? (
                   <button
                     type="button"
-                    onClick={() => setShowAdminPasswordInput(true)}
+                    onClick={() => setShowQrVerifyInput(true)}
                     className="text-[11px] text-neutral-400 hover:text-[#facc15] underline transition-colors"
                   >
                     Changer de smartphone / Afficher le QR Code de jumelage
@@ -490,11 +496,11 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                   <form onSubmit={handleAuthorizeQrReveal} className="p-3 rounded-xl bg-neutral-950 border border-neutral-800 space-y-2.5 text-left animate-in fade-in">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-semibold text-neutral-300">
-                        Entrez votre mot de passe pour révéler le QR Code
+                        Entrez votre code A2F à 6 chiffres pour révéler le QR Code
                       </span>
                       <button
                         type="button"
-                        onClick={() => setShowAdminPasswordInput(false)}
+                        onClick={() => setShowQrVerifyInput(false)}
                         className="text-[10px] text-neutral-500 hover:text-neutral-300"
                       >
                         Fermer
@@ -503,15 +509,17 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
 
                     <div className="flex gap-2">
                       <input
-                        type="password"
-                        value={adminUnlockPassword}
-                        onChange={(e) => setAdminUnlockPassword(e.target.value)}
-                        placeholder="Mot de passe"
-                        className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-white placeholder-neutral-500 focus:border-[#facc15] focus:outline-none"
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={qrVerifyCode}
+                        onChange={(e) => setQrVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="Code A2F (6 chiffres)"
+                        className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-[#facc15] font-mono tracking-widest placeholder-neutral-500 focus:border-[#facc15] focus:outline-none"
                       />
                       <button
                         type="submit"
-                        disabled={isAuthorizingQrReveal || !adminUnlockPassword}
+                        disabled={isAuthorizingQrReveal || qrVerifyCode.length !== 6}
                         className="rounded-lg bg-[#facc15] hover:bg-[#eab308] text-black px-3 py-1.5 text-xs font-bold transition-all disabled:opacity-40"
                       >
                         {isAuthorizingQrReveal ? '...' : 'Révéler'}
@@ -523,7 +531,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                     )}
 
                     <div className="pt-1 flex items-center justify-between text-[10px]">
-                      <span className="text-neutral-500">Sécurité anti-espionnage</span>
+                      <span className="text-neutral-500">Sécurité anti-espionnage A2F</span>
                     </div>
                   </form>
                 )}

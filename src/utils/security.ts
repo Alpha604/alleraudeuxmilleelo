@@ -526,8 +526,8 @@ export async function verifyTotpCode(candidate: string, secret?: string): Promis
   if (clean.length !== 6) return false;
   const activeSecret = secret || getTotpSecret();
   const now = Date.now();
-  // Accept current step, -30s and +30s to account for slight clock drift
-  for (const offset of [0, -30000, 30000]) {
+  // Accept current step and +/- 60s steps to safely handle slight phone/PC clock drift
+  for (const offset of [0, -30000, 30000, -60000, 60000]) {
     const expected = await generateTotpCode(activeSecret, now + offset);
     if (clean === expected) return true;
   }
@@ -648,31 +648,13 @@ export function getPublicAuthorizedAccounts(): { username: string; status: Accou
   }));
 }
 
-export function getUserTotpSecret(username: string): string | null {
-  const clean = username.trim().toLowerCase();
-  if (clean === 'alpharomeo1500') {
-    return getTotpSecret();
-  }
-  return safeGet(`roadto2000_totp_secret_${clean}`);
-}
-
-export function setUserTotpSecret(username: string, secret: string): void {
-  const clean = username.trim().toLowerCase();
-  safeSet(`roadto2000_totp_secret_${clean}`, secret);
-}
-
-export async function regenerateAccountTotp(username: string): Promise<{ secret: string; otpUri: string; qrDataUrl: string }> {
-  const clean = username.trim().toLowerCase();
-  const secret = generateRandomBase32Secret(16);
-  setUserTotpSecret(clean, secret);
-  const otpUri = `otpauth://totp/RoadTo2000Elo:${encodeURIComponent(clean)}?secret=${secret}&issuer=RoadTo2000Elo&digits=6&period=30`;
-  const qrDataUrl = await generateQrCodeDataUrl(otpUri);
-  return { secret, otpUri, qrDataUrl };
+export function getUserTotpSecret(_username: string): string {
+  // Single Principal 2FA shared across the platform
+  return getTotpSecret();
 }
 
 export interface CreateAccountParams {
   username: string;
-  password?: string;
   jsonBinId: string;
   jsonBinApiKey?: string;
   startElo?: number;
@@ -686,15 +668,12 @@ export interface CreateAccountParams {
 export interface CreateAccountResult {
   success: boolean;
   username?: string;
-  secret?: string;
-  otpUri?: string;
-  qrDataUrl?: string;
   error?: string;
 }
 
 /**
  * Admin-only account creation:
- * Generates unique credentials, dedicated JSONBin link, per-account TOTP secret and 2FA QR code.
+ * Links a dedicated JSONBin and custom objectives; protected by the single principal 2FA.
  */
 export async function createManagedAccount(params: CreateAccountParams): Promise<CreateAccountResult> {
   const cleanUser = params.username.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
@@ -716,29 +695,16 @@ export async function createManagedAccount(params: CreateAccountParams): Promise
   }
 
   try {
-    // 1. Password (optional fallback if entered)
-    if (params.password && params.password.trim()) {
-      const pwdHash = await hashPassword(params.password.trim());
-      safeSet(`roadto2000_acc_pwd_${cleanUser}`, pwdHash);
-    }
-
-    // 2. Generate unique TOTP 2FA secret for this account
-    const secret = generateRandomBase32Secret(16);
-    setUserTotpSecret(cleanUser, secret);
     safeSet(`roadto2000_acc_status_${cleanUser}`, 'active');
 
-    // 3. Generate QR code for Google Authenticator / Microsoft Authenticator
-    const otpUri = `otpauth://totp/RoadTo2000Elo:${encodeURIComponent(cleanUser)}?secret=${secret}&issuer=RoadTo2000Elo&digits=6&period=30`;
-    const qrDataUrl = await generateQrCodeDataUrl(otpUri);
-
-    // 4. Save account-isolated JSONBin configuration
+    // Save account-isolated JSONBin configuration
     safeSet(`roadto2000_jsonbin_binid_${cleanUser}`, params.jsonBinId.trim());
     if (params.jsonBinApiKey && params.jsonBinApiKey.trim()) {
       safeSet(`roadto2000_jsonbin_apikey_${cleanUser}`, params.jsonBinApiKey.trim());
     }
     safeSet(`roadto2000_jsonbin_enabled_${cleanUser}`, 'true');
 
-    // 5. Save custom user objectives
+    // Save custom user objectives
     const userSettings = {
       username: cleanUser,
       startElo: params.startElo ?? 1500,
@@ -754,7 +720,7 @@ export async function createManagedAccount(params: CreateAccountParams): Promise
     };
     safeSet(`roadto2000_settings_${cleanUser}`, JSON.stringify(userSettings));
 
-    // 6. Register account in managed list
+    // Register account in managed list
     const currentList = getManagedAccounts();
     const updatedList = Array.from(new Set([...currentList, cleanUser]));
     safeSet(ACCOUNTS_REGISTRY_KEY, JSON.stringify(updatedList));
@@ -762,9 +728,6 @@ export async function createManagedAccount(params: CreateAccountParams): Promise
     return {
       success: true,
       username: cleanUser,
-      secret,
-      otpUri,
-      qrDataUrl,
     };
   } catch (err: any) {
     return { success: false, error: err?.message || "Erreur lors de la création du compte." };
@@ -772,24 +735,25 @@ export async function createManagedAccount(params: CreateAccountParams): Promise
 }
 
 /**
- * Connect with ONLY 2FA (A2F) code (no password needed):
- * - For alpharomeo1500: accepts Microsoft Authenticator code or master password (alpha604).
- * - For any account: the master TOTP code (or master password) from AlphaRoméo unlocks ANY account!
- * - For managed accounts: their own 6-digit TOTP code unlocks their account.
+ * Connect strictly with the SINGLE PRINCIPAL 2FA (A2F) 6-digit code.
+ * No password or master password is accepted.
  */
 export async function authenticateWithTotpOnly(
   username: string,
-  codeOrTotp: string
+  totpCode: string
 ): Promise<{ success: boolean; error?: string; isAdmin?: boolean }> {
   const cleanUser = username.trim().toLowerCase();
-  const cleanCode = codeOrTotp.trim();
+  const cleanCode = totpCode.trim().replace(/\D/g, '');
 
   if (!cleanUser) {
     return { success: false, error: 'Veuillez sélectionner un compte autorisé.' };
   }
 
-  if (!cleanCode) {
-    return { success: false, error: 'Veuillez saisir le code A2F à 6 chiffres.' };
+  if (!isAccountRegistered(cleanUser)) {
+    return {
+      success: false,
+      error: "Ce compte n'est pas un compte officiel autorisé par l'administration.",
+    };
   }
 
   const status = getAccountStatus(cleanUser);
@@ -800,25 +764,18 @@ export async function authenticateWithTotpOnly(
     return { success: false, error: "Ce compte est actuellement suspendu par l'administrateur." };
   }
 
-  // 1. MASTER 2FA / KEY CHECK:
-  // AlphaRoméo's Microsoft Authenticator code (or master passwords) unlocks ANY account!
-  let isMasterCode = false;
-  if (/^\d{6}$/.test(cleanCode)) {
-    const isMasterTotp = await verifyTotpCode(cleanCode, DEFAULT_TOTP_SECRET);
-    if (isMasterTotp) isMasterCode = true;
+  if (cleanCode.length !== 6) {
+    return {
+      success: false,
+      error: 'Veuillez saisir le code A2F à 6 chiffres de votre application Authenticator.',
+    };
   }
 
-  if (
-    cleanCode.toLowerCase() === 'alpha604' ||
-    cleanCode.toLowerCase() === 'alpha2000' ||
-    cleanCode === 'Alpha2000!' ||
-    cleanCode === 'alpha2000!' ||
-    (await verifyAdminPassword(cleanCode))
-  ) {
-    isMasterCode = true;
-  }
+  // Verify against the SINGLE active principal 2FA secret
+  const principalSecret = getTotpSecret();
+  const isPrincipalValid = await verifyTotpCode(cleanCode, principalSecret);
 
-  if (isMasterCode) {
+  if (isPrincipalValid) {
     const isAdminAccount = cleanUser === 'alpharomeo1500' || cleanUser === 'alpharomeo';
     if (isAdminAccount) {
       setAdminSession();
@@ -826,46 +783,9 @@ export async function authenticateWithTotpOnly(
     return { success: true, isAdmin: isAdminAccount };
   }
 
-  // 2. If trying to unlock the master admin account without master code
-  if (cleanUser === 'alpharomeo1500' || cleanUser === 'alpharomeo') {
-    return {
-      success: false,
-      error:
-        'Code A2F incorrect. Entrez le code à 6 chiffres de votre application Microsoft Authenticator ou votre mot de passe maître (alpha604).',
-    };
-  }
-
-  // 3. User's own 2FA check
-  if (!isAccountRegistered(cleanUser)) {
-    return {
-      success: false,
-      error: "Ce compte n'est pas un compte officiel autorisé par l'administration.",
-    };
-  }
-
-  const userSecret = getUserTotpSecret(cleanUser);
-  if (!userSecret) {
-    return {
-      success: false,
-      error: "Aucune A2F configurée pour ce compte. Veuillez contacter l'administrateur.",
-    };
-  }
-
-  if (!/^\d{6}$/.test(cleanCode)) {
-    return {
-      success: false,
-      error: 'Le code A2F doit comporter exactement 6 chiffres.',
-    };
-  }
-
-  const isUserTotpValid = await verifyTotpCode(cleanCode, userSecret);
-  if (isUserTotpValid) {
-    return { success: true, isAdmin: false };
-  }
-
   return {
     success: false,
-    error: "Code A2F invalide. Entrez le code à 6 chiffres de votre application Authenticator (ou le code maître AlphaRoméo).",
+    error: 'Code A2F invalide ou expiré. Vérifiez les 6 chiffres affichés sur votre application Authenticator.',
   };
 }
 

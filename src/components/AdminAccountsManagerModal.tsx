@@ -5,17 +5,11 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  AlertTriangle,
   Ban,
   CheckCircle2,
-  Copy,
   Crown,
-  KeyRound,
   PauseCircle,
   PlayCircle,
-  QrCode,
-  RefreshCw,
-  ShieldAlert,
   ShieldCheck,
   Trash2,
   UserCheck,
@@ -27,7 +21,6 @@ import {
   AccountStatus,
   deleteManagedAccount,
   getPublicAuthorizedAccounts,
-  regenerateAccountTotp,
   setAccountStatus,
 } from '../utils/security';
 
@@ -45,12 +38,6 @@ export const AdminAccountsManagerModal: React.FC<AdminAccountsManagerModalProps>
   onNotify,
 }) => {
   const [accounts, setAccounts] = useState<{ username: string; status: AccountStatus; isMaster: boolean }[]>([]);
-  const [totpModalData, setTotpModalData] = useState<{
-    username: string;
-    secret: string;
-    qrDataUrl: string;
-  } | null>(null);
-  const [copiedSecret, setCopiedSecret] = useState(false);
   const [confirmDeleteUser, setConfirmDeleteUser] = useState<string | null>(null);
 
   const refreshAccountsList = () => {
@@ -61,7 +48,6 @@ export const AdminAccountsManagerModal: React.FC<AdminAccountsManagerModalProps>
   useEffect(() => {
     if (isOpen) {
       refreshAccountsList();
-      setTotpModalData(null);
       setConfirmDeleteUser(null);
     }
   }, [isOpen]);
@@ -89,24 +75,6 @@ export const AdminAccountsManagerModal: React.FC<AdminAccountsManagerModalProps>
     }
   };
 
-  const handleRegenerateTotp = async (username: string) => {
-    try {
-      const res = await regenerateAccountTotp(username);
-      setTotpModalData({
-        username,
-        secret: res.secret,
-        qrDataUrl: res.qrDataUrl,
-      });
-      onNotify(
-        `Nouvelle clé A2F générée pour @${username}. Scannez le nouveau QR code.`,
-        'success',
-        'A2F Régénérée'
-      );
-    } catch {
-      onNotify("Erreur lors de la régénération de l'A2F.", 'warning');
-    }
-  };
-
   const handleDelete = (username: string) => {
     if (username.toLowerCase() === 'alpharomeo1500') {
       onNotify('Le compte maître AlphaRoméo ne peut pas être supprimé.', 'warning', 'Action impossible');
@@ -118,14 +86,6 @@ export const AdminAccountsManagerModal: React.FC<AdminAccountsManagerModalProps>
       refreshAccountsList();
       onNotify(`Le compte @${username} a été supprimé définitivement.`, 'success', 'Compte supprimé');
     }
-  };
-
-  const copySecretToClipboard = (secret: string) => {
-    navigator.clipboard.writeText(secret).then(() => {
-      setCopiedSecret(true);
-      setTimeout(() => setCopiedSecret(false), 2000);
-      onNotify('Clé secrète copiée dans le presse-papier !', 'info');
-    });
   };
 
   return (
@@ -153,7 +113,7 @@ export const AdminAccountsManagerModal: React.FC<AdminAccountsManagerModalProps>
                 </span>
               </div>
               <p className="text-xs text-neutral-400">
-                Supervisez les accès, gérez l'A2F, suspendez ou bannissez les comptes du projet.
+                Supervisez les accès, suspendez, bannissez ou supprimez les comptes du projet.
               </p>
             </div>
           </div>
@@ -175,7 +135,7 @@ export const AdminAccountsManagerModal: React.FC<AdminAccountsManagerModalProps>
               {accounts.length}
             </span>
             <span className="text-[11px] text-neutral-500">
-              (Seul AlphaRoméo peut créer ou révoquer les accès)
+              (Protégés par l'A2F principale unique)
             </span>
           </div>
 
@@ -254,9 +214,9 @@ export const AdminAccountsManagerModal: React.FC<AdminAccountsManagerModalProps>
 
                       <div className="text-[11px] text-neutral-400 font-mono">
                         {isAlpha ? (
-                          <span>Authentification Microsoft Authenticator / Clé Maître</span>
+                          <span>Compte Administrateur Principal · A2F Principale</span>
                         ) : (
-                          <span>A2F Autonome isolée + Stockage JSONBin dédié</span>
+                          <span>A2F Principale Unique + Stockage JSONBin dédié</span>
                         )}
                       </div>
                     </div>
@@ -265,18 +225,6 @@ export const AdminAccountsManagerModal: React.FC<AdminAccountsManagerModalProps>
                   {/* Actions for Non-Admin accounts */}
                   {!isAlpha ? (
                     <div className="flex flex-wrap items-center gap-1.5 self-end sm:self-center">
-                      {/* Regenerate A2F */}
-                      <button
-                        type="button"
-                        onClick={() => handleRegenerateTotp(acc.username)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 hover:border-[#facc15] text-neutral-300 hover:text-white text-xs font-semibold transition-all"
-                        title="Régénérer une nouvelle clé A2F et afficher le QR code"
-                      >
-                        <QrCode className="h-3.5 w-3.5 text-[#facc15]" />
-                        <span>Changer A2F</span>
-                      </button>
-
-                      {/* Status toggle actions */}
                       {acc.status === 'active' && (
                         <>
                           <button
@@ -332,7 +280,6 @@ export const AdminAccountsManagerModal: React.FC<AdminAccountsManagerModalProps>
                         </button>
                       )}
 
-                      {/* Delete account with confirmation */}
                       {confirmDeleteUser === acc.username ? (
                         <div className="flex items-center gap-1 p-1 rounded-xl bg-[#ef4444]/20 border border-[#ef4444]/40 animate-in fade-in">
                           <span className="text-[10px] text-[#ef4444] font-bold px-1">Confirmer ?</span>
@@ -373,61 +320,11 @@ export const AdminAccountsManagerModal: React.FC<AdminAccountsManagerModalProps>
           })}
         </div>
 
-        {/* Modal display for Regenerated A2F QR code */}
-        {totpModalData && (
-          <div className="p-4 border-t border-neutral-800 bg-[#07090e] space-y-3 animate-in fade-in">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <QrCode className="h-4 w-4 text-[#facc15]" />
-                <h4 className="text-xs font-bold text-white">
-                  Nouvelle Clé A2F pour @{totpModalData.username}
-                </h4>
-              </div>
-              <button
-                type="button"
-                onClick={() => setTotpModalData(null)}
-                className="text-xs text-neutral-400 hover:text-white"
-              >
-                Fermer l'aperçu QR
-              </button>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center gap-4 bg-neutral-950/80 p-3 rounded-2xl border border-neutral-800">
-              <div className="p-2 bg-white rounded-xl shadow-md shrink-0">
-                <img
-                  src={totpModalData.qrDataUrl}
-                  alt="QR Code A2F"
-                  className="h-28 w-28 object-contain"
-                />
-              </div>
-
-              <div className="space-y-2 flex-1 text-xs">
-                <p className="text-neutral-400 leading-relaxed text-[11px]">
-                  Faites scanner ce QR code à l'utilisateur via Google Authenticator ou Microsoft Authenticator.
-                </p>
-                <div className="flex items-center gap-2">
-                  <code className="px-2.5 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-[#facc15] font-mono font-bold tracking-widest text-xs flex-1">
-                    {totpModalData.secret}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => copySecretToClipboard(totpModalData.secret)}
-                    className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200"
-                    title="Copier la clé secrète"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Footer */}
         <div className="p-4 border-t border-neutral-800 bg-[#07090e] flex items-center justify-between text-xs text-neutral-400">
           <div className="flex items-center gap-1.5">
             <ShieldCheck className="h-4 w-4 text-[#10b981]" />
-            <span>Sécurité active : chaque joueur dispose de son propre environnement et A2F.</span>
+            <span>A2F principale unique · Données JSONBin isolées par joueur.</span>
           </div>
 
           <button

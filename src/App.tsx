@@ -442,20 +442,22 @@ export default function App() {
     };
   }, [settings.username]);
 
-  // Sync on mount
+  // Sync on mount (disabled in spectator mode)
   useEffect(() => {
-    performSync(false);
+    if (!userSession?.isSpectator && userSession) {
+      performSync(false);
+    }
   }, []);
 
-  // Periodic auto-sync (Runs in background even in iframe so visitors see current data)
+  // Periodic auto-sync (Disabled in spectator mode)
   useEffect(() => {
-    if (settings.autoSyncMinutes <= 0) return;
+    if (settings.autoSyncMinutes <= 0 || userSession?.isSpectator || !userSession) return;
     const intervalMs = settings.autoSyncMinutes * 60 * 1000;
     const timer = setInterval(() => {
       performSync(false);
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [settings.autoSyncMinutes, performSync]);
+  }, [settings.autoSyncMinutes, performSync, userSession]);
 
   // Handle settings update: clean switch between accounts
   const handleSettingsUpdate = (updated: AppSettings) => {
@@ -560,7 +562,9 @@ export default function App() {
         isSpectator ? 'Mode Spectateur' : 'Connexion réussie'
       );
 
-      performSync(true, cleanUser);
+      if (!isSpectator) {
+        performSync(true, cleanUser);
+      }
     },
     [settings, performSync, showToast]
   );
@@ -573,14 +577,6 @@ export default function App() {
     setUserSession(null);
     showToast('Vous avez été déconnecté avec succès.', 'info', 'Déconnexion');
   }, [showToast]);
-
-  // Account switch from user dropdown
-  const handleSwitchAccount = useCallback(
-    (newUsername: string) => {
-      handleLoginSuccess(newUsername, false, false);
-    },
-    [handleLoginSuccess]
-  );
 
   // Open Account Creation Wizard (Protected by Admin 2FA)
   const handleOpenCreateAccount = useCallback(() => {
@@ -755,7 +751,6 @@ export default function App() {
         isExpanded={isSidebarExpanded}
         onToggleExpanded={handleToggleSidebar}
         onLogout={handleLogout}
-        onSwitchAccount={handleSwitchAccount}
         onOpenCreateAccount={handleOpenCreateAccount}
         onOpenAdminAccountsManager={() => setAdminAccountsManagerOpen(true)}
         sessionExpiresAt={userSession.expiresAt}
@@ -780,7 +775,6 @@ export default function App() {
         jsonBinStatus={jsonBinStatus}
         isNetworkOnline={isNetworkOnline}
         onLogout={handleLogout}
-        onSwitchAccount={handleSwitchAccount}
         onOpenCreateAccount={handleOpenCreateAccount}
         onOpenAdminAccountsManager={() => setAdminAccountsManagerOpen(true)}
         sessionExpiresAt={userSession.expiresAt}

@@ -8,19 +8,12 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
-  Copy,
   Database,
-  KeyRound,
-  Lock,
-  QrCode,
-  ShieldAlert,
   ShieldCheck,
-  Target,
   UserPlus,
   X,
-  Zap,
 } from 'lucide-react';
-import { createManagedAccount, CreateAccountResult } from '../utils/security';
+import { createManagedAccount } from '../utils/security';
 import { GameMode, TrajectoryModel } from '../types/chess';
 
 interface CreateAccountModalProps {
@@ -38,7 +31,6 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
 }) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [jsonBinId, setJsonBinId] = useState('');
   const [jsonBinApiKey, setJsonBinApiKey] = useState('');
 
@@ -52,8 +44,7 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [createdResult, setCreatedResult] = useState<CreateAccountResult | null>(null);
-  const [copiedSecret, setCopiedSecret] = useState(false);
+  const [createdUsername, setCreatedUsername] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -67,10 +58,6 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
     }
     if (cleanUser === 'alpharomeo1500') {
       setError('Le compte officiel @alpharomeo1500 existe déjà.');
-      return;
-    }
-    if (!password.trim() || password.trim().length < 4) {
-      setError('Le mot de passe doit comporter au moins 4 caractères.');
       return;
     }
     if (!jsonBinId.trim() || jsonBinId.trim().length < 10) {
@@ -88,7 +75,6 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
     try {
       const res = await createManagedAccount({
         username: username.trim().toLowerCase(),
-        password: password.trim(),
         jsonBinId: jsonBinId.trim(),
         jsonBinApiKey: jsonBinApiKey.trim() || undefined,
         startElo,
@@ -99,15 +85,15 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
         trajectoryModel,
       });
 
-      if (res.success && res.qrDataUrl) {
-        setCreatedResult(res);
+      if (res.success && res.username) {
+        setCreatedUsername(res.username);
         setStep(3);
         onShowMessage(
-          `Compte @${res.username} créé avec succès ! Configurez l'A2F.`,
+          `Compte @${res.username} créé avec succès ! Protégé par l'A2F principale.`,
           'success',
           'Nouveau Compte'
         );
-        if (onAccountCreated && res.username) {
+        if (onAccountCreated) {
           onAccountCreated(res.username);
         }
       } else {
@@ -117,15 +103,6 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
       setError(err?.message || 'Erreur inconnue.');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const copySecretToClipboard = () => {
-    if (createdResult?.secret) {
-      navigator.clipboard.writeText(createdResult.secret);
-      setCopiedSecret(true);
-      setTimeout(() => setCopiedSecret(false), 2000);
-      onShowMessage('Clé secrète A2F copiée dans le presse-papier !', 'info');
     }
   };
 
@@ -160,12 +137,12 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
         </div>
 
         {/* Step indicator */}
-        <div className="px-5 pt-3 pb-1 flex items-center justify-between text-[11px] font-bold text-neutral-400 border-b border-neutral-800/60 bg-neutral-950/40">
-          <span className={step === 1 ? 'text-[#facc15]' : ''}>1. Identifiants & JSONBin</span>
+        <div className="px-5 pt-3 pb-2 flex items-center justify-between text-[11px] font-bold text-neutral-400 border-b border-neutral-800/60 bg-neutral-950/40">
+          <span className={step === 1 ? 'text-[#facc15]' : ''}>1. Compte & JSONBin</span>
           <span>&rarr;</span>
           <span className={step === 2 ? 'text-[#facc15]' : ''}>2. Paramètres & Objectif</span>
           <span>&rarr;</span>
-          <span className={step === 3 ? 'text-[#facc15]' : ''}>3. A2F & QR Code</span>
+          <span className={step === 3 ? 'text-[#10b981]' : ''}>3. Confirmation</span>
         </div>
 
         <div className="p-5 sm:p-6 overflow-y-auto space-y-4">
@@ -175,7 +152,7 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
             </div>
           )}
 
-          {/* STEP 1: Username, Password, JSONBin credentials */}
+          {/* STEP 1: Username & JSONBin credentials */}
           {step === 1 && (
             <form onSubmit={handleStep1Next} className="space-y-4">
               <div className="space-y-1.5">
@@ -188,20 +165,6 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Ex : magnuscarlsen"
-                  className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-2.5 text-xs text-white placeholder-neutral-500 focus:border-[#facc15] focus:outline-none font-mono"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-neutral-300">
-                  Mot de passe du compte
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Min. 4 caractères"
                   className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-2.5 text-xs text-white placeholder-neutral-500 focus:border-[#facc15] focus:outline-none font-mono"
                 />
               </div>
@@ -241,6 +204,13 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
                     className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white placeholder-neutral-500 focus:border-[#facc15] focus:outline-none font-mono"
                   />
                 </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-[#facc15]/5 border border-[#facc15]/20 text-[11px] text-neutral-300 flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-[#facc15] shrink-0" />
+                <span>
+                  Ce compte utilisera exclusivement l'<strong className="text-white">A2F principale unique</strong> pour se connecter (sans mot de passe).
+                </span>
               </div>
 
               <div className="pt-2 flex justify-end">
@@ -322,8 +292,8 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
                     className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white"
                   >
                     <option value="linear">Linéaire constant</option>
-                    <option value="quadratic">Quadratique accéléré</option>
-                    <option value="stepped">Paliers 50 Elo</option>
+                    <option value="milestones">Par jalons mensuels</option>
+                    <option value="custom">Personnalisé</option>
                   </select>
                 </div>
               </div>
@@ -343,62 +313,33 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
                   disabled={isLoading}
                   className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#facc15] text-black text-xs font-bold hover:bg-[#eab308] transition-all shadow-md disabled:opacity-50"
                 >
-                  {isLoading ? <span>Création en cours...</span> : <span>Créer le Compte & Générer l'A2F</span>}
+                  {isLoading ? <span>Création en cours...</span> : <span>Créer le Compte Officiel</span>}
                 </button>
               </div>
             </form>
           )}
 
-          {/* STEP 3: 2FA QR Code Display */}
-          {step === 3 && createdResult && (
+          {/* STEP 3: Confirmation */}
+          {step === 3 && createdUsername && (
             <div className="space-y-4 text-center">
-              <div className="flex flex-col items-center space-y-2">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#10b981]/20 border border-[#10b981]/40 text-[#10b981] text-xs font-bold">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span>Compte @{createdResult.username} créé avec succès !</span>
+              <div className="flex flex-col items-center space-y-2 py-2">
+                <div className="h-14 w-14 rounded-2xl bg-[#10b981]/15 border border-[#10b981]/40 flex items-center justify-center text-[#10b981]">
+                  <CheckCircle2 className="h-8 w-8" />
                 </div>
-                <p className="text-xs text-neutral-400 max-w-sm">
-                  Le joueur doit scanner ce QR code avec son application d'authentification (<strong className="text-white">Microsoft Authenticator</strong> ou <strong className="text-white">Google Authenticator</strong>).
+                <h4 className="text-base font-black text-white">
+                  Compte @{createdUsername} prêt !
+                </h4>
+                <p className="text-xs text-neutral-400 max-w-sm leading-relaxed">
+                  Le compte a été ajouté à la liste des joueurs officiels et isolé avec son propre stockage JSONBin (<code className="text-[#facc15]">{jsonBinId}</code>).
                 </p>
               </div>
 
-              {/* QR Code display */}
-              <div className="flex justify-center py-2">
-                <div className="p-3 bg-white rounded-2xl shadow-xl inline-block border-2 border-[#facc15]">
-                  <img
-                    src={createdResult.qrDataUrl}
-                    alt="A2F QR Code"
-                    className="h-48 w-48 object-contain"
-                  />
-                </div>
-              </div>
-
-              {/* Secret code fallback */}
-              <div className="p-3 rounded-2xl bg-neutral-900/80 border border-neutral-800 space-y-1.5 text-left">
-                <span className="text-[10px] text-neutral-400 uppercase font-bold block">
-                  Clé secrète A2F manuelle
-                </span>
-                <div className="flex items-center justify-between gap-2">
-                  <code className="text-xs font-mono font-bold text-[#facc15] truncate">
-                    {createdResult.secret}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={copySecretToClipboard}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[11px] font-bold shrink-0"
-                  >
-                    <Copy className="h-3 w-3" />
-                    <span>{copiedSecret ? 'Copié !' : 'Copier'}</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-neutral-950/60 border border-neutral-800/60 text-[11px] text-neutral-400 text-left space-y-1">
+              <div className="p-3.5 rounded-xl bg-neutral-950/60 border border-neutral-800/80 text-xs text-neutral-300 text-left space-y-1.5">
                 <p>
-                  <strong className="text-white">Permissions :</strong> Ce compte est un compte membre joueur (aucun droit administrateur). Ses données sont synchronisées dans son propre JSONBin (<code className="text-[#facc15]">{jsonBinId}</code>).
+                  <strong className="text-white">Connexion :</strong> Utilisez uniquement le code à 6 chiffres de l'<strong className="text-[#facc15]">A2F principale</strong> sur la page d'accueil.
                 </p>
                 <p>
-                  À chaque connexion, le joueur devra entrer son pseudo, son mot de passe et son code à 6 chiffres A2F.
+                  <strong className="text-white">Mode Spectateur :</strong> Visible par tous en lecture seule sans consommer votre quota JSONBin.
                 </p>
               </div>
 

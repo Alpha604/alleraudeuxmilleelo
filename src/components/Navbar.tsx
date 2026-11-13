@@ -44,7 +44,6 @@ interface NavbarProps {
   jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
   isNetworkOnline?: boolean;
   onLogout?: () => void;
-  onSwitchAccount?: (newUsername: string) => void;
   onOpenCreateAccount?: () => void;
   onOpenAdminAccountsManager?: () => void;
   sessionExpiresAt?: number;
@@ -68,7 +67,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   jsonBinStatus = 'pending_keys',
   isNetworkOnline = true,
   onLogout = () => {},
-  onSwitchAccount = () => {},
   onOpenCreateAccount,
   onOpenAdminAccountsManager,
   sessionExpiresAt,
@@ -247,7 +245,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               onLockAdmin={onLockAdmin}
               onSelectTab={onSelectTab}
               onLogout={onLogout}
-              onSwitchAccount={onSwitchAccount}
               sessionExpiresAt={sessionExpiresAt}
               onOpenCreateAccount={onOpenCreateAccount}
               onOpenAdminAccountsManager={onOpenAdminAccountsManager}
