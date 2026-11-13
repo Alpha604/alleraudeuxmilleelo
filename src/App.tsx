@@ -4,7 +4,8 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Calendar, History, LayoutDashboard, LineChart, Settings as SettingsIcon } from 'lucide-react';
+import { Calendar, History, LayoutDashboard, LineChart, Settings as SettingsIcon, ShieldAlert } from 'lucide-react';
+import { AdminPanelView } from './components/AdminPanelView';
 import { DailyObjectiveCard } from './components/DailyObjectiveCard';
 import { GameModesBreakdown } from './components/GameModesBreakdown';
 import { HeroEloCard } from './components/HeroEloCard';
@@ -77,6 +78,15 @@ export default function App() {
 
   // Admin 2FA Session state
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminSessionActive());
+  const [hasAdminRole, setHasAdminRole] = useState<boolean>(() => {
+    try {
+      const active = getActiveUserSession();
+      if (isAdminSessionActive() || active?.username === 'alpharomeo1500') return true;
+      return typeof window !== 'undefined' && localStorage.getItem('roadto2000_admin_role_v1') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [securityModalOpen, setSecurityModalOpen] = useState(false);
   const [securityModalTitle, setSecurityModalTitle] = useState('Accès Protégé');
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
@@ -254,7 +264,13 @@ export default function App() {
   // In spectator or iframe mode, ensure user cannot access restricted tabs
   useEffect(() => {
     if (userSession?.isSpectator) {
-      if (currentTab === 'history' || currentTab === 'iframe' || currentTab === 'settings' || currentTab === 'tests') {
+      if (
+        currentTab === 'history' ||
+        currentTab === 'iframe' ||
+        currentTab === 'settings' ||
+        currentTab === 'tests' ||
+        currentTab === 'admin'
+      ) {
         setCurrentTab('dashboard');
         showToast(
           'Accès restreint : le Journal Syncs et les réglages sont réservés aux comptes connectés.',
@@ -262,7 +278,7 @@ export default function App() {
           'Mode Spectateur'
         );
       }
-    } else if (isIframe && (currentTab === 'settings' || currentTab === 'tests')) {
+    } else if (isIframe && (currentTab === 'settings' || currentTab === 'tests' || currentTab === 'admin')) {
       setCurrentTab('dashboard');
     }
   }, [userSession?.isSpectator, isIframe, currentTab, showToast]);
@@ -284,6 +300,10 @@ export default function App() {
 
   const handleSecuritySuccess = useCallback(() => {
     setIsAdmin(true);
+    setHasAdminRole(true);
+    try {
+      localStorage.setItem('roadto2000_admin_role_v1', 'true');
+    } catch {}
     setSecurityModalOpen(false);
     if (pendingAction) {
       pendingAction();
@@ -294,7 +314,7 @@ export default function App() {
   const handleLockAdmin = useCallback(() => {
     revokeAdminSession();
     setIsAdmin(false);
-    if (currentTab === 'settings' || currentTab === 'tests') {
+    if (currentTab === 'settings' || currentTab === 'tests' || currentTab === 'admin') {
       setCurrentTab('dashboard');
     }
     showToast('Session administrateur verrouillée avec succès.', 'info');
@@ -534,8 +554,16 @@ export default function App() {
       setUserSession(getActiveUserSession());
       if (adminUnlocked) {
         setIsAdmin(true);
+        setHasAdminRole(true);
+        try {
+          localStorage.setItem('roadto2000_admin_role_v1', 'true');
+        } catch {}
       } else {
         setIsAdmin(false);
+        setHasAdminRole(false);
+        try {
+          localStorage.removeItem('roadto2000_admin_role_v1');
+        } catch {}
       }
 
       // Switch active account and reset stats
@@ -543,16 +571,25 @@ export default function App() {
       setProfile(undefined);
       setLastSyncTime(null);
 
-      const updatedSettings: AppSettings = {
-        ...settings,
-        username: cleanUser,
-      };
-      setSettings(updatedSettings);
-      saveStoredSettings(updatedSettings);
+      // Load account-specific settings if saved
+      let nextSettings = { ...settings, username: cleanUser };
+      try {
+        const storedForUser = localStorage.getItem(`roadto2000_settings_${cleanUser}`);
+        if (storedForUser) {
+          const parsed = JSON.parse(storedForUser);
+          nextSettings = { ...nextSettings, ...parsed, username: cleanUser };
+        }
+      } catch {}
+
+      setSettings(nextSettings);
+      saveStoredSettings(nextSettings);
 
       handleAccountSwitch(cleanUser);
       const newUserHistory = getStoredSyncHistory(cleanUser);
       setSyncHistory(newUserHistory);
+      if (newUserHistory.length > 0) {
+        setLastSyncTime(newUserHistory[0].timestamp);
+      }
 
       showToast(
         isSpectator
@@ -569,12 +606,71 @@ export default function App() {
     [settings, performSync, showToast]
   );
 
+  // Instant 1-Click Account Switch for already authenticated users (no A2F re-entry required)
+  const handleQuickSwitchAccount = useCallback(
+    (targetUsername: string) => {
+      if (userSession?.isSpectator || isIframe) {
+        showToast('Changement rapide indisponible en mode Spectateur / Iframe.', 'warning');
+        return;
+      }
+
+      const cleanUser = targetUsername.trim().toLowerCase();
+      if (!cleanUser || cleanUser === settings.username.trim().toLowerCase()) {
+        return;
+      }
+
+      saveUserSession(cleanUser, false);
+      setUserSession(getActiveUserSession());
+
+      // Load target account's persisted settings if present
+      let nextSettings: AppSettings = { ...settings, username: cleanUser };
+      try {
+        const storedForUser = localStorage.getItem(`roadto2000_settings_${cleanUser}`);
+        if (storedForUser) {
+          const parsed = JSON.parse(storedForUser);
+          nextSettings = { ...nextSettings, ...parsed, username: cleanUser };
+        }
+      } catch {}
+
+      setStats(null);
+      setProfile(undefined);
+      setLastSyncTime(null);
+      setSettings(nextSettings);
+      saveStoredSettings(nextSettings);
+
+      handleAccountSwitch(cleanUser);
+      const targetHistory = getStoredSyncHistory(cleanUser);
+      setSyncHistory(targetHistory);
+      if (targetHistory.length > 0) {
+        setLastSyncTime(targetHistory[0].timestamp);
+      }
+
+      if (currentTab === 'admin') {
+        setCurrentTab('dashboard');
+      }
+
+      showToast(
+        `Compte basculé instantanément vers @${cleanUser}.`,
+        'success',
+        'Switch Rapide'
+      );
+
+      performSync(true, cleanUser);
+    },
+    [userSession?.isSpectator, isIframe, settings, currentTab, performSync, showToast]
+  );
+
   // User logout
   const handleLogout = useCallback(() => {
     clearUserSession();
     revokeAdminSession();
     setIsAdmin(false);
+    setHasAdminRole(false);
+    try {
+      localStorage.removeItem('roadto2000_admin_role_v1');
+    } catch {}
     setUserSession(null);
+    setCurrentTab('dashboard');
     showToast('Vous avez été déconnecté avec succès.', 'info', 'Déconnexion');
   }, [showToast]);
 
@@ -717,6 +813,7 @@ export default function App() {
 
   const isSpectator = !!userSession.isSpectator;
   const effectiveIsIframe = isIframe || isSpectator;
+  const hasAdminAccess = !isSpectator && (isAdmin || hasAdminRole || userSession.username === 'alpharomeo1500');
 
   return (
     <div
@@ -730,7 +827,7 @@ export default function App() {
         <div className="absolute top-[600px] right-0 w-[500px] h-[500px] bg-[#10b981]/[0.02] blur-3xl rounded-full" />
       </div>
 
-      {/* PC Web Left Sidebar (with integrated Dropdown Menu on account click) */}
+      {/* PC Web Left Sidebar (with Panel Admin & Quick Account Switcher) */}
       <Sidebar
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
@@ -751,12 +848,12 @@ export default function App() {
         isExpanded={isSidebarExpanded}
         onToggleExpanded={handleToggleSidebar}
         onLogout={handleLogout}
-        onOpenCreateAccount={handleOpenCreateAccount}
-        onOpenAdminAccountsManager={() => setAdminAccountsManagerOpen(true)}
         sessionExpiresAt={userSession.expiresAt}
+        hasAdminAccess={hasAdminAccess}
+        onQuickSwitchAccount={handleQuickSwitchAccount}
       />
 
-      {/* Top Bar Navigation (with integrated Dropdown Menu on account click) */}
+      {/* Top Bar Navigation (with Quick Switcher & Account Dropdown) */}
       <Navbar
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
@@ -775,9 +872,9 @@ export default function App() {
         jsonBinStatus={jsonBinStatus}
         isNetworkOnline={isNetworkOnline}
         onLogout={handleLogout}
-        onOpenCreateAccount={handleOpenCreateAccount}
-        onOpenAdminAccountsManager={() => setAdminAccountsManagerOpen(true)}
         sessionExpiresAt={userSession.expiresAt}
+        hasAdminAccess={hasAdminAccess}
+        onQuickSwitchAccount={handleQuickSwitchAccount}
       />
 
       {/* Main Content Viewport - Fully responsive for Mobile, Tablet & PC */}
@@ -922,6 +1019,20 @@ export default function App() {
             onBackToDashboard={() => setCurrentTab('dashboard')}
           />
         )}
+
+        {/* TAB 9: COMPREHENSIVE ADMIN PANEL (Sidebar dedicated tab) */}
+        {currentTab === 'admin' && !effectiveIsIframe && (
+          <AdminPanelView
+            currentUsername={settings.username}
+            isAdmin={isAdmin}
+            onOpenSecurityModal={handleOpenSecurityModal}
+            onLockAdmin={handleLockAdmin}
+            onOpenCreateAccount={handleOpenCreateAccount}
+            onQuickSwitchAccount={handleQuickSwitchAccount}
+            onSelectTab={setCurrentTab}
+            onShowMessage={showToast}
+          />
+        )}
       </main>
 
       {/* Discrete Notification Toasts */}
@@ -1061,6 +1172,26 @@ export default function App() {
           >
             <History className="h-5 w-5 mb-0.5" />
             <span className="text-[10px] tracking-tight">Historique</span>
+          </button>
+        )}
+
+        {!isIframe && !isSpectator && hasAdminAccess && (
+          <button
+            onClick={() => {
+              if (!isAdmin) {
+                handleOpenSecurityModal('Panel Administrateur', () => setCurrentTab('admin'));
+              } else {
+                setCurrentTab('admin');
+              }
+            }}
+            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+              currentTab === 'admin'
+                ? 'text-[#facc15] font-black'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <ShieldAlert className="h-5 w-5 mb-0.5" />
+            <span className="text-[10px] tracking-tight">Admin</span>
           </button>
         )}
 

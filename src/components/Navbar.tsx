@@ -3,12 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Activity,
+  ArrowLeftRight,
   BarChart2,
   Calendar,
+  Check,
   CheckCircle2,
+  ChevronDown,
   Code2,
   Crown,
   Database,
@@ -16,13 +19,14 @@ import {
   Lock,
   RefreshCw,
   Settings,
+  ShieldAlert,
   ShieldCheck,
-  User,
 } from 'lucide-react';
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
+import { AccountStatus, getPublicAuthorizedAccounts } from '../utils/security';
 import { UserDropdown } from './UserDropdown';
 
-export type NavTab = 'dashboard' | 'charts' | 'calendar' | 'history' | 'tests' | 'iframe' | 'settings' | 'profile';
+export type NavTab = 'dashboard' | 'charts' | 'calendar' | 'history' | 'tests' | 'iframe' | 'settings' | 'profile' | 'admin';
 
 interface NavbarProps {
   currentTab: NavTab;
@@ -44,9 +48,9 @@ interface NavbarProps {
   jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
   isNetworkOnline?: boolean;
   onLogout?: () => void;
-  onOpenCreateAccount?: () => void;
-  onOpenAdminAccountsManager?: () => void;
   sessionExpiresAt?: number;
+  hasAdminAccess?: boolean;
+  onQuickSwitchAccount?: (targetUsername: string) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -67,27 +71,56 @@ export const Navbar: React.FC<NavbarProps> = ({
   jsonBinStatus = 'pending_keys',
   isNetworkOnline = true,
   onLogout = () => {},
-  onOpenCreateAccount,
-  onOpenAdminAccountsManager,
   sessionExpiresAt,
+  hasAdminAccess = false,
+  onQuickSwitchAccount,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const formattedSyncTime = lastSyncTime
-    ? new Date(lastSyncTime).toLocaleTimeString('fr-FR', {
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    : null;
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const switcherRef = useRef<HTMLDivElement>(null);
+  const [authorizedAccounts, setAuthorizedAccounts] = useState<
+    { username: string; status: AccountStatus; isMaster: boolean }[]
+  >([]);
+
+  useEffect(() => {
+    const refresh = () => setAuthorizedAccounts(getPublicAuthorizedAccounts());
+    refresh();
+    window.addEventListener('roadto2000:accounts-updated', refresh);
+    return () => window.removeEventListener('roadto2000:accounts-updated', refresh);
+  }, [username, switcherOpen]);
+
+  useEffect(() => {
+    if (!switcherOpen) return;
+    const handleOutside = (e: MouseEvent | TouchEvent) => {
+      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) {
+        setSwitcherOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+    };
+  }, [switcherOpen]);
+
+  const activeSwitchAccounts = authorizedAccounts.filter((a) => a.status === 'active');
 
   const handleTabClick = (tab: NavTab) => {
-    if (isSpectator && (tab === 'history' || tab === 'iframe' || tab === 'settings' || tab === 'tests')) {
+    if (isSpectator && (tab === 'history' || tab === 'iframe' || tab === 'settings' || tab === 'tests' || tab === 'admin')) {
       return;
     }
-    if (isIframe && (tab === 'settings' || tab === 'tests')) {
+    if (isIframe && (tab === 'settings' || tab === 'tests' || tab === 'admin')) {
       return;
     }
-    if (!isAdmin && (tab === 'settings' || tab === 'tests')) {
-      onOpenSecurityModal(tab === 'settings' ? 'Paramètres du projet' : 'Suite de tests');
+    if (!isAdmin && (tab === 'settings' || tab === 'tests' || tab === 'admin')) {
+      onOpenSecurityModal(
+        tab === 'settings'
+          ? 'Paramètres du projet'
+          : tab === 'admin'
+          ? 'Panel Administrateur'
+          : 'Suite de tests'
+      );
       return;
     }
     onSelectTab(tab);
@@ -106,6 +139,9 @@ export const Navbar: React.FC<NavbarProps> = ({
     ...(!isIframe && !isSpectator ? [{ key: 'tests' as NavTab, label: 'Tests', icon: <CheckCircle2 className="h-4 w-4" />, protected: true }] : []),
     ...(!isSpectator ? [{ key: 'iframe' as NavTab, label: 'Iframe', icon: <Code2 className="h-4 w-4" /> }] : []),
     ...(!isIframe && !isSpectator ? [{ key: 'settings' as NavTab, label: 'Paramètres', icon: <Settings className="h-4 w-4" />, protected: true }] : []),
+    ...(!isIframe && !isSpectator && hasAdminAccess
+      ? [{ key: 'admin' as NavTab, label: 'Panel Admin', icon: <ShieldAlert className="h-4 w-4" />, protected: true }]
+      : []),
   ];
 
   return (
@@ -139,6 +175,69 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex h-8 sm:h-9 items-center justify-center gap-1.5 rounded-xl border border-sky-500/40 bg-sky-500/15 px-2.5 sm:px-3 text-xs font-bold text-sky-400">
               <Eye className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Spectateur (Lecture Seule)</span>
+            </div>
+          )}
+
+          {/* 1-Click Quick Account Switcher (Authenticated users only) */}
+          {!isIframe && !isSpectator && onQuickSwitchAccount && activeSwitchAccounts.length > 1 && (
+            <div className="relative" ref={switcherRef}>
+              <button
+                type="button"
+                onClick={() => setSwitcherOpen((o) => !o)}
+                title="Basculer instantanément de compte sans reconnexion"
+                className="flex h-8 sm:h-9 items-center gap-1.5 rounded-xl border border-neutral-800 bg-neutral-900/90 hover:border-[#facc15]/60 px-2.5 sm:px-3 text-xs font-bold text-neutral-200 hover:text-white transition-all active:scale-95"
+              >
+                <ArrowLeftRight className="h-3.5 w-3.5 text-[#facc15] shrink-0" />
+                <span className="hidden md:inline font-mono truncate max-w-[115px]">@{username}</span>
+                <ChevronDown className={`h-3.5 w-3.5 text-neutral-400 transition-transform ${switcherOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {switcherOpen && (
+                <div className="absolute right-0 top-full mt-2 z-50 w-64 rounded-2xl border border-neutral-800 bg-[#0c0f14]/98 backdrop-blur-xl shadow-2xl p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-2.5 py-1.5 flex items-center justify-between border-b border-neutral-800/80 mb-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">
+                      Switch Rapide (Sans A2F)
+                    </span>
+                    <span className="text-[10px] font-mono text-[#10b981] font-bold">
+                      {activeSwitchAccounts.length} actifs
+                    </span>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto space-y-1 pr-0.5">
+                    {activeSwitchAccounts.map((acc) => {
+                      const isCurrent = acc.username.toLowerCase() === username.toLowerCase();
+                      return (
+                        <button
+                          key={acc.username}
+                          type="button"
+                          onClick={() => {
+                            setSwitcherOpen(false);
+                            if (!isCurrent) {
+                              onQuickSwitchAccount(acc.username);
+                            }
+                          }}
+                          className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-all text-left ${
+                            isCurrent
+                              ? 'bg-[#facc15]/15 border border-[#facc15]/40 text-[#facc15] font-black'
+                              : 'text-neutral-200 hover:bg-neutral-800/80 hover:text-white border border-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={`h-6 w-6 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${
+                                acc.isMaster ? 'bg-[#facc15] text-black' : 'bg-neutral-800 text-neutral-200'
+                              }`}
+                            >
+                              {acc.username.substring(0, 2).toUpperCase()}
+                            </span>
+                            <span className="font-mono truncate">@{acc.username}</span>
+                          </div>
+                          {isCurrent && <Check className="h-3.5 w-3.5 text-[#facc15] shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -241,13 +340,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               username={username}
               isAdmin={isAdmin}
               isSpectator={isSpectator}
-              onOpenSecurityModal={onOpenSecurityModal}
-              onLockAdmin={onLockAdmin}
               onSelectTab={onSelectTab}
               onLogout={onLogout}
               sessionExpiresAt={sessionExpiresAt}
-              onOpenCreateAccount={onOpenCreateAccount}
-              onOpenAdminAccountsManager={onOpenAdminAccountsManager}
               placement="bottom-right"
             />
           </div>

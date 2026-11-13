@@ -13,11 +13,13 @@ import {
   Eye,
   KeyRound,
   PauseCircle,
+  Search,
   Shield,
   ShieldCheck,
   Smartphone,
   Target,
   Users,
+  X,
 } from 'lucide-react';
 import {
   AccountStatus,
@@ -40,6 +42,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [selectedAccount, setSelectedAccount] = useState<string>(defaultUsername);
   const [authMode, setAuthMode] = useState<'choose' | 'totp'>('choose');
   const [totpCode, setTotpCode] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const codeInputRef = useRef<HTMLInputElement>(null);
@@ -69,6 +72,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const isAlphaRomeo = activeAccountObj.isMaster;
   const isSuspended = activeAccountObj.status === 'suspended';
   const isBanned = activeAccountObj.status === 'banned';
+
+  const filteredAccounts = authorizedAccounts.filter((acc) =>
+    acc.username.toLowerCase().includes(searchQuery.trim().toLowerCase())
+  );
 
   const handleSelectAccount = (username: string) => {
     setSelectedAccount(username);
@@ -192,13 +199,50 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   </p>
                 </div>
                 <span className="text-xs font-mono px-3 py-1 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 self-start sm:self-center">
-                  {authorizedAccounts.length} autorisé{authorizedAccounts.length > 1 ? 's' : ''}
+                  {filteredAccounts.length} / {authorizedAccounts.length} joueur{authorizedAccounts.length > 1 ? 's' : ''}
                 </span>
               </div>
 
+              {/* Player Search Bar */}
+              <div className="relative">
+                <Search className="h-4 w-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Rechercher un joueur par pseudo Chess.com..."
+                  className="w-full rounded-2xl border border-neutral-800 bg-neutral-950/90 pl-10 pr-10 py-2.5 text-xs sm:text-sm text-white placeholder-neutral-500 focus:border-[#facc15] focus:outline-none focus:ring-1 focus:ring-[#facc15]/50 transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    title="Effacer la recherche"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center transition-colors"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
               {/* Accounts Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-h-[430px] overflow-y-auto scrollbar-thin pr-1">
-                {authorizedAccounts.map((acc) => {
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-h-[390px] overflow-y-auto scrollbar-thin pr-1">
+                {filteredAccounts.length === 0 ? (
+                  <div className="col-span-full py-10 px-4 text-center rounded-2xl border border-dashed border-neutral-800 bg-neutral-950/50 space-y-2">
+                    <Search className="h-6 w-6 text-neutral-500 mx-auto" />
+                    <p className="text-xs sm:text-sm font-bold text-neutral-300">
+                      Aucun joueur trouvé pour « {searchQuery} »
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="text-xs font-bold text-[#facc15] hover:underline"
+                    >
+                      Afficher tous les comptes ({authorizedAccounts.length})
+                    </button>
+                  </div>
+                ) : (
+                  filteredAccounts.map((acc) => {
                   const isSelected = selectedAccount.toLowerCase() === acc.username.toLowerCase();
                   const isAlpha = acc.isMaster;
 
@@ -270,7 +314,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                       </div>
                     </button>
                   );
-                })}
+                }))}
               </div>
             </div>
 

@@ -153,7 +153,7 @@ export async function fetchServerData(username: string): Promise<{
   }
 
   // 2. Direct client fallback on Vercel: pull directly from JSONBin.io
-  const pullResult = await pullFromJsonBin();
+  const pullResult = await pullFromJsonBin(clean);
   if (pullResult.success && pullResult.history && pullResult.history.length > 0) {
     return {
       history: pullResult.history,
@@ -283,7 +283,7 @@ export async function fetchJsonBinStatus(username = 'alpharomeo1500'): Promise<J
   }
 
   // 2. Direct client-side mode for Vercel
-  const creds = getClientJsonBinCredentials();
+  const creds = getClientJsonBinCredentials(username);
   const metrics = getLocalMetrics();
 
   return {
@@ -404,16 +404,16 @@ export async function syncNowToJsonBin(
   }
 
   // 2. Direct client-side push to JSONBin.io (Works on Vercel)
-  const creds = getClientJsonBinCredentials();
+  const cleanUser = username.trim().toLowerCase();
+  const creds = getClientJsonBinCredentials(cleanUser);
   if (!creds.enabled || !creds.binId) {
     return { success: false, error: 'JSONBin non configuré' };
   }
 
   const metrics = getLocalMetrics();
-  const cleanUser = username.trim().toLowerCase();
   const localHistory = getStoredSyncHistory(cleanUser);
   const settings = getStoredSettings();
-  const currentRecords = localHistory.length > 0 ? localHistory : OFFICIAL_DAILY_RECORDS;
+  const currentRecords = localHistory.length > 0 ? localHistory : (cleanUser === 'alpharomeo1500' ? OFFICIAL_DAILY_RECORDS : []);
 
   // Client Quota Optimization 1: Compare signature
   const sig = `${currentRecords.length}_${currentRecords[0]?.id}_${currentRecords[0]?.bestRating}_${settings.selectedMode}`;
@@ -511,12 +511,13 @@ export async function syncNowToJsonBin(
   }
 }
 
-export async function pullFromJsonBin(): Promise<{ success: boolean; history?: SyncRecord[]; error?: string }> {
+export async function pullFromJsonBin(targetUsername?: string): Promise<{ success: boolean; history?: SyncRecord[]; error?: string }> {
   // 1. Try server first
   try {
     const res = await fetch('/api/jsonbin/pull', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: targetUsername ? JSON.stringify({ username: targetUsername }) : undefined,
     });
     if (res.ok) {
       const contentType = res.headers.get('content-type') || '';
@@ -532,7 +533,7 @@ export async function pullFromJsonBin(): Promise<{ success: boolean; history?: S
   }
 
   // 2. Direct client-side fetch from JSONBin.io (Works on Vercel)
-  const creds = getClientJsonBinCredentials();
+  const creds = getClientJsonBinCredentials(targetUsername);
   if (!creds.binId) {
     return { success: false, error: 'Bin ID non configuré' };
   }
@@ -592,4 +593,73 @@ export async function pullFromJsonBin(): Promise<{ success: boolean; history?: S
     saveLocalMetrics({ lastStatus: 'error', lastError: err?.message || 'Erreur réseau vers JSONBin' });
     return { success: false, error: err?.message || 'Erreur réseau vers JSONBin' };
   }
+}
+
+/**
+ * Generates the exact initial JSON payload to paste into jsonbin.io when creating a new Bin for a player.
+ */
+export function buildInitialJsonBinPayload(params: {
+  username: string;
+  startElo?: number;
+  targetElo?: number;
+  startDate?: string;
+  targetDate?: string;
+  selectedMode?: string;
+  trajectoryModel?: string;
+}) {
+  const cleanUser = (params.username || 'nouveau_joueur').trim().toLowerCase() || 'nouveau_joueur';
+  const startElo = params.startElo ?? 1500;
+  const targetElo = params.targetElo ?? 2000;
+  const startDate = params.startDate || new Date().toISOString().split('T')[0];
+  const targetDate = params.targetDate || '2027-12-31T23:59:59';
+  const selectedMode = params.selectedMode || 'auto';
+  const trajectoryModel = params.trajectoryModel || 'linear';
+
+  return {
+    exportedAt: new Date().toISOString(),
+    project: 'Road to 2000 Elo',
+    username: cleanUser,
+    version: '2.0',
+    recordsCount: 0,
+    records: [],
+    history: [],
+    player: {
+      username: cleanUser,
+      targetElo,
+      targetDate,
+      startDate,
+      startRatings: {
+        bullet: startElo,
+        blitz: startElo,
+        rapid: startElo,
+      },
+      currentRatings: {
+        bullet: startElo,
+        blitz: startElo,
+        rapid: startElo,
+      },
+      bestMode: selectedMode === 'auto' ? 'blitz' : selectedMode,
+      bestRating: startElo,
+    },
+    settings: {
+      username: cleanUser,
+      startElo,
+      targetElo,
+      startDate,
+      targetDate,
+      timezone: 'Europe/Paris',
+      selectedMode,
+      trajectoryModel,
+      autoSyncMinutes: 0,
+      theme: 'dark',
+      notifications: {
+        newPeak: true,
+        milestoneReached: true,
+        goalReached: true,
+        syncErrors: true,
+        significantDelay: true,
+      },
+      customMilestones: [],
+    },
+  };
 }

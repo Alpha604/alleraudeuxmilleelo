@@ -3,12 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   Award,
   Calendar,
-  CheckCircle2,
   Crown,
   ExternalLink,
   Flame,
@@ -19,7 +18,8 @@ import {
   Target,
   Trophy,
   Users,
-  Zap,
+  X,
+  ZoomIn,
 } from 'lucide-react';
 import { AppSettings, ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
 
@@ -43,6 +43,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onBackToDashboard,
 }) => {
   const isAlphaRomeo = username.toLowerCase() === 'alpharomeo1500';
+  const [showAvatarLightbox, setShowAvatarLightbox] = useState(false);
+
+  useEffect(() => {
+    if (!showAvatarLightbox) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowAvatarLightbox(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showAvatarLightbox]);
 
   // Format joined date
   const joinedDateFormatted = profile?.joined
@@ -225,22 +235,33 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         {/* Content container */}
         <div className="relative z-10 p-6 sm:p-8 space-y-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
-            {/* Large avatar photo (Photo de profil en grand) */}
+            {/* Large avatar photo (Photo de profil en grand - cliquable pour agrandir) */}
             <div className="relative shrink-0">
               {profile?.avatar ? (
-                <div className="relative group">
+                <button
+                  type="button"
+                  onClick={() => setShowAvatarLightbox(true)}
+                  title="Cliquer pour afficher la photo de profil en grand"
+                  className="relative group block cursor-zoom-in focus:outline-none"
+                >
                   <img
                     src={profile.avatar}
                     alt={profile.name || username}
                     referrerPolicy="no-referrer"
-                    className="h-24 w-24 sm:h-28 sm:w-28 md:h-32 md:w-32 rounded-3xl border-4 border-[#facc15] object-cover shadow-[0_0_30px_rgba(250,204,21,0.4)]"
+                    className="h-28 w-28 sm:h-32 sm:w-32 md:h-36 md:w-36 rounded-3xl border-4 border-[#facc15] object-cover shadow-[0_0_30px_rgba(250,204,21,0.4)] transition-transform duration-200 group-hover:scale-[1.03]"
                   />
+                  <div className="absolute inset-0 rounded-3xl bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-black/80 border border-[#facc15]/50 text-[#facc15] text-[10px] font-bold">
+                      <ZoomIn className="h-3.5 w-3.5" />
+                      <span>Voir en grand</span>
+                    </div>
+                  </div>
                   <div className="absolute -bottom-2 -right-2 p-1.5 rounded-xl bg-[#07090e] border border-neutral-800 shadow-md">
                     <Crown className="h-4 w-4 text-[#facc15]" />
                   </div>
-                </div>
+                </button>
               ) : (
-                <div className="flex h-24 w-24 sm:h-28 sm:w-28 md:h-32 md:w-32 items-center justify-center rounded-3xl border-4 border-[#facc15] bg-neutral-900 text-3xl sm:text-4xl font-black text-[#facc15] shadow-[0_0_30px_rgba(250,204,21,0.4)]">
+                <div className="flex h-28 w-28 sm:h-32 sm:w-32 md:h-36 md:w-36 items-center justify-center rounded-3xl border-4 border-[#facc15] bg-neutral-900 text-3xl sm:text-4xl font-black text-[#facc15] shadow-[0_0_30px_rgba(250,204,21,0.4)]">
                   {username.substring(0, 2).toUpperCase()}
                 </div>
               )}
@@ -408,6 +429,64 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Extra-Large Avatar Lightbox Modal (PDP en grand) */}
+      {showAvatarLightbox && profile?.avatar && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-150"
+          onClick={() => setShowAvatarLightbox(false)}
+        >
+          <div
+            className="relative max-w-lg w-full rounded-3xl border border-neutral-800 bg-[#0c0f14] p-5 sm:p-6 shadow-2xl space-y-4 flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between">
+              <div className="min-w-0">
+                <h3 className="text-base sm:text-lg font-black text-white truncate">
+                  {profile.name || username}
+                </h3>
+                <span className="text-xs font-mono text-[#facc15]">@{username}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAvatarLightbox(false)}
+                className="h-9 w-9 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400 hover:text-white transition-colors"
+                title="Fermer (Échap)"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="relative rounded-3xl overflow-hidden border-4 border-[#facc15]/80 shadow-[0_0_45px_rgba(250,204,21,0.3)] bg-neutral-950">
+              <img
+                src={profile.avatar}
+                alt={profile.name || username}
+                referrerPolicy="no-referrer"
+                className="w-72 h-72 sm:w-96 sm:h-96 object-cover"
+              />
+            </div>
+
+            <div className="w-full flex items-center justify-between gap-3 pt-1">
+              <a
+                href={profile.avatar}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-300 hover:text-[#facc15] transition-colors"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                <span>Ouvrir l'image originale</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => setShowAvatarLightbox(false)}
+                className="px-4 py-2 rounded-xl bg-[#facc15] text-black text-xs font-black hover:bg-[#eab308] transition-colors"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

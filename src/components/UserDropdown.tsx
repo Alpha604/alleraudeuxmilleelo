@@ -8,14 +8,10 @@ import {
   ArrowRight,
   BarChart2,
   Calendar,
-  CheckCircle2,
   Lock,
   LogOut,
   Settings,
-  ShieldAlert,
   User,
-  UserPlus,
-  Users,
 } from 'lucide-react';
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
 import { NavTab } from './Navbar';
@@ -28,12 +24,8 @@ interface UserDropdownProps {
   username: string;
   isAdmin: boolean;
   isSpectator?: boolean;
-  onOpenSecurityModal: (title?: string) => void;
-  onLockAdmin: () => void;
   onSelectTab: (tab: NavTab) => void;
   onLogout: () => void;
-  onOpenCreateAccount?: () => void;
-  onOpenAdminAccountsManager?: () => void;
   sessionExpiresAt?: number;
   placement?: 'bottom-right' | 'top-right' | 'sidebar-bottom';
 }
@@ -46,12 +38,8 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
   username,
   isAdmin,
   isSpectator,
-  onOpenSecurityModal,
-  onLockAdmin,
   onSelectTab,
   onLogout,
-  onOpenCreateAccount,
-  onOpenAdminAccountsManager,
   sessionExpiresAt,
   placement = 'bottom-right',
 }) => {
@@ -334,74 +322,6 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
           </div>
           {!isAdmin && <Lock className="h-3 w-3 text-neutral-500" />}
         </button>
-
-        {/* Panel ADMIN (AlphaRoméo exclusif) */}
-        {isAlphaRomeo && (
-          <div className="pt-1 border-t border-neutral-800/60 my-1 space-y-1">
-            <div className="px-2 py-1 flex items-center justify-between text-[11px] font-bold text-[#facc15]">
-              <span className="flex items-center gap-1.5">
-                <ShieldAlert className="h-3.5 w-3.5" />
-                Panel Administrateur
-              </span>
-              {isAdmin ? (
-                <button
-                  type="button"
-                  onClick={onLockAdmin}
-                  className="text-[10px] px-2 py-0.5 rounded bg-[#10b981]/20 text-[#10b981] border border-[#10b981]/40 hover:bg-[#10b981]/30 transition-colors"
-                >
-                  2FA Déverrouillé
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onOpenSecurityModal('Panel Administrateur')}
-                  className="text-[10px] px-2 py-0.5 rounded bg-[#facc15] text-black font-black hover:bg-[#eab308] transition-colors"
-                >
-                  Déverrouiller
-                </button>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                if (onOpenAdminAccountsManager) onOpenAdminAccountsManager();
-              }}
-              className="w-full flex items-center justify-between p-2 rounded-xl text-neutral-200 hover:text-white bg-neutral-900/80 hover:bg-neutral-800 border border-neutral-800 transition-all text-xs font-bold"
-            >
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-[#facc15]" />
-                <span>Gestion des Joueurs & Comptes</span>
-              </div>
-              <span className="text-[10px] text-[#facc15] font-mono">Ban / Statut</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                if (onOpenCreateAccount) onOpenCreateAccount();
-              }}
-              className="w-full flex items-center justify-between p-2 rounded-xl text-neutral-200 hover:text-white bg-[#facc15]/10 hover:bg-[#facc15]/20 border border-[#facc15]/30 transition-all text-xs font-bold"
-            >
-              <div className="flex items-center gap-2">
-                <UserPlus className="h-4 w-4 text-[#facc15]" />
-                <span>Créer un Compte Joueur</span>
-              </div>
-              <span className="text-[10px] text-[#facc15] font-black uppercase tracking-wider">JSONBin</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleTabClick('tests')}
-              className="w-full flex items-center gap-2.5 p-2 rounded-xl text-neutral-300 hover:text-white hover:bg-neutral-800/70 transition-colors text-xs"
-            >
-              <CheckCircle2 className="h-4 w-4 text-[#10b981]" />
-              <span>Suite de Tests & Diagnostics</span>
-            </button>
-          </div>
-        )}
 
         {/* Session status info */}
         <div className="px-2.5 py-1.5 rounded-xl bg-neutral-950/60 border border-neutral-800/60 flex items-center justify-between text-[10px] text-neutral-400">

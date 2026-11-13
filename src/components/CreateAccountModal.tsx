@@ -3,17 +3,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  Copy,
   Database,
+  Download,
+  FileJson,
   ShieldCheck,
   UserPlus,
   X,
 } from 'lucide-react';
 import { createManagedAccount } from '../utils/security';
+import { buildInitialJsonBinPayload } from '../utils/cloudSync';
 import { GameMode, TrajectoryModel } from '../types/chess';
 
 interface CreateAccountModalProps {
@@ -45,6 +49,49 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdUsername, setCreatedUsername] = useState<string | null>(null);
+  const [copiedJson, setCopiedJson] = useState(false);
+  const [showJsonPreview, setShowJsonPreview] = useState(true);
+
+  const initialJsonPayload = useMemo(() => {
+    const cleanUser = (createdUsername || username || 'nouveau_joueur')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '') || 'nouveau_joueur';
+    return JSON.stringify(
+      buildInitialJsonBinPayload({
+        username: cleanUser,
+        startElo,
+        targetElo,
+        startDate,
+        targetDate,
+        selectedMode,
+        trajectoryModel,
+      }),
+      null,
+      2
+    );
+  }, [createdUsername, username, startElo, targetElo, startDate, targetDate, selectedMode, trajectoryModel]);
+
+  const handleCopyInitialJson = async () => {
+    try {
+      await navigator.clipboard.writeText(initialJsonPayload);
+      setCopiedJson(true);
+      setTimeout(() => setCopiedJson(false), 2500);
+    } catch {
+      onShowMessage('Impossible de copier automatiquement. Utilisez le bouton Télécharger.', 'warning');
+    }
+  };
+
+  const handleDownloadInitialJson = () => {
+    const cleanUser = (createdUsername || username || 'nouveau_joueur').trim().toLowerCase() || 'nouveau_joueur';
+    const blob = new Blob([initialJsonPayload], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `jsonbin-init-${cleanUser}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (!isOpen) return null;
 
@@ -109,7 +156,7 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
       <div
-        className="relative w-full max-w-lg rounded-3xl border border-neutral-800 bg-[#0c0f14] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+        className="relative w-full max-w-xl rounded-3xl border border-neutral-800 bg-[#0c0f14] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -204,6 +251,54 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
                     className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white placeholder-neutral-500 focus:border-[#facc15] focus:outline-none font-mono"
                   />
                 </div>
+              </div>
+
+              {/* Base JSONBin Content Helper to create the Bin on jsonbin.io */}
+              <div className="p-3.5 rounded-2xl bg-neutral-950/80 border border-neutral-800 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-white">
+                    <FileJson className="h-4 w-4 text-[#facc15]" />
+                    <span>Contenu JSONBin de base à copier</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowJsonPreview((p) => !p)}
+                      className="px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-800 text-[10px] font-bold text-neutral-300 hover:text-white"
+                    >
+                      {showJsonPreview ? 'Masquer' : 'Aperçu'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadInitialJson}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-800 text-[10px] font-bold text-neutral-300 hover:text-white"
+                      title="Télécharger le fichier .json d'initialisation"
+                    >
+                      <Download className="h-3 w-3" />
+                      <span>.JSON</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopyInitialJson}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black transition-all ${
+                        copiedJson
+                          ? 'bg-[#10b981] text-black'
+                          : 'bg-[#facc15] text-black hover:bg-[#eab308]'
+                      }`}
+                    >
+                      {copiedJson ? <CheckCircle2 className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      <span>{copiedJson ? 'Copié !' : 'Copier'}</span>
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[10px] text-neutral-400 leading-relaxed">
+                  Collez ce JSON initial lors de la création de votre nouveau Bin sur <span className="text-[#facc15] font-mono">jsonbin.io</span> pour initialiser le profil <span className="text-white font-mono">@{username.trim().toLowerCase() || 'nouveau_joueur'}</span> :
+                </p>
+                {showJsonPreview && (
+                  <pre className="max-h-36 overflow-auto rounded-xl bg-black/70 border border-neutral-800/80 p-2.5 text-[10px] font-mono text-emerald-300 leading-relaxed select-all">
+                    {initialJsonPayload}
+                  </pre>
+                )}
               </div>
 
               <div className="p-3 rounded-xl bg-[#facc15]/5 border border-[#facc15]/20 text-[11px] text-neutral-300 flex items-center gap-2">
@@ -341,6 +436,41 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
                 <p>
                   <strong className="text-white">Mode Spectateur :</strong> Visible par tous en lecture seule sans consommer votre quota JSONBin.
                 </p>
+              </div>
+
+              {/* Final Base JSONBin Content Ready to Copy */}
+              <div className="p-3.5 rounded-2xl bg-neutral-950/80 border border-neutral-800 text-left space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <FileJson className="h-4 w-4 text-[#facc15]" />
+                    JSON de base (avec vos objectifs)
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleDownloadInitialJson}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-900 border border-neutral-800 text-[10px] font-bold text-neutral-300 hover:text-white"
+                    >
+                      <Download className="h-3 w-3" />
+                      <span>Télécharger</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopyInitialJson}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black transition-all ${
+                        copiedJson
+                          ? 'bg-[#10b981] text-black'
+                          : 'bg-[#facc15] text-black hover:bg-[#eab308]'
+                      }`}
+                    >
+                      {copiedJson ? <CheckCircle2 className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      <span>{copiedJson ? 'Copié !' : 'Copier JSON'}</span>
+                    </button>
+                  </div>
+                </div>
+                <pre className="max-h-36 overflow-auto rounded-xl bg-black/70 border border-neutral-800/80 p-2.5 text-[10px] font-mono text-emerald-300 leading-relaxed select-all">
+                  {initialJsonPayload}
+                </pre>
               </div>
 
               <div className="pt-2">

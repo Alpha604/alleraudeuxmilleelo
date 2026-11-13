@@ -618,10 +618,19 @@ export function getAccountStatus(username: string): AccountStatus {
   return 'active';
 }
 
+function notifyAccountsUpdated(): void {
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('roadto2000:accounts-updated'));
+    }
+  } catch {}
+}
+
 export function setAccountStatus(username: string, status: AccountStatus): boolean {
   const clean = username.trim().toLowerCase();
   if (clean === 'alpharomeo1500') return false; // Admin master account cannot be suspended or banned
   safeSet(`roadto2000_acc_status_${clean}`, status);
+  notifyAccountsUpdated();
   return true;
 }
 
@@ -636,6 +645,7 @@ export function deleteManagedAccount(username: string): boolean {
   safeRemove(`roadto2000_jsonbin_binid_${clean}`);
   safeRemove(`roadto2000_jsonbin_apikey_${clean}`);
   safeRemove(`roadto2000_settings_${clean}`);
+  notifyAccountsUpdated();
   return true;
 }
 
@@ -724,6 +734,7 @@ export async function createManagedAccount(params: CreateAccountParams): Promise
     const currentList = getManagedAccounts();
     const updatedList = Array.from(new Set([...currentList, cleanUser]));
     safeSet(ACCOUNTS_REGISTRY_KEY, JSON.stringify(updatedList));
+    notifyAccountsUpdated();
 
     return {
       success: true,
