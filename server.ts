@@ -1252,6 +1252,61 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
     }
   });
 
+  // 8d. Global Accounts Registry JSONBin Config & Sync Persistence
+  const ACCOUNTS_REGISTRY_CONFIG_FILE = path.resolve(storageDir, 'roadto2000_accounts_registry_config.json');
+  const ACCOUNTS_REGISTRY_DATA_FILE = path.resolve(storageDir, 'roadto2000_accounts_registry_data.json');
+  const DEFAULT_REG_BIN_ID = '6af9f1d7ffd5d16053c38f30';
+  const DEFAULT_REG_API_KEY = '$2a$10$nOO6WNU996CcWwBht/K8MuDshQsOPktO28uEy.WTBESmEHAsRjcZy';
+
+  app.get('/api/accounts-registry/config', (_req: Request, res: Response) => {
+    let current: Record<string, any> = {};
+    if (fs.existsSync(ACCOUNTS_REGISTRY_CONFIG_FILE)) {
+      try {
+        current = JSON.parse(fs.readFileSync(ACCOUNTS_REGISTRY_CONFIG_FILE, 'utf-8'));
+      } catch {}
+    }
+    const binId = current.binId || DEFAULT_REG_BIN_ID;
+    res.json({
+      success: true,
+      configured: Boolean(binId),
+      binId,
+      hasApiKey: Boolean(current.apiKey || DEFAULT_REG_API_KEY),
+    });
+  });
+
+  app.post('/api/accounts-registry/config', (req: Request, res: Response) => {
+    try {
+      const { binId, apiKey, enabled } = req.body || {};
+      let current: Record<string, any> = {};
+      if (fs.existsSync(ACCOUNTS_REGISTRY_CONFIG_FILE)) {
+        try {
+          current = JSON.parse(fs.readFileSync(ACCOUNTS_REGISTRY_CONFIG_FILE, 'utf-8'));
+        } catch {}
+      }
+      const updated = {
+        ...current,
+        ...(typeof binId === 'string' && binId.trim() ? { binId: binId.trim() } : { binId: current.binId || DEFAULT_REG_BIN_ID }),
+        ...(typeof apiKey === 'string' && apiKey.trim() ? { apiKey: apiKey.trim() } : { apiKey: current.apiKey || DEFAULT_REG_API_KEY }),
+        ...(typeof enabled === 'boolean' ? { enabled } : {}),
+        updatedAt: Date.now(),
+      };
+      fs.writeFileSync(ACCOUNTS_REGISTRY_CONFIG_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+      res.json({ success: true, configured: Boolean(updated.binId) });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed to save accounts registry config' });
+    }
+  });
+
+  app.post('/api/accounts-registry/sync', (req: Request, res: Response) => {
+    try {
+      const payload = req.body || {};
+      fs.writeFileSync(ACCOUNTS_REGISTRY_DATA_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+      res.json({ success: true, accountsCount: Array.isArray(payload.accounts) ? payload.accounts.length : 0 });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed to save accounts registry payload' });
+    }
+  });
+
   // 9. Chess.com API proxy route
   app.get('/api/chess-proxy/*', async (req: Request, res: Response) => {
     try {

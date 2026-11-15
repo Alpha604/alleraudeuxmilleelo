@@ -38,7 +38,7 @@ export function getClientJsonBinCredentials(username?: string): { binId: string;
 
   // Default to official bin only for AlphaRoméo; other accounts start with their own private configuration
   let binId = isAlpha ? DEFAULT_BIN_ID : '';
-  let apiKey = isAlpha ? DEFAULT_API_KEY : '';
+  let storedApiKey = '';
   let enabled = true;
 
   try {
@@ -47,10 +47,12 @@ export function getClientJsonBinCredentials(username?: string): { binId: string;
       const storedKey = window.localStorage.getItem(userKeyKey) || (isAlpha ? window.localStorage.getItem(STORAGE_KEYS.apiKey) : null);
       const storedEnabled = window.localStorage.getItem(userEnabledKey);
       if (storedBin && storedBin.trim()) binId = storedBin.trim();
-      if (storedKey && storedKey.trim()) apiKey = storedKey.trim();
+      if (storedKey && storedKey.trim()) storedApiKey = storedKey.trim();
       if (storedEnabled !== null) enabled = storedEnabled === 'true';
     }
   } catch {}
+
+  const apiKey = storedApiKey || (binId ? DEFAULT_API_KEY : '');
 
   return { binId, apiKey, enabled };
 }

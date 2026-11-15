@@ -44,6 +44,7 @@ import { LoginPage } from './components/LoginPage';
 import { CreateAccountModal } from './components/CreateAccountModal';
 import { ProfileView } from './components/ProfileView';
 import { AdminAccountsManagerModal } from './components/AdminAccountsManagerModal';
+import { pullAccountsRegistryFromJsonBin } from './utils/accountsRegistryCloud';
 import {
   clearUserSession,
   getActiveUserSession,
@@ -465,6 +466,7 @@ export default function App() {
   // Sync on mount (disabled in spectator mode)
   useEffect(() => {
     if (!userSession?.isSpectator && userSession) {
+      pullAccountsRegistryFromJsonBin(false).catch(() => {});
       performSync(false);
     }
   }, []);

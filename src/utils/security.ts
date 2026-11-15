@@ -4,6 +4,7 @@
  */
 
 import QRCode from 'qrcode';
+import { scheduleAccountsRegistryPush } from './accountsRegistryCloud';
 
 const ADMIN_AUTH_KEY = 'roadto2000_admin_session_v2';
 const ADMIN_PASSWORD_HASH_KEY = 'roadto2000_admin_pwd_hash_v3';
@@ -618,10 +619,13 @@ export function getAccountStatus(username: string): AccountStatus {
   return 'active';
 }
 
-function notifyAccountsUpdated(): void {
+function notifyAccountsUpdated(syncCloud = true): void {
   try {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('roadto2000:accounts-updated'));
+    }
+    if (syncCloud) {
+      scheduleAccountsRegistryPush();
     }
   } catch {}
 }
@@ -630,7 +634,7 @@ export function setAccountStatus(username: string, status: AccountStatus): boole
   const clean = username.trim().toLowerCase();
   if (clean === 'alpharomeo1500') return false; // Admin master account cannot be suspended or banned
   safeSet(`roadto2000_acc_status_${clean}`, status);
-  notifyAccountsUpdated();
+  notifyAccountsUpdated(true);
   return true;
 }
 
@@ -642,10 +646,11 @@ export function deleteManagedAccount(username: string): boolean {
   safeRemove(`roadto2000_acc_pwd_${clean}`);
   safeRemove(`roadto2000_totp_secret_${clean}`);
   safeRemove(`roadto2000_acc_status_${clean}`);
+  safeRemove(`roadto2000_acc_created_${clean}`);
   safeRemove(`roadto2000_jsonbin_binid_${clean}`);
   safeRemove(`roadto2000_jsonbin_apikey_${clean}`);
   safeRemove(`roadto2000_settings_${clean}`);
-  notifyAccountsUpdated();
+  notifyAccountsUpdated(true);
   return true;
 }
 
@@ -706,6 +711,7 @@ export async function createManagedAccount(params: CreateAccountParams): Promise
 
   try {
     safeSet(`roadto2000_acc_status_${cleanUser}`, 'active');
+    safeSet(`roadto2000_acc_created_${cleanUser}`, new Date().toISOString());
 
     // Save account-isolated JSONBin configuration
     safeSet(`roadto2000_jsonbin_binid_${cleanUser}`, params.jsonBinId.trim());
@@ -734,7 +740,7 @@ export async function createManagedAccount(params: CreateAccountParams): Promise
     const currentList = getManagedAccounts();
     const updatedList = Array.from(new Set([...currentList, cleanUser]));
     safeSet(ACCOUNTS_REGISTRY_KEY, JSON.stringify(updatedList));
-    notifyAccountsUpdated();
+    notifyAccountsUpdated(true);
 
     return {
       success: true,

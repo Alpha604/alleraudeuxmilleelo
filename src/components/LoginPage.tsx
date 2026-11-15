@@ -26,6 +26,7 @@ import {
   authenticateWithTotpOnly,
   getPublicAuthorizedAccounts,
 } from '../utils/security';
+import { pullAccountsRegistryFromJsonBin } from '../utils/accountsRegistryCloud';
 
 interface LoginPageProps {
   onLoginSuccess: (username: string, isAdmin: boolean, isSpectator?: boolean) => void;
@@ -48,11 +49,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const codeInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const list = getPublicAuthorizedAccounts();
-    setAuthorizedAccounts(list);
-    if (list.length > 0 && !list.some((a) => a.username === selectedAccount)) {
-      setSelectedAccount(list[0].username);
-    }
+    const syncList = () => {
+      const list = getPublicAuthorizedAccounts();
+      setAuthorizedAccounts(list);
+      if (list.length > 0 && !list.some((a) => a.username === selectedAccount)) {
+        setSelectedAccount(list[0].username);
+      }
+    };
+
+    syncList();
+    pullAccountsRegistryFromJsonBin(false).catch(() => {});
+
+    window.addEventListener('roadto2000:accounts-updated', syncList);
+    return () => window.removeEventListener('roadto2000:accounts-updated', syncList);
   }, [selectedAccount]);
 
   useEffect(() => {
