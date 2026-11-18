@@ -153,7 +153,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const handlePullFromJsonBinNow = async () => {
     setIsSyncingBin(true);
-    const res = await pullFromJsonBin();
+    const res = await pullFromJsonBin(form.username);
     setIsSyncingBin(false);
     if (res.success && res.history) {
       if (onHistoryUpdate) onHistoryUpdate(res.history);

@@ -50,6 +50,23 @@ export function calculateProgressPercentage(
   return Math.round(ratio * 1000) / 10;
 }
 
+export function parseDateInput(date: Date | string | number): Date {
+  if (date instanceof Date) {
+    return new Date(date.getTime());
+  }
+  if (typeof date === 'string') {
+    const trimmed = date.trim();
+    const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+    if (dateOnlyMatch) {
+      const y = Number(dateOnlyMatch[1]);
+      const m = Number(dateOnlyMatch[2]);
+      const d = Number(dateOnlyMatch[3]);
+      return new Date(y, m - 1, d, 0, 0, 0, 0);
+    }
+  }
+  return new Date(date);
+}
+
 /**
  * Calculates theoretical Elo for any given timestamp based on linear progression.
  */
@@ -60,9 +77,9 @@ export function calculateLinearElo(
   startElo: number = DEFAULT_START_ELO,
   targetElo: number = DEFAULT_TARGET_ELO
 ): number {
-  const d = new Date(date).getTime();
-  const start = new Date(startDate).getTime();
-  const end = new Date(targetDate).getTime();
+  const d = parseDateInput(date).getTime();
+  const start = parseDateInput(startDate).getTime();
+  const end = parseDateInput(targetDate).getTime();
 
   if (isNaN(d) || isNaN(start) || isNaN(end) || end <= start) {
     return startElo;
@@ -276,13 +293,13 @@ export function calculateAdvanceMetrics(
   startElo: number = DEFAULT_START_ELO,
   targetElo: number = DEFAULT_TARGET_ELO
 ): AdvanceMetric {
-  const today = new Date(refDate);
+  const today = parseDateInput(refDate);
   today.setHours(0, 0, 0, 0);
 
-  const start = new Date(startDateStr);
+  const start = parseDateInput(startDateStr);
   start.setHours(0, 0, 0, 0);
 
-  const end = new Date(targetDateStr);
+  const end = parseDateInput(targetDateStr);
   end.setHours(0, 0, 0, 0);
 
   const todayTargetElo = calculateLinearElo(today, start, end, startElo, targetElo);

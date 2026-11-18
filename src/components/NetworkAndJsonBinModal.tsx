@@ -209,7 +209,7 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
 
   const handlePullFromBin = async () => {
     setSyncing(true);
-    const res = await pullFromJsonBin();
+    const res = await pullFromJsonBin(username);
     setSyncing(false);
     if (res.success && res.history) {
       if (onHistoryUpdate) onHistoryUpdate(res.history);

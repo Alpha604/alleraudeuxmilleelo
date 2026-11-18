@@ -945,6 +945,8 @@ export default function App() {
             targetElo={settings.targetElo}
             startDateStr={settings.startDate}
             targetDateStr={settings.targetDate}
+            username={settings.username}
+            defaultMode={settings.selectedMode}
           />
         )}
 

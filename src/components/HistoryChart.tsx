@@ -47,6 +47,7 @@ import {
   calculateLinearElo,
   DEFAULT_START_DATE,
   DEFAULT_TARGET_DATE,
+  parseDateInput,
 } from '../utils/eloEngine';
 
 interface HistoryChartProps {
@@ -55,6 +56,8 @@ interface HistoryChartProps {
   targetElo?: number;
   startDateStr?: string;
   targetDateStr?: string;
+  username?: string;
+  defaultMode?: ModeFilter;
 }
 
 type ModeFilter = 'auto' | 'blitz' | 'rapid' | 'bullet';
@@ -82,6 +85,23 @@ function formatDateToKey(d: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function parseLocalDateOnly(value?: string | null): Date | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
+  if (match) {
+    const y = Number(match[1]);
+    const m = Number(match[2]);
+    const d = Number(match[3]);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      return new Date(y, m - 1, d, 0, 0, 0, 0);
+    }
+  }
+  const dt = parseDateInput(trimmed);
+  if (isNaN(dt.getTime())) return null;
+  return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), 0, 0, 0, 0);
+}
+
 export const MODE_START_ELOS: Record<string, number> = {
   blitz: 1458,
   rapid: 1289,
@@ -94,10 +114,16 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   targetElo = 2000,
   startDateStr = DEFAULT_START_DATE,
   targetDateStr = DEFAULT_TARGET_DATE,
+  username,
+  defaultMode = 'auto',
 }) => {
   // 1. Controls & Filter States
-  const [selectedMode, setSelectedMode] = useState<ModeFilter>('auto');
+  const [selectedMode, setSelectedMode] = useState<ModeFilter>(defaultMode);
   const [activePreset, setActivePreset] = useState<QuickPreset>('progress');
+
+  React.useEffect(() => {
+    setSelectedMode(defaultMode);
+  }, [defaultMode, username]);
   
   // Visual layer toggles
   const [showTargetLine, setShowTargetLine] = useState<boolean>(true);
@@ -116,16 +142,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   const [mobileShowTable, setMobileShowTable] = useState<boolean>(false);
   const pageSize = 10;
 
-  // Timestamps
-  const projectStartTime = useMemo(
-    () => new Date(startDateStr || DEFAULT_START_DATE).getTime(),
-    [startDateStr]
-  );
-  const projectEndTime = useMemo(
-    () => new Date(targetDateStr || DEFAULT_TARGET_DATE).getTime(),
-    [targetDateStr]
-  );
-
+  // Local calendar dates (strictly synced with Journal Des Synchronisations Quotidiennes)
   const todayObj = useMemo(() => {
     const t = new Date();
     t.setHours(0, 0, 0, 0);
@@ -133,20 +150,65 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   }, []);
   const todayKey = useMemo(() => formatDateToKey(todayObj), [todayObj]);
 
-  // Chronologically sorted records
-  const sortedRecords = useMemo(() => {
-    return [...syncHistory].sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
+  // Exact same daily map as SyncLog.tsx ("Journal Des Synchronisations Quotidiennes")
+  const dailyRecordsMap = useMemo(() => {
+    const map = new Map<string, SyncRecord>();
+    syncHistory.forEach((record) => {
+      const d = new Date(record.timestamp);
+      if (isNaN(d.getTime())) return;
+      const key = formatDateToKey(d);
+      const existing = map.get(key);
+      if (!existing || record.bestRating > existing.bestRating) {
+        map.set(key, record);
+      }
+    });
+    return map;
   }, [syncHistory]);
+
+  const projectStartDate = useMemo(() => {
+    const configuredStart = parseLocalDateOnly(startDateStr || DEFAULT_START_DATE) ?? new Date(2026, 9, 31);
+    let earliest = new Date(
+      configuredStart.getFullYear(),
+      configuredStart.getMonth(),
+      configuredStart.getDate()
+    );
+    dailyRecordsMap.forEach((_, key) => {
+      const recDate = parseLocalDateOnly(key);
+      if (recDate && recDate < earliest) {
+        earliest = recDate;
+      }
+    });
+    return earliest;
+  }, [startDateStr, dailyRecordsMap]);
+
+  const projectEndDate = useMemo(() => {
+    const configuredEnd = parseLocalDateOnly(targetDateStr || DEFAULT_TARGET_DATE) ?? new Date(2027, 11, 31);
+    return configuredEnd >= todayObj ? configuredEnd : todayObj;
+  }, [targetDateStr, todayObj]);
+
+  const projectStartTime = projectStartDate.getTime();
+  const projectEndTime = projectEndDate.getTime();
+
+  // Chronologically sorted daily records from the Journal
+  const sortedRecords = useMemo(() => {
+    return Array.from(dailyRecordsMap.entries())
+      .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+      .map(([, record]) => record);
+  }, [dailyRecordsMap]);
 
   // Helper to determine the best mode from a record (highest absolute rating)
   const getBestModeFromRecord = (record?: SyncRecord | null): 'blitz' | 'rapid' | 'bullet' => {
     if (!record) return 'bullet';
     const candidates: { mode: 'blitz' | 'rapid' | 'bullet'; rating: number; priority: number }[] = [];
-    if (typeof record.bullet === 'number') candidates.push({ mode: 'bullet', rating: record.bullet, priority: 1 });
-    if (typeof record.blitz === 'number') candidates.push({ mode: 'blitz', rating: record.blitz, priority: 2 });
-    if (typeof record.rapid === 'number') candidates.push({ mode: 'rapid', rating: record.rapid, priority: 3 });
+    if (typeof record.bullet === 'number' && record.bullet > 0) {
+      candidates.push({ mode: 'bullet', rating: record.bullet, priority: 1 });
+    }
+    if (typeof record.blitz === 'number' && record.blitz > 0) {
+      candidates.push({ mode: 'blitz', rating: record.blitz, priority: 2 });
+    }
+    if (typeof record.rapid === 'number' && record.rapid > 0) {
+      candidates.push({ mode: 'rapid', rating: record.rapid, priority: 3 });
+    }
     if (candidates.length === 0) {
       if (record.bestMode && ['bullet', 'blitz', 'rapid'].includes(record.bestMode)) {
         return record.bestMode as 'blitz' | 'rapid' | 'bullet';
@@ -160,49 +222,56 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     return candidates[0].mode;
   };
 
-  // Determine active cadence for Auto mode (mode with the highest rating on latest sync)
+  // Determine active cadence for Auto mode (mode with the highest rating on latest Journal sync)
   const autoBestMode: 'blitz' | 'rapid' | 'bullet' = useMemo(() => {
     if (sortedRecords.length === 0) return 'bullet';
     return getBestModeFromRecord(sortedRecords[sortedRecords.length - 1]);
   }, [sortedRecords]);
 
-  // Mode-specific starting Elo requested by user:
-  // - Blitz starts at 1458
-  // - Rapid starts at 1289
-  // - Bullet starts at 1500
-  // - Auto dynamically starts at the start Elo of the cadence that has the highest rating (e.g. Bullet -> 1500)!
+  // Mode-specific starting Elo (uses AlphaRoméo's cadence baselines when applicable, otherwise account startElo)
   const effectiveStartElo = useMemo(() => {
     const activeKey = selectedMode === 'auto' ? autoBestMode : selectedMode;
-    return MODE_START_ELOS[activeKey] ?? startElo;
-  }, [selectedMode, autoBestMode, startElo]);
+    const isAlphaOrDefault = !username || username.trim().toLowerCase() === 'alpharomeo1500';
+    if (isAlphaOrDefault) {
+      return MODE_START_ELOS[activeKey] ?? startElo;
+    }
+    return startElo;
+  }, [selectedMode, autoBestMode, startElo, username]);
 
-  // Helper to extract rating based on mode filter
-  // For 'auto' mode, it strictly picks the game mode with the HIGHEST absolute rating (not points gained)
-  const getRatingForMode = (record: SyncRecord, mode: ModeFilter): { rating: number; modeName: string } => {
+  // Extract rating strictly from the Journal record for the selected cadence (returns null if not recorded for that mode)
+  const getRatingForMode = (
+    record: SyncRecord,
+    mode: ModeFilter
+  ): { rating: number; modeName: string } | null => {
     if (mode === 'blitz') {
-      return { rating: record.blitz ?? MODE_START_ELOS.blitz, modeName: 'BLITZ' };
+      return typeof record.blitz === 'number' && record.blitz > 0
+        ? { rating: record.blitz, modeName: 'BLITZ' }
+        : null;
     }
     if (mode === 'rapid') {
-      return { rating: record.rapid ?? MODE_START_ELOS.rapid, modeName: 'RAPIDE' };
+      return typeof record.rapid === 'number' && record.rapid > 0
+        ? { rating: record.rapid, modeName: 'RAPIDE' }
+        : null;
     }
     if (mode === 'bullet') {
-      return { rating: record.bullet ?? MODE_START_ELOS.bullet, modeName: 'BULLET' };
+      return typeof record.bullet === 'number' && record.bullet > 0
+        ? { rating: record.bullet, modeName: 'BULLET' }
+        : null;
     }
 
-    // AUTO MODE: strictly choose the cadence with the HIGHEST absolute rating
+    // AUTO MODE: matches "Meilleur Relevé" in Journal Des Synchronisations Quotidiennes
     const candidates: { modeName: string; rating: number; priority: number }[] = [];
-    if (typeof record.bullet === 'number') {
+    if (typeof record.bullet === 'number' && record.bullet > 0) {
       candidates.push({ modeName: 'BULLET', rating: record.bullet, priority: 1 });
     }
-    if (typeof record.blitz === 'number') {
+    if (typeof record.blitz === 'number' && record.blitz > 0) {
       candidates.push({ modeName: 'BLITZ', rating: record.blitz, priority: 2 });
     }
-    if (typeof record.rapid === 'number') {
+    if (typeof record.rapid === 'number' && record.rapid > 0) {
       candidates.push({ modeName: 'RAPIDE', rating: record.rapid, priority: 3 });
     }
 
     if (candidates.length > 0) {
-      // Sort strictly descending by highest rating
       candidates.sort((a, b) => {
         if (b.rating !== a.rating) return b.rating - a.rating;
         return b.priority - a.priority;
@@ -210,82 +279,59 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
       return { rating: candidates[0].rating, modeName: candidates[0].modeName };
     }
 
-    return {
-      rating: record.bestRating ?? effectiveStartElo,
-      modeName: (record.bestMode || autoBestMode).toUpperCase(),
-    };
+    if (typeof record.bestRating === 'number' && record.bestRating > 0) {
+      return {
+        rating: record.bestRating,
+        modeName: (record.bestMode || autoBestMode).toUpperCase(),
+      };
+    }
+
+    return null;
   };
 
-  // 2. Full Unified Daily Timeline with CARRY-FORWARD (Plateau)
+  // 2. Full Unified Daily Timeline directly powered by Journal Des Synchronisations Quotidiennes + Carry-Forward
   const allChartData = useMemo(() => {
-    // Map of days with direct syncs
-    const dailySyncMap = new Map<string, { rating: number; mode: string; timestamp: number }>();
-
-    // Initial base point on project start date with mode-specific start Elo
-    const startObj = new Date(projectStartTime);
-    startObj.setHours(0, 0, 0, 0);
-    const startKey = formatDateToKey(startObj);
-    dailySyncMap.set(startKey, {
-      rating: effectiveStartElo,
-      mode: selectedMode === 'auto' ? `Base (${autoBestMode.toUpperCase()})` : selectedMode.toUpperCase(),
-      timestamp: startObj.getTime(),
-    });
-
-    sortedRecords.forEach((record) => {
-      const d = new Date(record.timestamp);
-      const key = formatDateToKey(d);
-      const { rating, modeName } = getRatingForMode(record, selectedMode);
-      dailySyncMap.set(key, {
-        rating,
-        mode: modeName,
-        timestamp: d.getTime(),
-      });
-    });
-
-    // Generate day-by-day continuous array from projectStart to projectEnd
     const points: ChartPoint[] = [];
-    const startCurr = new Date(projectStartTime);
-    startCurr.setHours(0, 0, 0, 0);
-
-    const endBoundary = new Date(projectEndTime);
-    endBoundary.setHours(0, 0, 0, 0);
+    const curr = new Date(projectStartDate);
+    const endBoundary = new Date(projectEndDate);
 
     let lastKnownElo = effectiveStartElo;
-    let lastKnownMode = selectedMode === 'auto' ? `Départ (${autoBestMode.toUpperCase()})` : selectedMode.toUpperCase();
+    let lastKnownMode =
+      selectedMode === 'auto' ? `Départ (${autoBestMode.toUpperCase()})` : selectedMode.toUpperCase();
     let prevElo: number | null = null;
-
-    const curr = new Date(startCurr);
 
     while (curr.getTime() <= endBoundary.getTime()) {
       const key = formatDateToKey(curr);
       const timestamp = curr.getTime();
-      const isPastOrToday = timestamp <= todayObj.getTime() || key === todayKey;
+      const isPastOrToday = key <= todayKey;
 
-      const syncInfo = dailySyncMap.get(key);
+      const journalRecord = dailyRecordsMap.get(key);
+      const extracted = journalRecord ? getRatingForMode(journalRecord, selectedMode) : null;
 
       let realElo: number | null = null;
       let isDirectSync = false;
       let isCarryOver = false;
 
-      if (syncInfo) {
-        lastKnownElo = syncInfo.rating;
-        lastKnownMode = syncInfo.mode;
+      if (extracted !== null) {
+        lastKnownElo = extracted.rating;
+        lastKnownMode = extracted.modeName;
         if (isPastOrToday) {
           realElo = lastKnownElo;
           isDirectSync = true;
         }
       } else if (isPastOrToday) {
-        // Carry forward previous known Elo if no sync on this day
+        // Carry forward previous known Elo if day is missing in Journal (or mode not played that day)
         realElo = lastKnownElo;
         isCarryOver = true;
       } else {
-        // Future days: no realElo to avoid predicting future
+        // Future days: no realElo
         realElo = null;
       }
 
-      const targetVal = Math.round(
-        calculateLinearElo(timestamp, startDateStr, targetDateStr, effectiveStartElo, targetElo) * 10
-      ) / 10;
+      const targetVal =
+        Math.round(
+          calculateLinearElo(timestamp, startDateStr, targetDateStr, effectiveStartElo, targetElo) * 10
+        ) / 10;
 
       const diff = realElo !== null ? Math.round(realElo - targetVal) : null;
       const dailyDelta = realElo !== null && prevElo !== null ? realElo - prevElo : null;
@@ -306,7 +352,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
         targetElo: targetVal,
         diff,
         dailyDelta,
-        mode: isDirectSync ? syncInfo?.mode : lastKnownMode,
+        mode: isDirectSync ? extracted?.modeName : lastKnownMode,
         isDirectSync,
         isCarryOver,
         hasRealData: isPastOrToday,
@@ -317,25 +363,39 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
 
     return points;
   }, [
-    sortedRecords,
+    dailyRecordsMap,
     selectedMode,
     autoBestMode,
     effectiveStartElo,
-    projectStartTime,
-    projectEndTime,
-    startElo,
+    projectStartDate,
+    projectEndDate,
     targetElo,
     startDateStr,
     targetDateStr,
-    todayObj,
     todayKey,
   ]);
 
   // Today index in full timeline
   const todayIndex = useMemo(() => {
     const idx = allChartData.findIndex((p) => p.dayKey === todayKey);
-    return idx >= 0 ? idx : 0;
+    return idx >= 0 ? idx : Math.max(0, allChartData.length - 1);
   }, [allChartData, todayKey]);
+
+  // First & last direct sync indices from the Journal
+  const { firstSyncIndex, lastSyncIndex } = useMemo(() => {
+    const first = allChartData.findIndex((p) => p.isDirectSync);
+    let last = -1;
+    for (let i = allChartData.length - 1; i >= 0; i--) {
+      if (allChartData[i].isDirectSync) {
+        last = i;
+        break;
+      }
+    }
+    return {
+      firstSyncIndex: first >= 0 ? first : 0,
+      lastSyncIndex: last >= 0 ? last : todayIndex,
+    };
+  }, [allChartData, todayIndex]);
 
   // Current real Elo
   const currentRealElo = useMemo(() => {
@@ -365,52 +425,57 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     return allChartData.findIndex((p) => p.dayKey === advanceMetric.equivalentDateKey);
   }, [allChartData, advanceMetric.equivalentDateKey]);
 
+  const computeProgressWindow = React.useCallback(() => {
+    const total = allChartData.length;
+    if (total <= 1) return { startIndex: 0, endIndex: 0 };
+    const anchorStart =
+      todayIndex - firstSyncIndex <= 90
+        ? Math.max(0, firstSyncIndex - 2)
+        : Math.max(0, Math.min(todayIndex - 30, lastSyncIndex - 14));
+    const minIdx = Math.min(anchorStart, markerIndex >= 0 ? markerIndex - 7 : anchorStart);
+    const maxIdx = Math.max(
+      todayIndex + 10,
+      lastSyncIndex + 7,
+      markerIndex >= 0 ? markerIndex + 10 : todayIndex + 10
+    );
+    const start = Math.max(0, minIdx);
+    const end = Math.min(total - 1, Math.max(start + 30, maxIdx));
+    return { startIndex: start, endIndex: end };
+  }, [allChartData.length, firstSyncIndex, lastSyncIndex, todayIndex, markerIndex]);
+
   // 3. Zoom Range Management (Controlled brush/slider)
-  const [zoomRange, setZoomRange] = useState<{ startIndex: number; endIndex: number }>(() => {
-    const minIdx = Math.min(todayIndex, markerIndex >= 0 ? markerIndex : todayIndex);
-    const maxIdx = Math.max(todayIndex, markerIndex >= 0 ? markerIndex : todayIndex);
-    const start = Math.max(0, minIdx - 7);
-    const prospectiveEnd = Math.max(maxIdx + 10, todayIndex + 14);
-    const end = Math.min(allChartData.length - 1, prospectiveEnd);
-    return { startIndex: start, endIndex: Math.max(start + 30, end) };
-  });
+  const [zoomRange, setZoomRange] = useState<{ startIndex: number; endIndex: number }>(() =>
+    computeProgressWindow()
+  );
 
   // Center chart view on the advance / retard marker line
   const handleFocusMarker = () => {
     if (markerIndex < 0) return;
-    const minIdx = Math.min(todayIndex, markerIndex);
+    const minIdx = Math.min(firstSyncIndex, todayIndex, markerIndex);
     const maxIdx = Math.max(todayIndex, markerIndex);
-    const start = Math.max(0, minIdx - 7);
+    const start = Math.max(0, minIdx - 4);
     const end = Math.min(allChartData.length - 1, maxIdx + 7);
     setZoomRange({ startIndex: start, endIndex: Math.max(start + 14, end) });
     setActivePreset('progress');
   };
 
-  // Automatically keep the marker in view when switching cadences if in progress preset
+  // Automatically keep the Journal syncs and marker in view when data or cadences update
   React.useEffect(() => {
     if (activePreset === 'progress') {
-      const minIdx = Math.min(todayIndex, markerIndex >= 0 ? markerIndex : todayIndex);
-      const maxIdx = Math.max(todayIndex, markerIndex >= 0 ? markerIndex : todayIndex);
-      const start = Math.max(0, minIdx - 7);
-      const prospectiveEnd = Math.max(maxIdx + 10, todayIndex + 14);
-      const end = Math.min(allChartData.length - 1, prospectiveEnd);
-      setZoomRange({ startIndex: start, endIndex: Math.max(start + 30, end) });
+      setZoomRange(computeProgressWindow());
+    } else if (activePreset === 'full') {
+      setZoomRange({ startIndex: 0, endIndex: Math.max(0, allChartData.length - 1) });
     }
-  }, [selectedMode, activePreset, todayIndex, markerIndex, allChartData.length]);
+  }, [selectedMode, activePreset, computeProgressWindow, allChartData.length]);
 
   // Apply quick presets
   const applyPreset = (preset: QuickPreset) => {
     setActivePreset(preset);
     const total = allChartData.length;
     if (preset === 'full') {
-      setZoomRange({ startIndex: 0, endIndex: total - 1 });
+      setZoomRange({ startIndex: 0, endIndex: Math.max(0, total - 1) });
     } else if (preset === 'progress') {
-      const minIdx = Math.min(todayIndex, markerIndex >= 0 ? markerIndex : todayIndex);
-      const maxIdx = Math.max(todayIndex, markerIndex >= 0 ? markerIndex : todayIndex);
-      const start = Math.max(0, minIdx - 7);
-      const prospectiveEnd = Math.max(maxIdx + 10, todayIndex + 14);
-      const end = Math.min(total - 1, prospectiveEnd);
-      setZoomRange({ startIndex: start, endIndex: Math.max(start + 30, end) });
+      setZoomRange(computeProgressWindow());
     } else if (preset === '1year') {
       setZoomRange({ startIndex: 0, endIndex: Math.min(total - 1, 365) });
     } else if (preset === '6months') {
@@ -486,24 +551,23 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     return visiblePoints.filter((p) => p.realElo !== null);
   }, [visiblePoints]);
 
-  // Dynamic Y-axis scale based on data
+  // Dynamic Y-axis scale based on data & account Elo range
   const { yMin, yMax, yTicks } = useMemo(() => {
     const elos = visibleRealPoints.map((p) => p.realElo!);
-    const minRating = Math.min(effectiveStartElo, ...elos);
+    const targetVals = visiblePoints.map((p) => p.targetElo);
+    const minRating = Math.min(effectiveStartElo, ...elos, ...targetVals);
     const maxRating = Math.max(targetElo, ...elos);
 
-    // Rapid mode started at 1289 Elo: scale starts at 1200 Elo
-    const isRapid = selectedMode === 'rapid' || (selectedMode === 'auto' && autoBestMode === 'rapid');
-    const minThreshold = isRapid ? 1200 : 1400;
-    const calcYMin = Math.floor(Math.min(minThreshold, minRating - 50) / 100) * 100;
-    const calcYMax = Math.ceil(Math.max(2050, maxRating + 50) / 100) * 100;
+    const calcYMin = Math.floor((minRating - 50) / 100) * 100;
+    const calcYMax = Math.ceil((maxRating + 50) / 100) * 100;
 
+    const step = calcYMax - calcYMin > 1000 ? 200 : 100;
     const ticks: number[] = [];
-    for (let y = calcYMin; y <= calcYMax; y += 100) {
+    for (let y = calcYMin; y <= calcYMax; y += step) {
       ticks.push(y);
     }
     return { yMin: calcYMin, yMax: calcYMax, yTicks: ticks };
-  }, [visibleRealPoints, effectiveStartElo, targetElo, selectedMode, autoBestMode]);
+  }, [visibleRealPoints, visiblePoints, effectiveStartElo, targetElo]);
 
   // Visible XAxis ticks
   const visibleTickKeys = useMemo(() => {
@@ -741,7 +805,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             </>
           ) : (
             <div className="pt-1 border-t border-neutral-800/80 text-[11px] text-neutral-400 italic">
-              Projection future vers l&apos;objectif 2000 Elo
+              Projection future vers l&apos;objectif {targetElo} Elo
             </div>
           )}
 
@@ -777,14 +841,14 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               <span>Trajectoire Échiquéenne Complète</span>
             </h2>
             <span className="text-[10px] font-mono bg-neutral-900 text-[#facc15] font-bold px-2 py-0.5 rounded-full border border-neutral-800 hidden sm:inline-block">
-              1 point / jour + report plateau
+              Source : Journal ({dailyRecordsMap.size} relevés)
             </span>
             <span className="text-[10px] font-mono bg-neutral-900 text-neutral-300 px-2 py-0.5 rounded-full border border-neutral-800 hidden md:inline-block">
-              Zoom & filtres dynamiques
+              1 point / jour + report plateau
             </span>
           </div>
           <p className="text-xs text-neutral-400 mt-1 hidden sm:block">
-            Chaque jour sans partie conserve automatiquement votre classement précédent. Explorez, zoomez et filtrez l&apos;ensemble de votre parcours.
+            Alimenté en direct par le Journal Des Synchronisations Quotidiennes. Chaque journée sans relevé conserve votre classement précédent.
           </p>
         </div>
 
@@ -1516,7 +1580,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               <span>Paliers Du Projet Échiquéen (Tranches de 100 Elo)</span>
             </span>
             <span className="font-mono text-neutral-400 text-[11px]">
-              Échéance : 31/12/2027
+              Échéance :{' '}
+              {projectEndDate.toLocaleDateString('fr-FR', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+              })}
             </span>
           </div>
 
