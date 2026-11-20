@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, History, LayoutDashboard, LineChart, Settings as SettingsIcon, ShieldAlert } from 'lucide-react';
 import { AdminPanelView } from './components/AdminPanelView';
 import { DailyObjectiveCard } from './components/DailyObjectiveCard';
@@ -29,7 +29,14 @@ import {
   GameMode,
   SyncRecord,
 } from './types/chess';
-import { fetchJsonBinStatus, reconcileCloudSync, saveServerData } from './utils/cloudSync';
+import {
+  fetchJsonBinStatus,
+  formatJsonBinTimestamp,
+  getLocalMetrics,
+  JsonBinUpdateEventDetail,
+  reconcileCloudSync,
+  saveServerData,
+} from './utils/cloudSync';
 import { fetchChessComData } from './utils/chessApi';
 import {
   calculateDailyObjective,
@@ -130,6 +137,13 @@ export default function App() {
   // Network & JSONBin online status states
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
   const [jsonBinStatus, setJsonBinStatus] = useState<'synced' | 'pending_keys' | 'error' | 'syncing'>('pending_keys');
+  const [lastJsonBinSyncTime, setLastJsonBinSyncTime] = useState<number | null>(() => {
+    const s = getStoredSettings();
+    const active = getActiveUserSession();
+    const targetUser = active?.username || s.username;
+    return getLocalMetrics(targetUser).lastSyncTime;
+  });
+  const manualSyncAfterReconcileRef = useRef<boolean>(false);
   const [isNetworkOnline, setIsNetworkOnline] = useState<boolean>(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
@@ -189,7 +203,7 @@ export default function App() {
     }
   }, [settings.theme]);
 
-  // Monitor Network online/offline events & periodic JSONBin status refresh
+  // Monitor Network online/offline events & periodic JSONBin status + real-time event sync
   useEffect(() => {
     const handleOnline = () => setIsNetworkOnline(true);
     const handleOffline = () => setIsNetworkOnline(false);
@@ -202,16 +216,32 @@ export default function App() {
         const info = await fetchJsonBinStatus(settings.username);
         if (info) {
           setJsonBinStatus(info.lastStatus);
+          if (info.lastSyncTime) {
+            setLastJsonBinSyncTime(info.lastSyncTime);
+          }
         }
       } catch {}
     };
 
+    const handleJsonBinUpdated = (e: Event) => {
+      const detail = (e as CustomEvent<JsonBinUpdateEventDetail>).detail;
+      if (!detail) return;
+      if (detail.username?.toLowerCase() === settings.username.trim().toLowerCase()) {
+        setJsonBinStatus(detail.lastStatus);
+        if (detail.lastSyncTime) {
+          setLastJsonBinSyncTime(detail.lastSyncTime);
+        }
+      }
+    };
+
+    window.addEventListener('roadto2000:jsonbin-updated', handleJsonBinUpdated);
     checkJsonBin();
     const interval = setInterval(checkJsonBin, 30000);
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('roadto2000:jsonbin-updated', handleJsonBinUpdated);
       clearInterval(interval);
     };
   }, [settings.username]);
@@ -261,6 +291,63 @@ export default function App() {
   const dismissToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  // Unified Cloud + JSONBin save helper that updates timestamps and always reports real save status
+  const persistToCloudAndNotify = useCallback(
+    async (
+      targetUser: string,
+      historyToSave: SyncRecord[],
+      settingsToSave: AppSettings,
+      options?: { force?: boolean; replaceExact?: boolean; notifySuccess?: boolean }
+    ) => {
+      if (userSession?.isSpectator) return null;
+      setJsonBinStatus('syncing');
+      const result = await saveServerData(targetUser, historyToSave, settingsToSave, {
+        force: options?.force ?? true,
+        replaceExact: options?.replaceExact ?? false,
+      });
+
+      setJsonBinStatus(result.status);
+      if (result.lastSyncTime) {
+        setLastJsonBinSyncTime(result.lastSyncTime);
+      }
+
+      if (result.history && result.history.length > 0 && !options?.replaceExact) {
+        setSyncHistory(result.history);
+      }
+
+      if (result.status === 'error') {
+        showToast(
+          `Échec sauvegarde JSONBin : ${result.error || 'Vérifiez vos identifiants JSONBin.'}`,
+          'warning',
+          'Alerte Sauvegarde Cloud'
+        );
+      } else if (options?.notifySuccess) {
+        if (result.jsonBinSynced && result.lastSyncTime) {
+          showToast(
+            `JSONBin mis à jour le ${formatJsonBinTimestamp(result.lastSyncTime)}.`,
+            'success',
+            'Sauvegarde JSONBin OK'
+          );
+        } else if (result.skipped && result.lastSyncTime) {
+          showToast(
+            `JSONBin déjà à jour (Dernière MàJ : ${formatJsonBinTimestamp(result.lastSyncTime)}).`,
+            'info',
+            'Cache Cloud à jour'
+          );
+        } else if (result.status === 'pending_keys') {
+          showToast(
+            `Bin ID JSONBin manquant pour @${targetUser}. Configurez-le dans Cache Cloud / Paramètres.`,
+            'warning',
+            'JSONBin non configuré'
+          );
+        }
+      }
+
+      return result;
+    },
+    [userSession?.isSpectator, showToast]
+  );
 
   // In spectator or iframe mode, ensure user cannot access restricted tabs
   useEffect(() => {
@@ -401,19 +488,25 @@ export default function App() {
         );
 
         setSyncHistory(history);
-        // Persist to server so Smartphone & PC share exact same sync records
-        saveServerData(activeUser, history, settings).catch(() => {});
+        // Persist to server + JSONBin and update exact lastSyncTime + notify user on changes or manual sync
+        const cloudRes = await persistToCloudAndNotify(activeUser, history, settings, {
+          force: !isDuplicate,
+          notifySuccess: manual || !isDuplicate,
+        });
 
         if (manual) {
+          const updatedLabel = cloudRes?.lastSyncTime
+            ? ` · JSONBin MàJ : ${formatJsonBinTimestamp(cloudRes.lastSyncTime)}`
+            : '';
           if (isDuplicate) {
             showToast(
-              `Statistiques à jour pour @${activeUser} (${bestInfo.rating} Elo en ${bestInfo.mode}). Aucun changement depuis le dernier relevé.`,
+              `Statistiques à jour pour @${activeUser} (${bestInfo.rating} Elo en ${bestInfo.mode})${updatedLabel}.`,
               'info',
               'Synchronisé'
             );
           } else {
             showToast(
-              `Données de @${activeUser} actualisées : ${bestInfo.rating} Elo (${bestInfo.mode}).`,
+              `Données de @${activeUser} actualisées : ${bestInfo.rating} Elo (${bestInfo.mode})${updatedLabel}.`,
               'success',
               'Synchronisation réussie'
             );
@@ -428,30 +521,55 @@ export default function App() {
         setIsSyncing(false);
       }
     },
-    [settings, showToast, userSession?.isSpectator]
+    [settings, showToast, userSession?.isSpectator, persistToCloudAndNotify]
   );
 
-  // Cloud Reconciliation: Pull any syncs done on PC to Phone, or vice versa
+  // Cloud Reconciliation: Pull remote JSONBin records & settings FIRST, then run initial Chess.com sync
   useEffect(() => {
     const activeUser = settings.username.trim().toLowerCase();
+    let cancelled = false;
 
-    const doReconciliation = async () => {
+    const doReconciliation = async (isInitialMount = false) => {
       try {
         const local = getStoredSyncHistory(activeUser);
-        const res = await reconcileCloudSync(activeUser, local, settings);
+        const res = await reconcileCloudSync(activeUser, local, settings, {
+          isSpectator: Boolean(userSession?.isSpectator),
+          forcePull: isInitialMount,
+        });
+        if (cancelled) return;
+
+        if (res.lastJsonBinSyncTime) {
+          setLastJsonBinSyncTime(res.lastJsonBinSyncTime);
+          setJsonBinStatus('synced');
+        }
         if (res.didUpdate || (res.history.length > 0 && syncHistory.length === 0)) {
           setSyncHistory(res.history);
+          if (res.history.length > 0) {
+            setLastSyncTime(res.history[0].timestamp);
+          }
+        }
+        if (res.settings && JSON.stringify(res.settings) !== JSON.stringify(settings)) {
+          setSettings(res.settings);
         }
       } catch (err) {
         console.warn('Reconciliation error:', err);
+      } finally {
+        const shouldManual = manualSyncAfterReconcileRef.current;
+        manualSyncAfterReconcileRef.current = false;
+        if (isInitialMount && !cancelled && !userSession?.isSpectator && userSession) {
+          performSync(shouldManual, activeUser);
+        }
       }
     };
 
-    doReconciliation();
+    if (userSession) {
+      pullAccountsRegistryFromJsonBin(false).catch(() => {});
+      doReconciliation(true);
+    }
 
     const handleFocus = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        doReconciliation();
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible' && userSession) {
+        doReconciliation(false);
       }
     };
 
@@ -459,18 +577,11 @@ export default function App() {
     document.addEventListener('visibilitychange', handleFocus);
 
     return () => {
+      cancelled = true;
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleFocus);
     };
-  }, [settings.username]);
-
-  // Sync on mount (disabled in spectator mode)
-  useEffect(() => {
-    if (!userSession?.isSpectator && userSession) {
-      pullAccountsRegistryFromJsonBin(false).catch(() => {});
-      performSync(false);
-    }
-  }, []);
+  }, [settings.username, Boolean(userSession)]);
 
   // Periodic auto-sync (Disabled in spectator mode)
   useEffect(() => {
@@ -506,10 +617,11 @@ export default function App() {
       setProfile(undefined);
       setLastSyncTime(null);
 
-      // 2. Switch account context and load this new user's isolated history
+      // 2. Switch account context and load this new user's isolated history & JSONBin timestamp
       handleAccountSwitch(newUser);
       const newUserHistory = getStoredSyncHistory(newUser);
       setSyncHistory(newUserHistory);
+      setLastJsonBinSyncTime(getLocalMetrics(newUser).lastSyncTime);
 
       showToast(
         `Compte Chess.com basculé sur @${newUser}. Les données du profil précédent ont été écartées. Synchronisation en cours...`,
@@ -517,8 +629,14 @@ export default function App() {
         'Changement de compte'
       );
 
-      // 3. Immediately launch sync with the new username
-      performSync(true, newUser);
+      // 3. Let useEffect reconcile from JSONBin first, then run manual sync
+      manualSyncAfterReconcileRef.current = true;
+    } else {
+      // Persist updated settings directly to server & JSONBin
+      persistToCloudAndNotify(newUser, syncHistory, updated, {
+        force: true,
+        notifySuccess: true,
+      });
     }
   };
 
@@ -546,7 +664,13 @@ export default function App() {
       'Purge effectuée'
     );
 
-    performSync(true, activeUser);
+    persistToCloudAndNotify(activeUser, [], settings, {
+      force: true,
+      replaceExact: true,
+      notifySuccess: false,
+    }).then(() => {
+      performSync(true, activeUser);
+    });
   };
 
   // Handle successful login from LoginPage (with credentials / 2FA / spectator)
@@ -575,21 +699,14 @@ export default function App() {
       setLastSyncTime(null);
 
       // Load account-specific settings if saved
-      let nextSettings = { ...settings, username: cleanUser };
-      try {
-        const storedForUser = localStorage.getItem(`roadto2000_settings_${cleanUser}`);
-        if (storedForUser) {
-          const parsed = JSON.parse(storedForUser);
-          nextSettings = { ...nextSettings, ...parsed, username: cleanUser };
-        }
-      } catch {}
-
+      const nextSettings = getStoredSettings(cleanUser);
       setSettings(nextSettings);
       saveStoredSettings(nextSettings);
 
       handleAccountSwitch(cleanUser);
       const newUserHistory = getStoredSyncHistory(cleanUser);
       setSyncHistory(newUserHistory);
+      setLastJsonBinSyncTime(getLocalMetrics(cleanUser).lastSyncTime);
       if (newUserHistory.length > 0) {
         setLastSyncTime(newUserHistory[0].timestamp);
       }
@@ -603,10 +720,10 @@ export default function App() {
       );
 
       if (!isSpectator) {
-        performSync(true, cleanUser);
+        manualSyncAfterReconcileRef.current = true;
       }
     },
-    [settings, performSync, showToast]
+    [showToast]
   );
 
   // Instant 1-Click Account Switch for already authenticated users (no A2F re-entry required)
@@ -626,14 +743,7 @@ export default function App() {
       setUserSession(getActiveUserSession());
 
       // Load target account's persisted settings if present
-      let nextSettings: AppSettings = { ...settings, username: cleanUser };
-      try {
-        const storedForUser = localStorage.getItem(`roadto2000_settings_${cleanUser}`);
-        if (storedForUser) {
-          const parsed = JSON.parse(storedForUser);
-          nextSettings = { ...nextSettings, ...parsed, username: cleanUser };
-        }
-      } catch {}
+      const nextSettings = getStoredSettings(cleanUser);
 
       setStats(null);
       setProfile(undefined);
@@ -644,6 +754,7 @@ export default function App() {
       handleAccountSwitch(cleanUser);
       const targetHistory = getStoredSyncHistory(cleanUser);
       setSyncHistory(targetHistory);
+      setLastJsonBinSyncTime(getLocalMetrics(cleanUser).lastSyncTime);
       if (targetHistory.length > 0) {
         setLastSyncTime(targetHistory[0].timestamp);
       }
@@ -658,9 +769,9 @@ export default function App() {
         'Switch Rapide'
       );
 
-      performSync(true, cleanUser);
+      manualSyncAfterReconcileRef.current = true;
     },
-    [userSession?.isSpectator, isIframe, settings, currentTab, performSync, showToast]
+    [userSession?.isSpectator, isIframe, settings.username, currentTab, showToast]
   );
 
   // User logout
@@ -837,6 +948,7 @@ export default function App() {
         onSync={() => performSync(true)}
         isSyncing={isSyncing}
         lastSyncTime={lastSyncTime}
+        lastJsonBinSyncTime={lastJsonBinSyncTime}
         isAdmin={isAdmin}
         isIframe={effectiveIsIframe}
         isSpectator={isSpectator}
@@ -863,6 +975,7 @@ export default function App() {
         onSync={() => performSync(true)}
         isSyncing={isSyncing}
         lastSyncTime={lastSyncTime}
+        lastJsonBinSyncTime={lastJsonBinSyncTime}
         profile={profile}
         stats={stats}
         username={settings.username}
@@ -971,7 +1084,10 @@ export default function App() {
             history={syncHistory}
             onHistoryUpdate={(updated) => {
               setSyncHistory(updated);
-              saveServerData(settings.username, updated, settings).catch(() => {});
+              persistToCloudAndNotify(settings.username, updated, settings, {
+                force: true,
+                notifySuccess: true,
+              });
             }}
             onShowMessage={showToast}
             username={settings.username}
@@ -980,6 +1096,9 @@ export default function App() {
             isIframe={isIframe}
             onOpenSecurityModal={handleOpenSecurityModal}
             startDateStr={settings.startDate}
+            lastJsonBinSyncTime={lastJsonBinSyncTime}
+            jsonBinStatus={jsonBinStatus}
+            onOpenNetworkModal={() => setNetworkModalOpen(true)}
           />
         )}
 
@@ -1004,7 +1123,10 @@ export default function App() {
             onPurgeAccountData={handlePurgeAccountData}
             onHistoryUpdate={(updated) => {
               setSyncHistory(updated);
-              saveServerData(settings.username, updated, settings).catch(() => {});
+              persistToCloudAndNotify(settings.username, updated, settings, {
+                force: true,
+                notifySuccess: true,
+              });
             }}
             isAdmin={isAdmin}
             isIframe={isIframe}
@@ -1063,7 +1185,10 @@ export default function App() {
           username={settings.username}
           onHistoryUpdate={(updated) => {
             setSyncHistory(updated);
-            saveServerData(settings.username, updated, settings).catch(() => {});
+            persistToCloudAndNotify(settings.username, updated, settings, {
+              force: true,
+              notifySuccess: false,
+            });
           }}
           onShowMessage={showToast}
           onOpenSettings={() => {

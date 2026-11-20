@@ -34,6 +34,7 @@ import {
   importSyncHistory,
   saveStoredSyncHistory,
 } from '../utils/storage';
+import { formatJsonBinTimestamp } from '../utils/cloudSync';
 import { SecurePurgeModal } from './SecurePurgeModal';
 
 interface SyncLogProps {
@@ -46,6 +47,9 @@ interface SyncLogProps {
   isIframe?: boolean;
   onOpenSecurityModal?: (title?: string) => void;
   startDateStr?: string;
+  lastJsonBinSyncTime?: number | null;
+  jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  onOpenNetworkModal?: () => void;
 }
 
 interface DayEntry {
@@ -68,6 +72,9 @@ export const SyncLog: React.FC<SyncLogProps> = ({
   isIframe = false,
   onOpenSecurityModal,
   startDateStr = '2026-11-02',
+  lastJsonBinSyncTime,
+  jsonBinStatus = 'synced',
+  onOpenNetworkModal,
 }) => {
   const [secureModalOpen, setSecureModalOpen] = useState(false);
   const [filterMode, setFilterMode] = useState<'all' | 'missing' | 'synced'>('all');
@@ -408,6 +415,28 @@ export const SyncLog: React.FC<SyncLogProps> = ({
           <p className="text-xs text-neutral-400 mt-1">
             Suivi exhaustif (1 sync / jour). Les journées manquantes apparaissent en <span className="text-[#ef4444] font-bold">rouge</span> et peuvent être complétées par l'administrateur.
           </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={onOpenNetworkModal}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-mono transition-colors ${
+                jsonBinStatus === 'error'
+                  ? 'border-[#ef4444]/40 bg-[#ef4444]/10 text-[#ef4444]'
+                  : jsonBinStatus === 'syncing'
+                  ? 'border-[#facc15]/40 bg-[#facc15]/10 text-[#facc15]'
+                  : 'border-[#10b981]/30 bg-[#10b981]/10 text-[#10b981] hover:bg-[#10b981]/20'
+              }`}
+            >
+              <Clock className="h-3 w-3 shrink-0" />
+              <span>
+                {jsonBinStatus === 'syncing'
+                  ? 'Sauvegarde JSONBin en cours...'
+                  : jsonBinStatus === 'error'
+                  ? 'Erreur JSONBin (cliquez pour vérifier)'
+                  : `Dernière MàJ JSONBin : ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`}
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Action buttons */}

@@ -49,6 +49,7 @@ import {
 } from '../utils/security';
 import {
   fetchJsonBinStatus,
+  formatJsonBinTimestamp,
   JsonBinStatusInfo,
   pullFromJsonBin,
   saveJsonBinConfig,
@@ -100,6 +101,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [copiedBinJson, setCopiedBinJson] = useState<boolean>(false);
 
   useEffect(() => {
+    setForm(settings);
+  }, [settings]);
+
+  useEffect(() => {
     let isMounted = true;
     fetchJsonBinStatus(form.username).then((data) => {
       if (isMounted && data) {
@@ -139,10 +144,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const res = await syncNowToJsonBin(form.username, true);
     setIsSyncingBin(false);
     if (res.success) {
+      const tsLabel = formatJsonBinTimestamp(res.lastSyncTime || res.remoteUpdatedAt);
+      if (res.history && onHistoryUpdate) {
+        onHistoryUpdate(res.history);
+      }
       if (res.skipped) {
-        onShowMessage('Quota préservé : Vos 9 relevés sont déjà parfaitement à jour sur JSONBin !', 'info');
+        onShowMessage(`Quota préservé : JSONBin déjà à jour (MàJ : ${tsLabel})`, 'info');
       } else {
-        onShowMessage('Relevés sauvegardés en direct sur votre bin JSONBin !', 'success');
+        onShowMessage(`Données & paramètres sauvegardés sur JSONBin (${tsLabel}) !`, 'success');
       }
       const updated = await fetchJsonBinStatus(form.username);
       if (updated) setJsonBinInfo(updated);
@@ -157,7 +166,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setIsSyncingBin(false);
     if (res.success && res.history) {
       if (onHistoryUpdate) onHistoryUpdate(res.history);
-      onShowMessage(`${res.history.length} relevés quotidiens restaurés depuis JSONBin !`, 'success');
+      const tsLabel = formatJsonBinTimestamp(res.remoteUpdatedAt || res.lastSyncTime);
+      onShowMessage(`${res.history.length} relevés restaurés depuis JSONBin (MàJ : ${tsLabel}) !`, 'success');
       const updated = await fetchJsonBinStatus(form.username);
       if (updated) setJsonBinInfo(updated);
     } else {
@@ -896,6 +906,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
             <div className="font-mono text-xs text-white truncate">
               {jsonBinInfo?.binId ? `Bin ID : ${jsonBinInfo.binId}` : 'Aucun Bin ID configuré'}
+            </div>
+            <div className="text-[11px] font-mono text-[#facc15]">
+              Dernière MàJ : {formatJsonBinTimestamp(jsonBinInfo?.lastSyncTime || jsonBinInfo?.remoteUpdatedAt)}
             </div>
             {jsonBinInfo?.lastError && (
               <p className="text-[11px] text-rose-400 font-sans">{jsonBinInfo.lastError}</p>

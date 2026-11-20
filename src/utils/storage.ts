@@ -148,16 +148,27 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customMilestones: generateDefaultMilestones(),
 };
 
-export function getStoredSettings(): AppSettings {
-  let raw = safeGetItem(SETTINGS_KEY);
+export function getUserSettingsStorageKey(username: string): string {
+  const clean = (username || 'default').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  return `roadto2000_settings_${clean}`;
+}
+
+export function getStoredSettings(username?: string): AppSettings {
+  const cleanTarget = username ? username.trim().toLowerCase() : '';
+  let raw = cleanTarget ? safeGetItem(getUserSettingsStorageKey(cleanTarget)) : null;
+  if (!raw) {
+    raw = safeGetItem(SETTINGS_KEY);
+  }
   if (!raw) {
     // Check legacy key for migration
     raw = safeGetItem(LEGACY_SETTINGS_KEY);
   }
-  if (!raw) return DEFAULT_SETTINGS;
+  if (!raw) {
+    return cleanTarget ? { ...DEFAULT_SETTINGS, username: cleanTarget } : DEFAULT_SETTINGS;
+  }
   try {
     const parsed = JSON.parse(raw);
-    const sanitizedUser = (parsed.username || DEFAULT_SETTINGS.username).trim().toLowerCase();
+    const sanitizedUser = (cleanTarget || parsed.username || DEFAULT_SETTINGS.username).trim().toLowerCase();
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
@@ -166,20 +177,89 @@ export function getStoredSettings(): AppSettings {
         ...DEFAULT_SETTINGS.notifications,
         ...(parsed.notifications || {}),
       },
-      customMilestones: parsed.customMilestones || DEFAULT_SETTINGS.customMilestones,
+      customMilestones:
+        Array.isArray(parsed.customMilestones) && parsed.customMilestones.length > 0
+          ? parsed.customMilestones
+          : DEFAULT_SETTINGS.customMilestones,
     };
   } catch (e) {
     console.error('Failed to parse stored settings:', e);
-    return DEFAULT_SETTINGS;
+    return cleanTarget ? { ...DEFAULT_SETTINGS, username: cleanTarget } : DEFAULT_SETTINGS;
   }
 }
 
 export function saveStoredSettings(settings: AppSettings): boolean {
+  const cleanUser = settings.username.trim().toLowerCase();
   const clean = {
     ...settings,
-    username: settings.username.trim().toLowerCase(),
+    username: cleanUser,
   };
-  return safeSetItem(SETTINGS_KEY, JSON.stringify(clean));
+  const serialized = JSON.stringify(clean);
+  safeSetItem(getUserSettingsStorageKey(cleanUser), serialized);
+  return safeSetItem(SETTINGS_KEY, serialized);
+}
+
+export function normalizeParisDayKey(timestamp: string): string | null {
+  const d = new Date(timestamp);
+  if (isNaN(d.getTime())) return null;
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Paris',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(parts)) return parts;
+  } catch {}
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function mergeSyncHistories(
+  primary: SyncRecord[],
+  secondary: SyncRecord[],
+  username: string
+): SyncRecord[] {
+  const cleanUser = username.trim().toLowerCase();
+  const byDay = new Map<string, SyncRecord>();
+
+  const insertList = (list: SyncRecord[], overwrite: boolean) => {
+    for (const r of list) {
+      if (!r || typeof r.bestRating !== 'number' || r.bestRating <= 0) continue;
+      if (cleanUser === 'alpharomeo1500' && r.bestRating === 1938) continue;
+      if (r.username && r.username.toLowerCase() !== cleanUser) continue;
+
+      const dayKey = normalizeParisDayKey(r.timestamp);
+      if (!dayKey) continue;
+
+      const existing = byDay.get(dayKey);
+      if (!existing) {
+        byDay.set(dayKey, { ...r, username: cleanUser });
+      } else if (overwrite) {
+        byDay.set(dayKey, {
+          ...existing,
+          ...r,
+          username: cleanUser,
+          puzzles: r.puzzles ?? existing.puzzles ?? null,
+          note: r.note ?? existing.note,
+        });
+      } else {
+        byDay.set(dayKey, {
+          ...r,
+          ...existing,
+          username: cleanUser,
+          puzzles: existing.puzzles ?? r.puzzles ?? null,
+          note: existing.note ?? r.note,
+        });
+      }
+    }
+  };
+
+  insertList(Array.isArray(secondary) ? secondary : [], false);
+  insertList(Array.isArray(primary) ? primary : [], true);
+
+  return Array.from(byDay.values())
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 500);
 }
 
 export const OFFICIAL_DAILY_RECORDS: SyncRecord[] = [

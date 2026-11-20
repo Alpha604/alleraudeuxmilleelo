@@ -23,6 +23,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
+import { formatJsonBinShortTime, formatJsonBinTimestamp } from '../utils/cloudSync';
 import { AccountStatus, getPublicAuthorizedAccounts } from '../utils/security';
 import { NavTab } from './Navbar';
 import { UserDropdown } from './UserDropdown';
@@ -33,6 +34,7 @@ interface SidebarProps {
   onSync: () => void;
   isSyncing: boolean;
   lastSyncTime: string | null;
+  lastJsonBinSyncTime?: number | null;
   isAdmin: boolean;
   isIframe: boolean;
   isSpectator?: boolean;
@@ -58,6 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSync,
   isSyncing,
   lastSyncTime,
+  lastJsonBinSyncTime,
   isAdmin,
   isIframe,
   isSpectator = false,
@@ -342,14 +345,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
             type="button"
             onClick={onOpenNetworkModal}
             title={`Réseau : ${isNetworkOnline ? 'En ligne' : 'Déconnecté'} · JSONBin : ${
-              jsonBinStatus === 'synced' ? 'Synchronisé' : 'En attente'
-            }`}
+              jsonBinStatus === 'synced'
+                ? 'Synchronisé'
+                : jsonBinStatus === 'error'
+                ? 'Erreur'
+                : jsonBinStatus === 'syncing'
+                ? 'Synchro...'
+                : 'En attente'
+            } · Dernière MàJ : ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`}
             className={`w-full flex items-center rounded-xl font-bold text-xs transition-all border ${
               isExpanded
                 ? 'gap-2.5 px-3 py-2 bg-black/40 hover:bg-neutral-900/90'
                 : 'justify-center p-2.5 bg-black/40 hover:bg-neutral-900/90'
             } ${
-              !isNetworkOnline
+              !isNetworkOnline || jsonBinStatus === 'error'
                 ? 'border-[#ef4444]/40 text-[#ef4444]'
                 : jsonBinStatus === 'synced'
                 ? 'border-[#10b981]/40 text-[#10b981]'
@@ -358,21 +367,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <Database className="h-4 w-4 shrink-0" />
             {isExpanded && (
-              <div className="flex-1 flex items-center justify-between text-left leading-tight">
-                <span className="text-neutral-200">Cache Cloud</span>
+              <div className="flex-1 flex items-center justify-between text-left leading-tight min-w-0">
+                <div className="flex flex-col min-w-0">
+                  <span className="text-neutral-200">Cache JSONBin</span>
+                  <span className="text-[10px] font-mono text-neutral-400 truncate">
+                    {lastJsonBinSyncTime ? `MàJ : ${formatJsonBinShortTime(lastJsonBinSyncTime)}` : 'Jamais MàJ'}
+                  </span>
+                </div>
                 <span
-                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono ${
-                    jsonBinStatus === 'synced'
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono shrink-0 ${
+                    jsonBinStatus === 'error'
+                      ? 'bg-[#ef4444]/20 text-[#ef4444]'
+                      : jsonBinStatus === 'synced'
                       ? 'bg-[#10b981]/20 text-[#10b981]'
                       : 'bg-[#facc15]/20 text-[#facc15]'
                   }`}
                 >
                   <span
                     className={`h-1.5 w-1.5 rounded-full ${
-                      jsonBinStatus === 'synced' ? 'bg-[#10b981]' : 'bg-[#facc15]'
+                      jsonBinStatus === 'error'
+                        ? 'bg-[#ef4444]'
+                        : jsonBinStatus === 'synced'
+                        ? 'bg-[#10b981]'
+                        : 'bg-[#facc15]'
                     }`}
                   />
-                  {jsonBinStatus === 'synced' ? 'OK' : 'Attente'}
+                  {jsonBinStatus === 'error' ? 'Err' : jsonBinStatus === 'synced' ? 'OK' : 'Sync'}
                 </span>
               </div>
             )}

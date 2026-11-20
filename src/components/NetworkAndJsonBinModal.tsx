@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import {
   fetchJsonBinStatus,
+  formatJsonBinTimestamp,
   JsonBinStatusInfo,
   pullFromJsonBin,
   saveJsonBinConfig,
@@ -176,6 +177,7 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
       binId: binId.trim(),
       apiKey: apiKey.trim(),
       enabled: true,
+      username,
     });
 
     setSavingConfig(false);
@@ -194,12 +196,16 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
     const res = await syncNowToJsonBin(username, true);
     setSyncing(false);
     if (res.success) {
+      const tsLabel = res.lastSyncTime ? formatJsonBinTimestamp(res.lastSyncTime) : 'à l’instant';
+      if (res.history && onHistoryUpdate) {
+        onHistoryUpdate(res.history);
+      }
       if (res.skipped) {
         if (onShowMessage) {
-          onShowMessage('Quota préservé : Vos données sont déjà à jour sur JSONBin !', 'info');
+          onShowMessage(`Quota préservé : JSONBin déjà à jour (${tsLabel}).`, 'info');
         }
       } else {
-        if (onShowMessage) onShowMessage('Données sauvegardées en ligne sur JSONBin !', 'success');
+        if (onShowMessage) onShowMessage(`JSONBin mis à jour le ${tsLabel} !`, 'success');
       }
       checkNetworkAndStatus();
     } else {
@@ -213,7 +219,10 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
     setSyncing(false);
     if (res.success && res.history) {
       if (onHistoryUpdate) onHistoryUpdate(res.history);
-      if (onShowMessage) onShowMessage(`${res.history.length} relevés restaurés depuis JSONBin !`, 'success');
+      const tsLabel = res.remoteUpdatedAt
+        ? formatJsonBinTimestamp(res.remoteUpdatedAt)
+        : formatJsonBinTimestamp(res.lastSyncTime);
+      if (onShowMessage) onShowMessage(`${res.history.length} relevés restaurés depuis JSONBin (MàJ : ${tsLabel}) !`, 'success');
       checkNetworkAndStatus();
     } else {
       if (onShowMessage) onShowMessage(res.error || 'Échec de lecture depuis JSONBin', 'warning');
@@ -333,7 +342,7 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
             <p className="text-xs text-neutral-400">
               {statusInfo?.configured ? (
                 <>
-                  Connecté au Bin <strong className="text-white font-mono">{statusInfo.binId}</strong>. Sauvegarde automatique active à chaque synchronisation.
+                  Connecté au Bin <strong className="text-white font-mono">{statusInfo.binId}</strong>. Sauvegarde automatique et protection anti-écrasement actives.
                 </>
               ) : (
                 <>
@@ -341,6 +350,28 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
                 </>
               )}
             </p>
+
+            {/* Exact Last JSONBin Update Timestamp Banner */}
+            <div className="rounded-xl bg-black/40 border border-neutral-800/80 p-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div>
+                <span className="text-[10px] uppercase tracking-wider text-neutral-400 block">
+                  Dernière mise à jour JSONBin
+                </span>
+                <span className="font-mono font-bold text-[#facc15]">
+                  {formatJsonBinTimestamp(statusInfo?.lastSyncTime || statusInfo?.remoteUpdatedAt)}
+                </span>
+              </div>
+              {statusInfo?.remoteUpdatedAt && (
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider text-neutral-400 block">
+                    Horodatage du fichier distant
+                  </span>
+                  <span className="font-mono text-neutral-200">
+                    {formatJsonBinTimestamp(statusInfo.remoteUpdatedAt)}
+                  </span>
+                </div>
+              )}
+            </div>
 
             {statusInfo?.lastError && (
               <div className="p-2.5 rounded-xl bg-[#ef4444]/10 border border-[#ef4444]/30 text-xs text-[#ef4444] flex items-center gap-2">

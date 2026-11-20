@@ -7,6 +7,7 @@ import { AppSettings, SyncRecord } from '../types/chess';
 import {
   getStoredSettings,
   getStoredSyncHistory,
+  mergeSyncHistories,
   OFFICIAL_DAILY_RECORDS,
   saveStoredSettings,
   saveStoredSyncHistory,
@@ -14,8 +15,9 @@ import {
 
 /**
  * Cloud Sync Utility (Dual-Mode: Express Server + Vercel Direct Client-Side JSONBin):
- * Synchronizes sync history and settings between PC, Smartphone, and Tablet.
- * On Vercel (where no Express backend runs), it connects directly to JSONBin.io's CORS-enabled API.
+ * Synchronizes sync history and settings between PC, Smartphone, and Tablet
+ * with per-account Bin isolation, Merge-Before-PUT protection against data loss,
+ * and real-time last-updated timestamp reporting.
  */
 
 const DEFAULT_BIN_ID = '6af3559affd5d16053b75b82';
@@ -25,8 +27,63 @@ const STORAGE_KEYS = {
   binId: 'roadto2000_jsonbin_binid',
   apiKey: 'roadto2000_jsonbin_apikey',
   enabled: 'roadto2000_jsonbin_enabled',
-  metrics: 'roadto2000_jsonbin_metrics_v2',
+  metricsPrefix: 'roadto2000_jsonbin_metrics_v3_',
+  lastPullPrefix: 'roadto2000_jsonbin_lastpull_',
 };
+
+export interface JsonBinUpdateEventDetail {
+  username: string;
+  lastSyncTime: number | null;
+  remoteUpdatedAt?: string | null;
+  lastStatus: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  lastError?: string | null;
+  pushed?: boolean;
+  skipped?: boolean;
+}
+
+export function formatJsonBinTimestamp(ts: number | string | null | undefined): string {
+  if (!ts) return 'Jamais synchronisé';
+  const d = typeof ts === 'number' ? new Date(ts) : new Date(ts);
+  if (isNaN(d.getTime())) return 'Date invalide';
+  try {
+    return d.toLocaleString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZone: 'Europe/Paris',
+    });
+  } catch {
+    return d.toLocaleString('fr-FR');
+  }
+}
+
+export function formatJsonBinShortTime(ts: number | string | null | undefined): string {
+  if (!ts) return 'Non sync';
+  const d = typeof ts === 'number' ? new Date(ts) : new Date(ts);
+  if (isNaN(d.getTime())) return 'Non sync';
+  try {
+    return d.toLocaleString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Europe/Paris',
+    });
+  } catch {
+    return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  }
+}
+
+function emitJsonBinUpdate(detail: JsonBinUpdateEventDetail): void {
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent<JsonBinUpdateEventDetail>('roadto2000:jsonbin-updated', { detail }));
+    }
+  } catch {}
+}
 
 export function getClientJsonBinCredentials(username?: string): { binId: string; apiKey: string; enabled: boolean } {
   const cleanUser = username ? username.trim().toLowerCase() : '';
@@ -43,8 +100,10 @@ export function getClientJsonBinCredentials(username?: string): { binId: string;
 
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
-      const storedBin = window.localStorage.getItem(userBinKey) || (isAlpha ? window.localStorage.getItem(STORAGE_KEYS.binId) : null);
-      const storedKey = window.localStorage.getItem(userKeyKey) || (isAlpha ? window.localStorage.getItem(STORAGE_KEYS.apiKey) : null);
+      const storedBin =
+        window.localStorage.getItem(userBinKey) || (isAlpha ? window.localStorage.getItem(STORAGE_KEYS.binId) : null);
+      const storedKey =
+        window.localStorage.getItem(userKeyKey) || (isAlpha ? window.localStorage.getItem(STORAGE_KEYS.apiKey) : null);
       const storedEnabled = window.localStorage.getItem(userEnabledKey);
       if (storedBin && storedBin.trim()) binId = storedBin.trim();
       if (storedKey && storedKey.trim()) storedApiKey = storedKey.trim();
@@ -62,26 +121,34 @@ interface LocalMetrics {
   savedRequests: number;
   lastDayTracked: string;
   lastSyncTime: number | null;
+  remoteUpdatedAt?: string | null;
   lastSignature?: string;
   lastSkippedReason?: string | null;
   lastStatus: 'synced' | 'pending_keys' | 'error' | 'syncing';
   lastError?: string | null;
 }
 
-function getLocalMetrics(): LocalMetrics {
+function getMetricsStorageKey(username?: string): string {
+  const clean = (username || 'alpharomeo1500').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  return `${STORAGE_KEYS.metricsPrefix}${clean}`;
+}
+
+export function getLocalMetrics(username?: string): LocalMetrics {
   const today = new Date().toISOString().split('T')[0];
+  const creds = getClientJsonBinCredentials(username);
   const defaults: LocalMetrics = {
     requestsToday: 0,
     savedRequests: 0,
     lastDayTracked: today,
     lastSyncTime: null,
-    lastStatus: 'synced',
+    remoteUpdatedAt: null,
+    lastStatus: creds.binId ? 'synced' : 'pending_keys',
     lastError: null,
   };
 
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
-      const raw = window.localStorage.getItem(STORAGE_KEYS.metrics);
+      const raw = window.localStorage.getItem(getMetricsStorageKey(username));
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed.lastDayTracked !== today) {
@@ -96,12 +163,13 @@ function getLocalMetrics(): LocalMetrics {
   return defaults;
 }
 
-function saveLocalMetrics(patch: Partial<LocalMetrics>): LocalMetrics {
-  const current = getLocalMetrics();
+function saveLocalMetrics(username: string, patch: Partial<LocalMetrics>): LocalMetrics {
+  const cleanUser = (username || 'alpharomeo1500').trim().toLowerCase();
+  const current = getLocalMetrics(cleanUser);
   const updated = { ...current, ...patch };
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.setItem(STORAGE_KEYS.metrics, JSON.stringify(updated));
+      window.localStorage.setItem(getMetricsStorageKey(cleanUser), JSON.stringify(updated));
     }
   } catch {}
   return updated;
@@ -113,6 +181,7 @@ export interface JsonBinStatusInfo {
   hasApiKey: boolean;
   enabled: boolean;
   lastSyncTime: number | null;
+  remoteUpdatedAt?: string | null;
   lastStatus: 'synced' | 'pending_keys' | 'error' | 'syncing';
   lastError: string | null;
   quotaInfo?: {
@@ -120,20 +189,83 @@ export interface JsonBinStatusInfo {
     savedRequests: number;
     quotaSaverActive: boolean;
     lastSkippedReason: string | null;
-    minThrottleSeconds: number;
+    minThrottleSeconds?: number;
   };
   template?: any;
+}
+
+export interface SaveServerDataResult {
+  ok: boolean;
+  jsonBinSynced: boolean;
+  skipped?: boolean;
+  reason?: string | null;
+  lastSyncTime: number | null;
+  remoteUpdatedAt?: string | null;
+  status: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  error?: string | null;
+  history?: SyncRecord[];
+  settings?: AppSettings | null;
+}
+
+export function computeClientDataSignature(
+  username: string,
+  records: SyncRecord[],
+  settings?: Partial<AppSettings> | null
+): string {
+  const cleanUser = (username || 'alpharomeo1500').trim().toLowerCase();
+  const sorted = [...(Array.isArray(records) ? records : [])].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+  const allRecordsSig = sorted
+    .map(
+      (r) =>
+        `${r.id || ''}_${r.timestamp}_${r.bullet ?? ''}_${r.blitz ?? ''}_${r.rapid ?? ''}_${r.puzzles ?? ''}_${r.bestRating}_${r.bestMode}_${r.source || ''}_${r.note || ''}`
+    )
+    .join(';');
+  const s = settings || {};
+  const settingsStr = JSON.stringify({
+    username: s.username || cleanUser,
+    startElo: s.startElo,
+    targetElo: s.targetElo,
+    startDate: s.startDate,
+    targetDate: s.targetDate,
+    selectedMode: s.selectedMode,
+    trajectoryModel: s.trajectoryModel,
+    autoSyncMinutes: s.autoSyncMinutes,
+    theme: s.theme,
+    notifications: s.notifications,
+    customMilestones: s.customMilestones,
+  });
+  // Simple deterministic hash suitable for browser without async crypto
+  const raw = `${cleanUser}:::${allRecordsSig}:::${settingsStr}`;
+  let h1 = 0x811c9dc5;
+  let h2 = 0xdeadbeef;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 0x01000193);
+    h2 = Math.imul(h2 ^ ch, 0x85ebca6b);
+  }
+  return `${(h1 >>> 0).toString(16)}_${(h2 >>> 0).toString(16)}_${raw.length}`;
 }
 
 export async function fetchServerData(username: string): Promise<{
   history: SyncRecord[];
   settings: AppSettings | null;
   lastUpdated: number;
+  jsonBinLastSyncTime?: number | null;
+  jsonBinRemoteUpdatedAt?: string | null;
 } | null> {
   const clean = (username || '').trim().toLowerCase();
   if (!clean) return null;
 
-  // 1. Try local Express server endpoint (local dev or Node environment)
+  let serverHistory: SyncRecord[] = [];
+  let serverSettings: AppSettings | null = null;
+  let lastUpdated = 0;
+  let jsonBinLastSyncTime: number | null = null;
+  let jsonBinRemoteUpdatedAt: string | null = null;
+  let serverAvailable = false;
+
+  // 1. Try local Express server endpoint
   try {
     const res = await fetch(`/api/user-data/${clean}`, {
       headers: { Accept: 'application/json' },
@@ -143,24 +275,55 @@ export async function fetchServerData(username: string): Promise<{
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
-        return {
-          history: Array.isArray(data.history) ? data.history : [],
-          settings: data.settings || null,
-          lastUpdated: data.lastUpdated || 0,
-        };
+        serverAvailable = true;
+        serverHistory = Array.isArray(data.history) ? data.history : [];
+        serverSettings = data.settings || null;
+        lastUpdated = data.lastUpdated || 0;
+        jsonBinLastSyncTime = data.jsonBinLastSyncTime || null;
+        jsonBinRemoteUpdatedAt = data.jsonBinRemoteUpdatedAt || null;
+
+        if (jsonBinLastSyncTime) {
+          saveLocalMetrics(clean, {
+            lastSyncTime: jsonBinLastSyncTime,
+            remoteUpdatedAt: jsonBinRemoteUpdatedAt,
+            lastStatus: data.jsonBinStatus || 'synced',
+          });
+        }
       }
     }
   } catch {
     // Endpoint unavailable (Vercel static SPA)
   }
 
-  // 2. Direct client fallback on Vercel: pull directly from JSONBin.io
-  const pullResult = await pullFromJsonBin(clean);
-  if (pullResult.success && pullResult.history && pullResult.history.length > 0) {
+  if (serverAvailable && serverHistory.length > 0) {
     return {
-      history: pullResult.history,
-      settings: null,
+      history: serverHistory,
+      settings: serverSettings,
+      lastUpdated,
+      jsonBinLastSyncTime,
+      jsonBinRemoteUpdatedAt,
+    };
+  }
+
+  // 2. Fallback to JSONBin if server has 0 records OR server is unavailable (Vercel)
+  const pullResult = await pullFromJsonBin(clean);
+  if (pullResult.success) {
+    return {
+      history: mergeSyncHistories(pullResult.history || [], serverHistory, clean),
+      settings: pullResult.settings || serverSettings,
       lastUpdated: Date.now(),
+      jsonBinLastSyncTime: pullResult.lastSyncTime ?? null,
+      jsonBinRemoteUpdatedAt: pullResult.remoteUpdatedAt ?? null,
+    };
+  }
+
+  if (serverAvailable) {
+    return {
+      history: serverHistory,
+      settings: serverSettings,
+      lastUpdated,
+      jsonBinLastSyncTime,
+      jsonBinRemoteUpdatedAt,
     };
   }
 
@@ -170,13 +333,25 @@ export async function fetchServerData(username: string): Promise<{
 export async function saveServerData(
   username: string,
   history: SyncRecord[],
-  settings?: AppSettings
-): Promise<boolean> {
+  settings?: AppSettings,
+  options?: { force?: boolean; replaceExact?: boolean }
+): Promise<SaveServerDataResult> {
   const clean = (username || '').trim().toLowerCase();
-  if (!clean) return false;
+  if (!clean) {
+    return {
+      ok: false,
+      jsonBinSynced: false,
+      lastSyncTime: null,
+      status: 'error',
+      error: 'Nom d’utilisateur manquant',
+    };
+  }
 
-  // 1. Try Express backend
-  let backendOk = false;
+  const creds = getClientJsonBinCredentials(clean);
+  const forcePush = options?.force ?? true;
+  const replaceExact = Boolean(options?.replaceExact);
+
+  // 1. Try Express backend (which awaits JSONBin push + merge-before-PUT protection)
   try {
     const res = await fetch(`/api/user-data/${clean}`, {
       method: 'POST',
@@ -184,67 +359,175 @@ export async function saveServerData(
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
-      body: JSON.stringify({ history, settings }),
+      body: JSON.stringify({
+        history,
+        settings,
+        forcePush,
+        replaceExact,
+        binId: creds.binId || undefined,
+        apiKey: creds.apiKey || undefined,
+      }),
     });
-    backendOk = res.ok;
+
+    if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        const jb = data.jsonBin || {};
+        const status: 'synced' | 'pending_keys' | 'error' | 'syncing' =
+          jb.status === 'error'
+            ? 'error'
+            : jb.status === 'pending_keys'
+            ? 'pending_keys'
+            : 'synced';
+        const lastSyncTime = jb.lastSyncTime ?? getLocalMetrics(clean).lastSyncTime;
+        const remoteUpdatedAt = jb.remoteUpdatedAt ?? getLocalMetrics(clean).remoteUpdatedAt ?? null;
+
+        // If server merged additional remote days or settings back, mirror them locally too
+        if (Array.isArray(data.history) && data.history.length > 0 && !replaceExact) {
+          saveStoredSyncHistory(data.history, clean);
+        }
+
+        saveLocalMetrics(clean, {
+          lastSyncTime,
+          remoteUpdatedAt,
+          lastStatus: status,
+          lastError: jb.error || null,
+          lastSkippedReason: jb.reason || null,
+          lastSignature: computeClientDataSignature(clean, data.history || history, data.settings || settings),
+        });
+
+        emitJsonBinUpdate({
+          username: clean,
+          lastSyncTime,
+          remoteUpdatedAt,
+          lastStatus: status,
+          lastError: jb.error || null,
+          pushed: Boolean(jb.pushed),
+          skipped: Boolean(jb.skipped),
+        });
+
+        return {
+          ok: true,
+          jsonBinSynced: Boolean(jb.pushed),
+          skipped: Boolean(jb.skipped),
+          reason: jb.reason || null,
+          lastSyncTime,
+          remoteUpdatedAt,
+          status,
+          error: jb.error || null,
+          history: data.history,
+          settings: data.settings || null,
+        };
+      }
+    }
   } catch {
-    backendOk = false;
+    // Express unreachable -> Vercel client-side direct fallback
   }
 
-  // 2. On Vercel or if backend is unreachable: trigger direct client JSONBin push
-  if (!backendOk) {
-    syncNowToJsonBin(clean, false).catch(() => {});
-  }
+  // 2. Direct client JSONBin push (Vercel / static hosting)
+  const directRes = await syncNowToJsonBin(clean, forcePush, {
+    replaceExact,
+    history,
+    settings,
+  });
+  const metrics = getLocalMetrics(clean);
 
-  return true;
+  return {
+    ok: directRes.success,
+    jsonBinSynced: Boolean(directRes.success && !directRes.skipped),
+    skipped: Boolean(directRes.skipped),
+    reason: directRes.reason || null,
+    lastSyncTime: directRes.lastSyncTime ?? metrics.lastSyncTime,
+    remoteUpdatedAt: directRes.remoteUpdatedAt ?? metrics.remoteUpdatedAt ?? null,
+    status: metrics.lastStatus,
+    error: directRes.error || null,
+    history: directRes.history,
+  };
 }
 
 /**
- * Reconciles local and server sync records.
- * Guarantees that syncs performed on PC immediately appear on Phone and vice-versa.
+ * Reconciles local, Express server, and JSONBin sync records + settings.
+ * Guarantees that syncs & edits performed on PC immediately appear on Phone and vice-versa,
+ * and ensures remote JSONBin history is NEVER overwritten by empty/stale local cache.
  */
 export async function reconcileCloudSync(
   username: string,
   localHistory: SyncRecord[],
-  localSettings?: AppSettings
+  localSettings?: AppSettings,
+  options?: { isSpectator?: boolean; forcePull?: boolean }
 ): Promise<{
   history: SyncRecord[];
   settings?: AppSettings;
   didUpdate: boolean;
+  lastJsonBinSyncTime: number | null;
 }> {
   const clean = (username || '').trim().toLowerCase();
   if (!clean) {
-    return { history: localHistory, settings: localSettings, didUpdate: false };
+    return { history: localHistory, settings: localSettings, didUpdate: false, lastJsonBinSyncTime: null };
   }
 
+  const isSpectator = Boolean(options?.isSpectator);
+  const forcePull = Boolean(options?.forcePull);
+  const lastPullKey = `${STORAGE_KEYS.lastPullPrefix}${clean}`;
+
+  let shouldPullJsonBin = forcePull || localHistory.length === 0;
+  try {
+    if (!shouldPullJsonBin && typeof window !== 'undefined' && window.sessionStorage) {
+      // At least once per browser session (and no more than once per 60s unless forced)
+      const sessionPull = Number(window.sessionStorage.getItem(lastPullKey) || '0');
+      if (!sessionPull || Date.now() - sessionPull > 60 * 1000) {
+        shouldPullJsonBin = true;
+      }
+    }
+  } catch {
+    shouldPullJsonBin = true;
+  }
+
+  let remoteHistory: SyncRecord[] = [];
+  let remoteSettings: AppSettings | null = null;
+  let lastJsonBinSyncTime: number | null = getLocalMetrics(clean).lastSyncTime;
+
+  // 1. Check Express server
   const serverResult = await fetchServerData(clean);
-  if (!serverResult) {
-    return { history: localHistory, settings: localSettings, didUpdate: false };
+  if (serverResult) {
+    remoteHistory = mergeSyncHistories(serverResult.history || [], remoteHistory, clean);
+    if (serverResult.settings) remoteSettings = serverResult.settings;
+    if (serverResult.jsonBinLastSyncTime) lastJsonBinSyncTime = serverResult.jsonBinLastSyncTime;
   }
 
-  const serverHistory = serverResult.history || [];
-  const allRecords = [...localHistory, ...serverHistory];
-  const valid = allRecords.filter((r) => {
-    if (!r || typeof r.bestRating !== 'number' || r.bestRating <= 0) return false;
-    if (clean === 'alpharomeo1500' && r.bestRating === 1938) return false;
-    if (r.username && r.username.toLowerCase() !== clean) return false;
-    return true;
-  });
-
-  valid.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-  // Strictly 1 sync per day
-  const seenDays = new Set<string>();
-  const mergedHistory: SyncRecord[] = [];
-  for (const r of valid) {
-    const d = new Date(r.timestamp);
-    if (isNaN(d.getTime())) continue;
-    const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    if (!seenDays.has(dayKey)) {
-      seenDays.add(dayKey);
-      mergedHistory.push(r);
+  // 2. Directly pull latest from JSONBin when needed (only non-spectator OR when cache is empty)
+  if (shouldPullJsonBin && (!isSpectator || remoteHistory.length === 0)) {
+    const binPull = await pullFromJsonBin(clean);
+    if (binPull.success) {
+      try {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          window.sessionStorage.setItem(lastPullKey, String(Date.now()));
+        }
+      } catch {}
+      if (Array.isArray(binPull.history) && binPull.history.length > 0) {
+        remoteHistory = mergeSyncHistories(binPull.history, remoteHistory, clean);
+      }
+      if (binPull.settings) {
+        remoteSettings = { ...(remoteSettings || {}), ...binPull.settings, username: clean } as AppSettings;
+      }
+      if (binPull.lastSyncTime) {
+        lastJsonBinSyncTime = binPull.lastSyncTime;
+      }
     }
   }
+
+  if (remoteHistory.length === 0 && !remoteSettings) {
+    return {
+      history: localHistory,
+      settings: localSettings,
+      didUpdate: false,
+      lastJsonBinSyncTime,
+    };
+  }
+
+  // Merge remote (authoritative for remote-only days or newer remote records) with local
+  const mergedHistory = mergeSyncHistories(localHistory, remoteHistory, clean);
 
   const didHistoryChange =
     mergedHistory.length !== localHistory.length ||
@@ -254,21 +537,51 @@ export async function reconcileCloudSync(
     saveStoredSyncHistory(mergedHistory, clean);
   }
 
-  if (localHistory.length > 0 && mergedHistory.length >= serverHistory.length) {
-    saveServerData(clean, mergedHistory, localSettings || serverResult.settings || undefined).catch(() => {});
+  let nextSettings = localSettings;
+  let didSettingsChange = false;
+  if (remoteSettings) {
+    // Restore remote settings cleanly when remote settings differ and user isn't mid-edit
+    const mergedSettingsObj: AppSettings = {
+      ...(localSettings || getStoredSettings(clean)),
+      ...remoteSettings,
+      username: clean,
+      notifications: {
+        ...(localSettings?.notifications || getStoredSettings(clean).notifications),
+        ...(remoteSettings.notifications || {}),
+      },
+      customMilestones:
+        Array.isArray(remoteSettings.customMilestones) && remoteSettings.customMilestones.length > 0
+          ? remoteSettings.customMilestones
+          : localSettings?.customMilestones || getStoredSettings(clean).customMilestones,
+    };
+    if (!localSettings || JSON.stringify(mergedSettingsObj) !== JSON.stringify(localSettings)) {
+      nextSettings = mergedSettingsObj;
+      if (!isSpectator) {
+        saveStoredSettings(mergedSettingsObj);
+      }
+      didSettingsChange = true;
+    }
+  }
+
+  // Never push back to JSONBin in spectator mode
+  if (!isSpectator && localHistory.length > 0 && mergedHistory.length > remoteHistory.length) {
+    saveServerData(clean, mergedHistory, nextSettings, { force: false }).catch(() => {});
   }
 
   return {
     history: mergedHistory,
-    settings: localSettings || serverResult.settings || undefined,
-    didUpdate: didHistoryChange,
+    settings: nextSettings,
+    didUpdate: didHistoryChange || didSettingsChange,
+    lastJsonBinSyncTime,
   };
 }
 
 export async function fetchJsonBinStatus(username = 'alpharomeo1500'): Promise<JsonBinStatusInfo> {
+  const cleanUser = username.trim().toLowerCase();
+
   // 1. Try local Express server endpoint
   try {
-    const res = await fetch(`/api/jsonbin/status?username=${encodeURIComponent(username)}`, {
+    const res = await fetch(`/api/jsonbin/status?username=${encodeURIComponent(cleanUser)}`, {
       cache: 'no-store',
     });
     if (res.ok) {
@@ -276,6 +589,14 @@ export async function fetchJsonBinStatus(username = 'alpharomeo1500'): Promise<J
       if (contentType.includes('application/json')) {
         const data = await res.json();
         if (data && typeof data.configured === 'boolean') {
+          if (data.lastSyncTime) {
+            saveLocalMetrics(cleanUser, {
+              lastSyncTime: data.lastSyncTime,
+              remoteUpdatedAt: data.remoteUpdatedAt || null,
+              lastStatus: data.lastStatus || 'synced',
+              lastError: data.lastError || null,
+            });
+          }
           return data;
         }
       }
@@ -285,8 +606,8 @@ export async function fetchJsonBinStatus(username = 'alpharomeo1500'): Promise<J
   }
 
   // 2. Direct client-side mode for Vercel
-  const creds = getClientJsonBinCredentials(username);
-  const metrics = getLocalMetrics();
+  const creds = getClientJsonBinCredentials(cleanUser);
+  const metrics = getLocalMetrics(cleanUser);
 
   return {
     configured: Boolean(creds.binId),
@@ -294,22 +615,22 @@ export async function fetchJsonBinStatus(username = 'alpharomeo1500'): Promise<J
     hasApiKey: Boolean(creds.apiKey),
     enabled: creds.enabled,
     lastSyncTime: metrics.lastSyncTime,
-    lastStatus: metrics.lastStatus,
+    remoteUpdatedAt: metrics.remoteUpdatedAt || null,
+    lastStatus: creds.binId ? metrics.lastStatus : 'pending_keys',
     lastError: metrics.lastError || null,
     quotaInfo: {
       requestsToday: metrics.requestsToday,
       savedRequests: metrics.savedRequests,
       quotaSaverActive: true,
       lastSkippedReason: metrics.lastSkippedReason || null,
-      minThrottleSeconds: 300,
     },
     template: {
       exportedAt: new Date().toISOString(),
       project: 'Road to 2000 Elo',
-      username,
+      username: cleanUser,
       version: '2.0',
-      recordsCount: OFFICIAL_DAILY_RECORDS.length,
-      records: OFFICIAL_DAILY_RECORDS,
+      recordsCount: cleanUser === 'alpharomeo1500' ? OFFICIAL_DAILY_RECORDS.length : 0,
+      records: cleanUser === 'alpharomeo1500' ? OFFICIAL_DAILY_RECORDS : [],
     },
   };
 }
@@ -319,11 +640,11 @@ export async function saveJsonBinConfig(config: {
   apiKey?: string;
   enabled?: boolean;
   username?: string;
-}): Promise<{ success: boolean; lastStatus?: string; lastError?: string | null }> {
-  const cleanUser = config.username ? config.username.trim().toLowerCase() : '';
-  const userBinKey = cleanUser ? `roadto2000_jsonbin_binid_${cleanUser}` : STORAGE_KEYS.binId;
-  const userKeyKey = cleanUser ? `roadto2000_jsonbin_apikey_${cleanUser}` : STORAGE_KEYS.apiKey;
-  const userEnabledKey = cleanUser ? `roadto2000_jsonbin_enabled_${cleanUser}` : STORAGE_KEYS.enabled;
+}): Promise<{ success: boolean; lastStatus?: string; lastError?: string | null; lastSyncTime?: number | null }> {
+  const cleanUser = (config.username || 'alpharomeo1500').trim().toLowerCase();
+  const userBinKey = `roadto2000_jsonbin_binid_${cleanUser}`;
+  const userKeyKey = `roadto2000_jsonbin_apikey_${cleanUser}`;
+  const userEnabledKey = `roadto2000_jsonbin_enabled_${cleanUser}`;
 
   // Save locally in browser immediately
   try {
@@ -332,7 +653,7 @@ export async function saveJsonBinConfig(config: {
         window.localStorage.setItem(userBinKey, config.binId.trim());
         if (cleanUser === 'alpharomeo1500') window.localStorage.setItem(STORAGE_KEYS.binId, config.binId.trim());
       }
-      if (typeof config.apiKey === 'string') {
+      if (typeof config.apiKey === 'string' && config.apiKey.trim()) {
         window.localStorage.setItem(userKeyKey, config.apiKey.trim());
         if (cleanUser === 'alpharomeo1500') window.localStorage.setItem(STORAGE_KEYS.apiKey, config.apiKey.trim());
       }
@@ -343,13 +664,30 @@ export async function saveJsonBinConfig(config: {
     }
   } catch {}
 
-  // Also notify server if running
+  // Also persist on Express server if running
   try {
-    fetch('/api/jsonbin/config', {
+    const serverRes = await fetch('/api/jsonbin/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
-    }).catch(() => {});
+      body: JSON.stringify({ ...config, username: cleanUser }),
+    });
+    if (serverRes.ok) {
+      const serverData = await serverRes.json();
+      if (typeof serverData.configured === 'boolean') {
+        saveLocalMetrics(cleanUser, {
+          lastStatus: serverData.lastStatus || 'synced',
+          lastError: serverData.lastError || null,
+          lastSyncTime: serverData.lastSyncTime ?? getLocalMetrics(cleanUser).lastSyncTime,
+          remoteUpdatedAt: serverData.remoteUpdatedAt ?? null,
+        });
+        return {
+          success: serverData.lastStatus !== 'error',
+          lastStatus: serverData.lastStatus,
+          lastError: serverData.lastError,
+          lastSyncTime: serverData.lastSyncTime ?? null,
+        };
+      }
+    }
   } catch {}
 
   // Test the bin credentials directly with JSONBin.io (CORS supported)
@@ -367,15 +705,21 @@ export async function saveJsonBinConfig(config: {
       });
 
       if (testRes.ok) {
-        saveLocalMetrics({ lastStatus: 'synced', lastError: null });
-        return { success: true, lastStatus: 'synced' };
+        let remoteUpdatedAt: string | null = null;
+        try {
+          const testBody = await testRes.json();
+          const rec = testBody.record || testBody;
+          if (rec?.exportedAt) remoteUpdatedAt = rec.exportedAt;
+        } catch {}
+        saveLocalMetrics(cleanUser, { lastStatus: 'synced', lastError: null, remoteUpdatedAt });
+        return { success: true, lastStatus: 'synced', lastSyncTime: getLocalMetrics(cleanUser).lastSyncTime };
       } else {
         const msg = `Erreur ${testRes.status}: Clé ou Bin invalide`;
-        saveLocalMetrics({ lastStatus: 'error', lastError: msg });
+        saveLocalMetrics(cleanUser, { lastStatus: 'error', lastError: msg });
         return { success: false, lastStatus: 'error', lastError: msg };
       }
-    } catch (testErr: any) {
-      saveLocalMetrics({ lastStatus: 'error', lastError: 'Connexion impossible à jsonbin.io' });
+    } catch {
+      saveLocalMetrics(cleanUser, { lastStatus: 'error', lastError: 'Connexion impossible à jsonbin.io' });
       return { success: false, lastStatus: 'error', lastError: 'Connexion impossible à jsonbin.io' };
     }
   }
@@ -385,20 +729,90 @@ export async function saveJsonBinConfig(config: {
 
 export async function syncNowToJsonBin(
   username = 'alpharomeo1500',
-  force = true
-): Promise<{ success: boolean; error?: string; skipped?: boolean; reason?: string }> {
-  // 1. Try server first
+  force = true,
+  options?: { replaceExact?: boolean; history?: SyncRecord[]; settings?: AppSettings }
+): Promise<{
+  success: boolean;
+  error?: string;
+  skipped?: boolean;
+  reason?: string;
+  lastSyncTime?: number | null;
+  remoteUpdatedAt?: string | null;
+  history?: SyncRecord[];
+}> {
+  const cleanUser = username.trim().toLowerCase();
+  const creds = getClientJsonBinCredentials(cleanUser);
+  const localHistory = options?.history ?? getStoredSyncHistory(cleanUser);
+  const settings = options?.settings ?? getStoredSettings(cleanUser);
+  const replaceExact = Boolean(options?.replaceExact);
+
+  // 1. Try Express server first (sending current client history, settings & credentials!)
   try {
     const res = await fetch('/api/jsonbin/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, force }),
+      body: JSON.stringify({
+        username: cleanUser,
+        force,
+        replaceExact,
+        history: localHistory,
+        settings,
+        binId: creds.binId || undefined,
+        apiKey: creds.apiKey || undefined,
+      }),
     });
     if (res.ok) {
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
-        return { success: true, error: data?.error, skipped: data?.skipped, reason: data?.reason };
+        const status: 'synced' | 'pending_keys' | 'error' | 'syncing' =
+          data.status === 'error' ? 'error' : data.status === 'pending_keys' ? 'pending_keys' : 'synced';
+        const lastSyncTime = data.lastSyncTime ?? getLocalMetrics(cleanUser).lastSyncTime;
+        const remoteUpdatedAt = data.remoteUpdatedAt ?? null;
+
+        if (Array.isArray(data.history) && data.history.length > 0 && !replaceExact) {
+          saveStoredSyncHistory(data.history, cleanUser);
+        }
+
+        saveLocalMetrics(cleanUser, {
+          lastSyncTime,
+          remoteUpdatedAt,
+          lastStatus: status,
+          lastError: data.error || null,
+          lastSkippedReason: data.reason || null,
+        });
+
+        emitJsonBinUpdate({
+          username: cleanUser,
+          lastSyncTime,
+          remoteUpdatedAt,
+          lastStatus: status,
+          lastError: data.error || null,
+          pushed: Boolean(data.pushed),
+          skipped: Boolean(data.skipped),
+        });
+
+        return {
+          success: data.success !== false,
+          error: data?.error,
+          skipped: data?.skipped,
+          reason: data?.reason,
+          lastSyncTime,
+          remoteUpdatedAt,
+          history: data?.history,
+        };
+      }
+    } else if (res.status >= 500) {
+      const errData = await res.json().catch(() => null);
+      if (errData?.error) {
+        saveLocalMetrics(cleanUser, { lastStatus: 'error', lastError: errData.error });
+        emitJsonBinUpdate({
+          username: cleanUser,
+          lastSyncTime: getLocalMetrics(cleanUser).lastSyncTime,
+          lastStatus: 'error',
+          lastError: errData.error,
+        });
+        return { success: false, error: errData.error };
       }
     }
   } catch {
@@ -406,72 +820,108 @@ export async function syncNowToJsonBin(
   }
 
   // 2. Direct client-side push to JSONBin.io (Works on Vercel)
-  const cleanUser = username.trim().toLowerCase();
-  const creds = getClientJsonBinCredentials(cleanUser);
   if (!creds.enabled || !creds.binId) {
-    return { success: false, error: 'JSONBin non configuré' };
+    return { success: false, error: 'JSONBin non configuré pour ce compte' };
   }
 
-  const metrics = getLocalMetrics();
-  const localHistory = getStoredSyncHistory(cleanUser);
-  const settings = getStoredSettings();
-  const currentRecords = localHistory.length > 0 ? localHistory : (cleanUser === 'alpharomeo1500' ? OFFICIAL_DAILY_RECORDS : []);
+  const metrics = getLocalMetrics(cleanUser);
+  let recordsToPush = [...localHistory];
 
-  // Client Quota Optimization 1: Compare signature
-  const sig = `${currentRecords.length}_${currentRecords[0]?.id}_${currentRecords[0]?.bestRating}_${settings.selectedMode}`;
-  if (!force && metrics.lastSignature === sig) {
-    const updated = saveLocalMetrics({
+  // Signature check BEFORE network requests (unless forced or explicit replace)
+  const initialSig = computeClientDataSignature(cleanUser, recordsToPush, settings);
+  if (!force && !replaceExact && metrics.lastSignature === initialSig && metrics.lastStatus === 'synced') {
+    const updated = saveLocalMetrics(cleanUser, {
       savedRequests: (metrics.savedRequests || 0) + 1,
-      lastSkippedReason: 'Données strictement identiques : 0 requête consommée',
+      lastSkippedReason: 'Données et paramètres identiques : 0 requête consommée',
       lastStatus: 'synced',
     });
     return {
       success: true,
       skipped: true,
       reason: updated.lastSkippedReason || 'Données identiques',
+      lastSyncTime: updated.lastSyncTime,
+      remoteUpdatedAt: updated.remoteUpdatedAt,
     };
   }
 
-  // Client Quota Optimization 2: 5-minute throttle unless forced
-  if (!force && metrics.lastSyncTime && Date.now() - metrics.lastSyncTime < 5 * 60 * 1000) {
-    const updated = saveLocalMetrics({
+  // CRITICAL SAFETY GUARD: Merge-Before-PUT on direct client path too!
+  if (!replaceExact) {
+    try {
+      const readHeaders: Record<string, string> = {};
+      if (creds.apiKey) {
+        readHeaders['X-Master-Key'] = creds.apiKey;
+        readHeaders['X-Access-Key'] = creds.apiKey;
+      }
+      const latestRes = await fetch(`https://api.jsonbin.io/v3/b/${creds.binId}/latest`, { headers: readHeaders });
+      if (latestRes.ok) {
+        const latestBody = await latestRes.json();
+        const remoteBin = latestBody.record || latestBody;
+        const remoteUser = (remoteBin.username || remoteBin.player?.username || cleanUser).trim().toLowerCase();
+        if (remoteUser === cleanUser) {
+          const remoteList = Array.isArray(remoteBin.records)
+            ? remoteBin.records
+            : Array.isArray(remoteBin.history)
+            ? remoteBin.history
+            : [];
+          if (remoteList.length > 0) {
+            recordsToPush = mergeSyncHistories(recordsToPush, remoteList, cleanUser);
+            saveStoredSyncHistory(recordsToPush, cleanUser);
+          }
+        }
+      }
+    } catch {
+      // Proceed only if we actually have local records to protect against accidental wipe
+      if (recordsToPush.length === 0) {
+        return { success: false, error: 'Impossible de lire le bin JSONBin avant écriture' };
+      }
+    }
+  }
+
+  const finalSig = computeClientDataSignature(cleanUser, recordsToPush, settings);
+  if (!force && !replaceExact && metrics.lastSignature === finalSig && metrics.lastStatus === 'synced') {
+    const updated = saveLocalMetrics(cleanUser, {
       savedRequests: (metrics.savedRequests || 0) + 1,
-      lastSkippedReason: 'Intervalle de temporisation actif (5 min) : requête économisée',
+      lastSkippedReason: 'Données déjà synchronisées sur JSONBin',
       lastStatus: 'synced',
     });
     return {
       success: true,
       skipped: true,
-      reason: updated.lastSkippedReason || 'Temporisation active',
+      reason: updated.lastSkippedReason || 'Données identiques',
+      lastSyncTime: updated.lastSyncTime,
+      remoteUpdatedAt: updated.remoteUpdatedAt,
+      history: recordsToPush,
     };
   }
 
-  const latest = currentRecords[0] || {};
+  const latest = recordsToPush[0] || ({} as Partial<SyncRecord>);
+  const exportedAt = new Date().toISOString();
   const payload = {
-    exportedAt: new Date().toISOString(),
+    exportedAt,
     project: 'Road to 2000 Elo',
     username: cleanUser,
     version: '2.0',
-    recordsCount: currentRecords.length,
-    records: currentRecords,
-    history: currentRecords,
+    recordsCount: recordsToPush.length,
+    records: recordsToPush,
+    history: recordsToPush,
     player: {
       username: cleanUser,
       targetElo: settings.targetElo || 2000,
       targetDate: settings.targetDate || '2027-12-31T23:59:59.000Z',
-      startDate: settings.startDate || '2026-11-06',
+      startDate: settings.startDate || '2026-10-31',
       startRatings: {
         bullet: 1500,
         blitz: 1458,
         rapid: 1289,
       },
       currentRatings: {
-        bullet: latest.bullet ?? 1605,
-        blitz: latest.blitz ?? 1504,
-        rapid: latest.rapid ?? 1300,
+        bullet: latest.bullet ?? 1500,
+        blitz: latest.blitz ?? 1458,
+        rapid: latest.rapid ?? 1289,
+        ...(typeof latest.puzzles === 'number' ? { puzzles: latest.puzzles } : {}),
       },
       bestMode: latest.bestMode ?? 'bullet',
-      bestRating: latest.bestRating ?? 1605,
+      bestRating: latest.bestRating ?? (settings.startElo || 1500),
     },
     settings,
   };
@@ -493,40 +943,109 @@ export async function syncNowToJsonBin(
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      saveLocalMetrics({ lastStatus: 'error', lastError: `Erreur ${res.status}: ${errText.substring(0, 80)}` });
+      const errMsg = `Erreur ${res.status}: ${errText.substring(0, 80)}`;
+      saveLocalMetrics(cleanUser, { lastStatus: 'error', lastError: errMsg });
+      emitJsonBinUpdate({
+        username: cleanUser,
+        lastSyncTime: metrics.lastSyncTime,
+        lastStatus: 'error',
+        lastError: errMsg,
+      });
       return { success: false, error: `Erreur ${res.status} JSONBin` };
     }
 
-    saveLocalMetrics({
+    const nowMs = Date.now();
+    saveLocalMetrics(cleanUser, {
       requestsToday: (metrics.requestsToday || 0) + 1,
-      lastSyncTime: Date.now(),
-      lastSignature: sig,
+      lastSyncTime: nowMs,
+      remoteUpdatedAt: exportedAt,
+      lastSignature: finalSig,
       lastSkippedReason: null,
       lastStatus: 'synced',
       lastError: null,
     });
 
-    return { success: true };
+    emitJsonBinUpdate({
+      username: cleanUser,
+      lastSyncTime: nowMs,
+      remoteUpdatedAt: exportedAt,
+      lastStatus: 'synced',
+      lastError: null,
+      pushed: true,
+      skipped: false,
+    });
+
+    return { success: true, lastSyncTime: nowMs, remoteUpdatedAt: exportedAt, history: recordsToPush };
   } catch (err: any) {
-    saveLocalMetrics({ lastStatus: 'error', lastError: err?.message || 'Erreur réseau vers JSONBin' });
-    return { success: false, error: err?.message || 'Erreur réseau vers JSONBin' };
+    const errMsg = err?.message || 'Erreur réseau vers JSONBin';
+    saveLocalMetrics(cleanUser, { lastStatus: 'error', lastError: errMsg });
+    emitJsonBinUpdate({
+      username: cleanUser,
+      lastSyncTime: metrics.lastSyncTime,
+      lastStatus: 'error',
+      lastError: errMsg,
+    });
+    return { success: false, error: errMsg };
   }
 }
 
-export async function pullFromJsonBin(targetUsername?: string): Promise<{ success: boolean; history?: SyncRecord[]; error?: string }> {
-  // 1. Try server first
+export async function pullFromJsonBin(targetUsername?: string): Promise<{
+  success: boolean;
+  history?: SyncRecord[];
+  settings?: AppSettings | null;
+  lastSyncTime?: number | null;
+  remoteUpdatedAt?: string | null;
+  error?: string;
+}> {
+  const cleanUser = (targetUsername || getStoredSettings().username || 'alpharomeo1500').trim().toLowerCase();
+  const creds = getClientJsonBinCredentials(cleanUser);
+
+  // 1. Try server first (passing user's binId/apiKey if configured in client)
   try {
     const res = await fetch('/api/jsonbin/pull', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: targetUsername ? JSON.stringify({ username: targetUsername }) : undefined,
+      body: JSON.stringify({
+        username: cleanUser,
+        binId: creds.binId || undefined,
+        apiKey: creds.apiKey || undefined,
+      }),
     });
     if (res.ok) {
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
         if (data && Array.isArray(data.history)) {
-          return { success: true, history: data.history };
+          const mergedLocal = mergeSyncHistories(data.history, getStoredSyncHistory(cleanUser), cleanUser);
+          if (mergedLocal.length > 0) {
+            saveStoredSyncHistory(mergedLocal, cleanUser);
+          }
+          if (data.settings && typeof data.settings === 'object') {
+            saveStoredSettings({ ...getStoredSettings(cleanUser), ...data.settings, username: cleanUser });
+          }
+          const lastSyncTime = data.lastSyncTime || Date.now();
+          const remoteUpdatedAt = data.remoteUpdatedAt || null;
+          saveLocalMetrics(cleanUser, {
+            lastStatus: 'synced',
+            lastError: null,
+            lastSyncTime,
+            remoteUpdatedAt,
+            lastSignature: computeClientDataSignature(cleanUser, mergedLocal, data.settings),
+          });
+          emitJsonBinUpdate({
+            username: cleanUser,
+            lastSyncTime,
+            remoteUpdatedAt,
+            lastStatus: 'synced',
+            lastError: null,
+          });
+          return {
+            success: true,
+            history: mergedLocal,
+            settings: data.settings || null,
+            lastSyncTime,
+            remoteUpdatedAt,
+          };
         }
       }
     }
@@ -535,7 +1054,6 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{ succes
   }
 
   // 2. Direct client-side fetch from JSONBin.io (Works on Vercel)
-  const creds = getClientJsonBinCredentials(targetUsername);
   if (!creds.binId) {
     return { success: false, error: 'Bin ID non configuré' };
   }
@@ -553,7 +1071,14 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{ succes
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      saveLocalMetrics({ lastStatus: 'error', lastError: `Erreur ${res.status}: Clé ou Bin invalide` });
+      const errMsg = `Erreur ${res.status}: Clé ou Bin invalide`;
+      saveLocalMetrics(cleanUser, { lastStatus: 'error', lastError: errMsg });
+      emitJsonBinUpdate({
+        username: cleanUser,
+        lastSyncTime: getLocalMetrics(cleanUser).lastSyncTime,
+        lastStatus: 'error',
+        lastError: errMsg,
+      });
       return { success: false, error: `Erreur ${res.status} JSONBin: ${errText.substring(0, 80)}` };
     }
 
@@ -561,39 +1086,64 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{ succes
     const binRecord = body.record || body;
     const rawList = Array.isArray(binRecord.records)
       ? binRecord.records
-      : (Array.isArray(binRecord.history) ? binRecord.history : []);
+      : Array.isArray(binRecord.history)
+      ? binRecord.history
+      : [];
 
-    const username = (binRecord.username || binRecord.player?.username || 'alpharomeo1500').trim().toLowerCase();
-    const valid = rawList.filter((r: any) => r && typeof r.bestRating === 'number' && r.bestRating > 0);
-    valid.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const username = (binRecord.username || binRecord.player?.username || cleanUser).trim().toLowerCase();
+    const mergedHistory = mergeSyncHistories(rawList, getStoredSyncHistory(username), username);
 
-    // Deduplicate by day
-    const seenDays = new Set<string>();
-    const onePerDay: SyncRecord[] = [];
-    for (const r of valid) {
-      const d = new Date(r.timestamp);
-      if (isNaN(d.getTime())) continue;
-      const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      if (!seenDays.has(dayKey)) {
-        seenDays.add(dayKey);
-        onePerDay.push(r);
-      }
+    if (mergedHistory.length > 0) {
+      saveStoredSyncHistory(mergedHistory, username);
     }
 
-    if (onePerDay.length > 0) {
-      saveStoredSyncHistory(onePerDay, username);
+    let restoredSettings: AppSettings | null = null;
+    if (binRecord.settings && typeof binRecord.settings === 'object') {
+      const nextSettings: AppSettings = {
+        ...getStoredSettings(username),
+        ...binRecord.settings,
+        username,
+      };
+      restoredSettings = nextSettings;
+      saveStoredSettings(nextSettings);
     }
 
-    saveLocalMetrics({
+    const nowMs = Date.now();
+    const remoteUpdatedAt = typeof binRecord.exportedAt === 'string' ? binRecord.exportedAt : null;
+
+    saveLocalMetrics(username, {
       lastStatus: 'synced',
       lastError: null,
-      lastSyncTime: Date.now(),
+      lastSyncTime: nowMs,
+      remoteUpdatedAt,
+      lastSignature: computeClientDataSignature(username, mergedHistory, restoredSettings),
     });
 
-    return { success: true, history: onePerDay };
+    emitJsonBinUpdate({
+      username,
+      lastSyncTime: nowMs,
+      remoteUpdatedAt,
+      lastStatus: 'synced',
+      lastError: null,
+    });
+
+    return {
+      success: true,
+      history: mergedHistory,
+      settings: restoredSettings,
+      lastSyncTime: nowMs,
+      remoteUpdatedAt,
+    };
   } catch (err: any) {
-    saveLocalMetrics({ lastStatus: 'error', lastError: err?.message || 'Erreur réseau vers JSONBin' });
-    return { success: false, error: err?.message || 'Erreur réseau vers JSONBin' };
+    const errMsg = err?.message || 'Erreur réseau vers JSONBin';
+    saveLocalMetrics(cleanUser, { lastStatus: 'error', lastError: errMsg });
+    emitJsonBinUpdate({
+      username: cleanUser,
+      lastSyncTime: getLocalMetrics(cleanUser).lastSyncTime,
+      lastStatus: 'error',
+      lastError: errMsg,
+    });
+    return { success: false, error: errMsg };
   }
 }
 
@@ -652,7 +1202,7 @@ export function buildInitialJsonBinPayload(params: {
       timezone: 'Europe/Paris',
       selectedMode,
       trajectoryModel,
-      autoSyncMinutes: 0,
+      autoSyncMinutes: 15,
       theme: 'dark',
       notifications: {
         newPeak: true,

@@ -720,6 +720,24 @@ export async function createManagedAccount(params: CreateAccountParams): Promise
     }
     safeSet(`roadto2000_jsonbin_enabled_${cleanUser}`, 'true');
 
+    // Persist per-account JSONBin credentials on Express server if running
+    try {
+      if (typeof fetch !== 'undefined') {
+        fetch('/api/jsonbin/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: cleanUser,
+            binId: params.jsonBinId.trim(),
+            ...(params.jsonBinApiKey && params.jsonBinApiKey.trim()
+              ? { apiKey: params.jsonBinApiKey.trim() }
+              : {}),
+            enabled: true,
+          }),
+        }).catch(() => {});
+      }
+    } catch {}
+
     // Save custom user objectives
     const userSettings = {
       username: cleanUser,
@@ -729,8 +747,8 @@ export async function createManagedAccount(params: CreateAccountParams): Promise
       targetDate: params.targetDate || '2027-12-31',
       selectedMode: params.selectedMode || 'auto',
       trajectoryModel: params.trajectoryModel || 'linear',
-      autoSyncMinutes: 0,
-      notifications: { newPeak: true, goalReached: true, syncErrors: true },
+      autoSyncMinutes: 15,
+      notifications: { newPeak: true, milestoneReached: true, goalReached: true, syncErrors: true, significantDelay: true },
       theme: 'dark',
       customMilestones: [],
     };

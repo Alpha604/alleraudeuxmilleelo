@@ -23,6 +23,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
+import { formatJsonBinShortTime, formatJsonBinTimestamp } from '../utils/cloudSync';
 import { AccountStatus, getPublicAuthorizedAccounts } from '../utils/security';
 import { UserDropdown } from './UserDropdown';
 
@@ -34,6 +35,7 @@ interface NavbarProps {
   onSync: () => void;
   isSyncing: boolean;
   lastSyncTime: string | null;
+  lastJsonBinSyncTime?: number | null;
   theme?: 'dark' | 'light';
   onToggleTheme?: () => void;
   profile?: ChessComProfileResponse;
@@ -59,6 +61,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSync,
   isSyncing,
   lastSyncTime,
+  lastJsonBinSyncTime,
   profile,
   stats,
   username,
@@ -261,19 +264,29 @@ export const Navbar: React.FC<NavbarProps> = ({
               className={`flex h-8 sm:h-9 items-center justify-center gap-1.5 rounded-xl border px-2 sm:px-2.5 py-1.5 text-xs font-bold transition-all ${
                 !isNetworkOnline
                   ? 'border-[#ef4444]/40 bg-[#ef4444]/15 text-[#ef4444] hover:bg-[#ef4444]/25'
+                  : jsonBinStatus === 'error'
+                  ? 'border-[#ef4444]/40 bg-[#ef4444]/15 text-[#ef4444] hover:bg-[#ef4444]/25'
                   : jsonBinStatus === 'synced'
                   ? 'border-[#10b981]/40 bg-[#10b981]/15 text-[#10b981] hover:bg-[#10b981]/25'
                   : 'border-[#facc15]/40 bg-[#facc15]/10 text-[#facc15] hover:bg-[#facc15]/20'
               }`}
               title={`Réseau : ${isNetworkOnline ? 'En ligne' : 'Déconnecté'} · JSONBin : ${
-                jsonBinStatus === 'synced' ? 'Synchronisé' : jsonBinStatus === 'syncing' ? 'Synchro en cours...' : 'En attente de clés'
-              }`}
+                jsonBinStatus === 'synced'
+                  ? 'Synchronisé'
+                  : jsonBinStatus === 'syncing'
+                  ? 'Synchro en cours...'
+                  : jsonBinStatus === 'error'
+                  ? 'Erreur de sauvegarde'
+                  : 'En attente de clés'
+              } · Dernière MàJ JSONBin : ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`}
             >
               <Database className="h-3.5 w-3.5 shrink-0" />
-              <span className="hidden md:inline">JSONBin</span>
+              <span className="hidden md:inline">
+                {lastJsonBinSyncTime ? `JSONBin · ${formatJsonBinShortTime(lastJsonBinSyncTime)}` : 'JSONBin'}
+              </span>
               <span
                 className={`h-2 w-2 rounded-full shrink-0 ${
-                  !isNetworkOnline
+                  !isNetworkOnline || jsonBinStatus === 'error'
                     ? 'bg-[#ef4444]'
                     : jsonBinStatus === 'synced'
                     ? 'bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.7)]'
