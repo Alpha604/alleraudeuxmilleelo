@@ -81,6 +81,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
   const [manualBullet, setManualBullet] = useState<string>('1533');
   const [manualBlitz, setManualBlitz] = useState<string>('1504');
   const [manualRapid, setManualRapid] = useState<string>('1289');
+  const [manualPuzzles, setManualPuzzles] = useState<string>('');
 
   // Compute map of sync records by date key YYYY-MM-DD
   const recordsByDateKey = useMemo(() => {
@@ -216,10 +217,12 @@ export const SyncLog: React.FC<SyncLogProps> = ({
       setManualBullet(String(referenceRecord.bullet ?? 1533));
       setManualBlitz(String(referenceRecord.blitz ?? 1504));
       setManualRapid(String(referenceRecord.rapid ?? 1289));
+      setManualPuzzles(referenceRecord.puzzles ? String(referenceRecord.puzzles) : '');
     } else {
       setManualBullet('1533');
       setManualBlitz('1504');
       setManualRapid('1289');
+      setManualPuzzles('');
     }
     setManualModalOpen(true);
   };
@@ -239,6 +242,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
     setManualBullet(String(day.record?.bullet ?? ''));
     setManualBlitz(String(day.record?.blitz ?? ''));
     setManualRapid(String(day.record?.rapid ?? ''));
+    setManualPuzzles(day.record?.puzzles ? String(day.record.puzzles) : '');
     setManualModalOpen(true);
   };
 
@@ -250,7 +254,10 @@ export const SyncLog: React.FC<SyncLogProps> = ({
     const bullet = parseInt(manualBullet, 10) || 0;
     const blitz = parseInt(manualBlitz, 10) || 0;
     const rapid = parseInt(manualRapid, 10) || 0;
+    const parsedPuzzles = parseInt(manualPuzzles, 10);
+    const puzzles = !isNaN(parsedPuzzles) && parsedPuzzles > 0 ? parsedPuzzles : null;
 
+    // Best rating strictly among official cadences (Bullet, Blitz, Rapid) — NEVER Problèmes
     let bestRating = Math.max(bullet, blitz, rapid);
     let bestMode: GameMode = 'bullet';
     if (bestRating === blitz) bestMode = 'blitz';
@@ -267,6 +274,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
       bullet,
       blitz,
       rapid,
+      puzzles,
       bestRating,
       bestMode,
       source: existingRecord?.source || 'Saisie manuelle',
@@ -538,6 +546,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                 <th className="py-3.5 px-4 text-right">Bullet</th>
                 <th className="py-3.5 px-4 text-right">Blitz</th>
                 <th className="py-3.5 px-4 text-right">Rapide</th>
+                <th className="py-3.5 px-4 text-right text-sky-400">Problèmes</th>
                 <th className="py-3.5 px-4 text-center">Meilleur Relevé</th>
                 <th className="py-3.5 px-4 text-right">Action / Source</th>
               </tr>
@@ -545,7 +554,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
             <tbody className="divide-y divide-neutral-800/60 font-mono">
               {filteredDays.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-xs text-neutral-400">
+                  <td colSpan={8} className="py-12 text-center text-xs text-neutral-400">
                     Aucun relevé ne correspond au filtre sélectionné.
                   </td>
                 </tr>
@@ -620,6 +629,17 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                         {rec?.rapid ? (
                           <span className={rec.bestMode === 'rapid' ? 'text-[#facc15] font-bold' : 'text-neutral-300'}>
                             {rec.rapid}
+                          </span>
+                        ) : (
+                          <span className="text-neutral-600">—</span>
+                        )}
+                      </td>
+
+                      {/* Problèmes (hors cadence) */}
+                      <td className="py-3 px-4 text-right tabular-nums">
+                        {rec?.puzzles ? (
+                          <span className="text-sky-400 font-semibold" title="Score Problèmes (hors cadence)">
+                            {rec.puzzles}
                           </span>
                         ) : (
                           <span className="text-neutral-600">—</span>
@@ -757,6 +777,21 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                     value={manualRapid}
                     onChange={(e) => setManualRapid(e.target.value)}
                     className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-white focus:border-[#facc15] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-sky-400 font-sans mb-1">
+                    Problèmes / Tactique (optionnel — graphique uniquement, hors cadence)
+                  </label>
+                  <input
+                    type="number"
+                    min="100"
+                    max="4500"
+                    placeholder="Ex: 2021 (optionnel)"
+                    value={manualPuzzles}
+                    onChange={(e) => setManualPuzzles(e.target.value)}
+                    className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-sky-400 focus:outline-none"
                   />
                 </div>
               </div>

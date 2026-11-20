@@ -391,6 +391,7 @@ export default function App() {
             bullet: result.stats.chess_bullet?.last?.rating ?? null,
             blitz: result.stats.chess_blitz?.last?.rating ?? null,
             rapid: result.stats.chess_rapid?.last?.rating ?? null,
+            puzzles: result.stats.tactics?.highest?.rating ?? null,
             bestRating: bestInfo.rating,
             bestMode: bestInfo.mode,
             source: result.source,
@@ -947,6 +948,7 @@ export default function App() {
             targetDateStr={settings.targetDate}
             username={settings.username}
             defaultMode={settings.selectedMode}
+            livePuzzlesRating={stats?.tactics?.highest?.rating ?? null}
           />
         )}
 

@@ -377,6 +377,7 @@ export function addSyncRecord(
     existingSameDay.bullet === data.bullet &&
     existingSameDay.blitz === data.blitz &&
     existingSameDay.rapid === data.rapid &&
+    (existingSameDay.puzzles ?? null) === (data.puzzles ?? null) &&
     existingSameDay.bestRating === data.bestRating &&
     nowMs - new Date(existingSameDay.timestamp).getTime() < TEN_MINUTES_MS
   ) {
@@ -446,7 +447,7 @@ export function exportSyncHistoryJSON(username?: string): string {
 export function exportSyncHistoryCSV(username?: string): string {
   const targetUser = (username || getStoredSettings().username).trim().toLowerCase();
   const history = getStoredSyncHistory(targetUser);
-  const headers = ['id', 'username', 'timestamp', 'date_iso', 'bullet', 'blitz', 'rapid', 'best_rating', 'best_mode', 'source', 'note'];
+  const headers = ['id', 'username', 'timestamp', 'date_iso', 'bullet', 'blitz', 'rapid', 'best_rating', 'best_mode', 'source', 'note', 'puzzles'];
   const rows = history.map((r) => [
     `"${r.id}"`,
     `"${r.username || targetUser}"`,
@@ -459,6 +460,7 @@ export function exportSyncHistoryCSV(username?: string): string {
     `"${r.bestMode}"`,
     `"${r.source}"`,
     `"${(r.note || '').replace(/"/g, '""')}"`,
+    r.puzzles ?? '',
   ]);
 
   return [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
@@ -507,6 +509,7 @@ export function importSyncHistory(
           bullet: typeof item.bullet === 'number' ? item.bullet : null,
           blitz: typeof item.blitz === 'number' ? item.blitz : null,
           rapid: typeof item.rapid === 'number' ? item.rapid : null,
+          puzzles: typeof item.puzzles === 'number' ? item.puzzles : null,
           bestRating: item.bestRating,
           bestMode: mode as GameMode,
           source: 'Import fichier',
@@ -541,6 +544,7 @@ export function importSyncHistory(
       const bullet = cols[4] && !isNaN(Number(cols[4])) ? Number(cols[4]) : null;
       const blitz = cols[5] && !isNaN(Number(cols[5])) ? Number(cols[5]) : null;
       const rapid = cols[6] && !isNaN(Number(cols[6])) ? Number(cols[6]) : null;
+      const puzzles = cols[11] && !isNaN(Number(cols[11])) ? Number(cols[11]) : null;
       const bestRating = cols[7] && !isNaN(Number(cols[7])) ? Number(cols[7]) : Math.max(bullet ?? 0, blitz ?? 0, rapid ?? 0);
       const bestMode = (['bullet', 'blitz', 'rapid'].includes(cols[8]) ? cols[8] : 'blitz') as GameMode;
 
@@ -551,6 +555,7 @@ export function importSyncHistory(
         bullet,
         blitz,
         rapid,
+        puzzles,
         bestRating: bestRating > 0 ? bestRating : DEFAULT_START_ELO,
         bestMode,
         source: 'Import fichier',

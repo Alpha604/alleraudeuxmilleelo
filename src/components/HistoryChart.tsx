@@ -30,6 +30,7 @@ import {
   Flame,
   Layers,
   Milestone,
+  Puzzle,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -58,6 +59,7 @@ interface HistoryChartProps {
   targetDateStr?: string;
   username?: string;
   defaultMode?: ModeFilter;
+  livePuzzlesRating?: number | null;
 }
 
 type ModeFilter = 'auto' | 'blitz' | 'rapid' | 'bullet';
@@ -69,11 +71,13 @@ interface ChartPoint {
   dateLabel: string;
   timestamp: number;
   realElo: number | null;
+  puzzlesElo: number | null;
   targetElo: number;
   diff: number | null;
   dailyDelta: number | null;
   mode?: string;
   isDirectSync: boolean;
+  isDirectPuzzleSync: boolean;
   isCarryOver: boolean;
   hasRealData: boolean;
 }
@@ -116,6 +120,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   targetDateStr = DEFAULT_TARGET_DATE,
   username,
   defaultMode = 'auto',
+  livePuzzlesRating = null,
 }) => {
   // 1. Controls & Filter States
   const [selectedMode, setSelectedMode] = useState<ModeFilter>(defaultMode);
@@ -126,6 +131,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   }, [defaultMode, username]);
   
   // Visual layer toggles
+  const [showPuzzlesLine, setShowPuzzlesLine] = useState<boolean>(true);
   const [showTargetLine, setShowTargetLine] = useState<boolean>(true);
   const [showAdvanceMarker, setShowAdvanceMarker] = useState<boolean>(true);
   const [showAreaGlow, setShowAreaGlow] = useState<boolean>(true);
@@ -296,6 +302,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     const endBoundary = new Date(projectEndDate);
 
     let lastKnownElo = effectiveStartElo;
+    let lastKnownPuzzles: number | null = null;
     let lastKnownMode =
       selectedMode === 'auto' ? `Départ (${autoBestMode.toUpperCase()})` : selectedMode.toUpperCase();
     let prevElo: number | null = null;
@@ -328,6 +335,24 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
         realElo = null;
       }
 
+      // Optional Problèmes (Tactique) curve — strictly non-cadence overlay
+      let puzzlesElo: number | null = null;
+      let isDirectPuzzleSync = false;
+      const recordedPuzzle =
+        typeof journalRecord?.puzzles === 'number' && journalRecord.puzzles > 0
+          ? journalRecord.puzzles
+          : key === todayKey && typeof livePuzzlesRating === 'number' && livePuzzlesRating > 0
+          ? livePuzzlesRating
+          : null;
+
+      if (recordedPuzzle !== null && isPastOrToday) {
+        lastKnownPuzzles = recordedPuzzle;
+        puzzlesElo = recordedPuzzle;
+        isDirectPuzzleSync = true;
+      } else if (isPastOrToday && lastKnownPuzzles !== null) {
+        puzzlesElo = lastKnownPuzzles;
+      }
+
       const targetVal =
         Math.round(
           calculateLinearElo(timestamp, startDateStr, targetDateStr, effectiveStartElo, targetElo) * 10
@@ -349,11 +374,13 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
         dateLabel,
         timestamp,
         realElo,
+        puzzlesElo,
         targetElo: targetVal,
         diff,
         dailyDelta,
         mode: isDirectSync ? extracted?.modeName : lastKnownMode,
         isDirectSync,
+        isDirectPuzzleSync,
         isCarryOver,
         hasRealData: isPastOrToday,
       });
@@ -373,7 +400,15 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     startDateStr,
     targetDateStr,
     todayKey,
+    livePuzzlesRating,
   ]);
+
+  // Current Problèmes rating (strictly outside official cadences)
+  const currentPuzzlesElo = useMemo(() => {
+    const withPuzzles = allChartData.filter((p) => p.puzzlesElo !== null);
+    if (withPuzzles.length > 0) return withPuzzles[withPuzzles.length - 1].puzzlesElo!;
+    return typeof livePuzzlesRating === 'number' && livePuzzlesRating > 0 ? livePuzzlesRating : null;
+  }, [allChartData, livePuzzlesRating]);
 
   // Today index in full timeline
   const todayIndex = useMemo(() => {
@@ -551,12 +586,15 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     return visiblePoints.filter((p) => p.realElo !== null);
   }, [visiblePoints]);
 
-  // Dynamic Y-axis scale based on data & account Elo range
+  // Dynamic Y-axis scale based on data, account Elo range & optional Problèmes overlay
   const { yMin, yMax, yTicks } = useMemo(() => {
     const elos = visibleRealPoints.map((p) => p.realElo!);
+    const puzzleVals = showPuzzlesLine
+      ? visiblePoints.map((p) => p.puzzlesElo).filter((v): v is number => v !== null)
+      : [];
     const targetVals = visiblePoints.map((p) => p.targetElo);
-    const minRating = Math.min(effectiveStartElo, ...elos, ...targetVals);
-    const maxRating = Math.max(targetElo, ...elos);
+    const minRating = Math.min(effectiveStartElo, ...elos, ...puzzleVals, ...targetVals);
+    const maxRating = Math.max(targetElo, ...elos, ...puzzleVals);
 
     const calcYMin = Math.floor((minRating - 50) / 100) * 100;
     const calcYMax = Math.ceil((maxRating + 50) / 100) * 100;
@@ -567,7 +605,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
       ticks.push(y);
     }
     return { yMin: calcYMin, yMax: calcYMax, yTicks: ticks };
-  }, [visibleRealPoints, visiblePoints, effectiveStartElo, targetElo]);
+  }, [visibleRealPoints, visiblePoints, effectiveStartElo, targetElo, showPuzzlesLine]);
 
   // Visible XAxis ticks
   const visibleTickKeys = useMemo(() => {
@@ -693,7 +731,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
 
   // CSV Export handler
   const handleExportCsv = () => {
-    const headers = ['Date', 'Elo', 'Variation_Jour', 'Type', 'Cible_Theorique', 'Ecart_Cible', 'Cadence'];
+    const headers = ['Date', 'Elo', 'Variation_Jour', 'Type', 'Cible_Theorique', 'Ecart_Cible', 'Cadence', 'Problemes_Hors_Cadence'];
     const lines = visibleRealPoints.map((p) => [
       p.dayKey,
       p.realElo,
@@ -702,6 +740,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
       p.targetElo,
       p.diff,
       p.mode || 'N/A',
+      p.puzzlesElo ?? '',
     ]);
     const csvContent = [headers.join(','), ...lines.map((l) => l.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -809,6 +848,16 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             </div>
           )}
 
+          {showPuzzlesLine && pt.puzzlesElo !== null && (
+            <div className="flex items-center justify-between gap-4 pt-1.5 border-t border-neutral-800/80">
+              <span className="text-neutral-400 flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-[#38bdf8]" />
+                <span>Problèmes (hors cadence) :</span>
+              </span>
+              <span className="font-bold text-[#38bdf8]">{pt.puzzlesElo}</span>
+            </div>
+          )}
+
           {/* Special advance or delay milestone callout on tooltip */}
           {pt.dayKey === advanceMetric.equivalentDateKey && (
             <div className="pt-2 border-t border-neutral-800/80">
@@ -852,7 +901,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
           </p>
         </div>
 
-        {/* Primary Status Chips (Blanc, Noir, Vert, Rouge, Jaune) */}
+        {/* Primary Status Chips (Blanc, Noir, Vert, Rouge, Jaune, Problèmes) */}
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2.5">
           <div className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-[#0c0f14] border border-neutral-800 text-[11px] sm:text-xs font-mono">
             <span className="text-neutral-400">Actuel :</span>
@@ -863,6 +912,17 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             <span className="text-neutral-400">Cible :</span>
             <span className="font-bold text-white">{targetToday} Elo</span>
           </div>
+
+          {currentPuzzlesElo !== null && (
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-[#38bdf8]/10 border border-[#38bdf8]/30 text-[11px] sm:text-xs font-mono"
+              title="Score Problèmes (Tactique) — affiché dans le graphique uniquement, hors cadence"
+            >
+              <Puzzle className="h-3 w-3 text-[#38bdf8]" />
+              <span className="text-sky-300/80">Problèmes :</span>
+              <span className="font-bold text-[#38bdf8]">{currentPuzzlesElo}</span>
+            </div>
+          )}
 
           <div
             className={`flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-[11px] sm:text-xs font-bold border ${
@@ -1067,7 +1127,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
       <div className="bg-[#0d1117] border border-neutral-800 p-3 sm:p-4 rounded-2xl sm:rounded-3xl space-y-3">
         {/* Row 1: Mode selector + Timeframe presets */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2.5 sm:gap-3">
-          {/* Mode Selector */}
+          {/* Mode Selector + Non-cadence Problèmes toggle */}
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1 md:pb-0">
             <span className="text-[11px] sm:text-xs font-bold text-neutral-400 mr-1 flex items-center gap-1 shrink-0">
               <SlidersHorizontal className="h-3.5 w-3.5 text-[#facc15]" />
@@ -1092,6 +1152,22 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 <span className="hidden sm:inline">{m.fullLabel}</span>
               </button>
             ))}
+
+            <span aria-hidden="true" className="h-5 w-px bg-neutral-800 mx-1 shrink-0" />
+
+            <button
+              onClick={() => setShowPuzzlesLine(!showPuzzlesLine)}
+              title="Afficher/masquer la courbe Problèmes dans le graphique (hors cadence)"
+              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 min-h-[36px] flex items-center gap-1.5 border ${
+                showPuzzlesLine
+                  ? 'bg-[#38bdf8]/15 text-[#38bdf8] border-[#38bdf8]/40 shadow-sm'
+                  : 'bg-[#0c0f14] text-neutral-500 hover:text-neutral-300 border-neutral-800 line-through'
+              }`}
+            >
+              <Puzzle className="h-3.5 w-3.5" />
+              <span>Problèmes</span>
+              <span className="hidden xl:inline text-[10px] font-normal text-sky-300/70">(hors cadence)</span>
+            </button>
           </div>
 
           {/* Quick presets (Responsive filtering) */}
@@ -1263,6 +1339,18 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             </button>
 
             <button
+              onClick={() => setShowPuzzlesLine(!showPuzzlesLine)}
+              className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all min-h-[32px] ${
+                showPuzzlesLine
+                  ? 'bg-[#38bdf8]/15 text-[#38bdf8] border-[#38bdf8]/40 font-bold'
+                  : 'bg-[#0c0f14] text-neutral-500 border-neutral-800 line-through'
+              }`}
+              title="Courbe Problèmes (hors cadence)"
+            >
+              Problèmes
+            </button>
+
+            <button
               onClick={() => setShowBrush(!showBrush)}
               className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-all min-h-[32px] hidden md:inline-block ${
                 showBrush
@@ -1296,6 +1384,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               <span className="h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full bg-[#facc15]" />
               <span className="text-[#facc15] font-bold">Elo Réel</span>
             </div>
+            {showPuzzlesLine && currentPuzzlesElo !== null && (
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <span className="h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full bg-[#38bdf8]" />
+                <span className="text-[#38bdf8] font-bold">Problèmes (hors cadence)</span>
+              </div>
+            )}
             {showTargetLine && (
               <div className="flex items-center gap-1.5 sm:gap-2">
                 <span className="h-1 sm:h-1.5 w-4 sm:w-5 border-b-2 border-dashed border-white" />
@@ -1554,6 +1648,60 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 isAnimationActive={false}
               />
 
+              {/* Optional Problèmes (Tactique) Line — strictly non-cadence overlay */}
+              {showPuzzlesLine && (
+                <Line
+                  type="monotone"
+                  dataKey="puzzlesElo"
+                  name="Problèmes (hors cadence)"
+                  stroke="#38bdf8"
+                  strokeWidth={2.2}
+                  strokeDasharray="4 3"
+                  connectNulls={true}
+                  dot={(props: any) => {
+                    const { cx, cy, payload } = props;
+                    if (payload?.puzzlesElo === null || cx === undefined || cy === undefined) {
+                      return null;
+                    }
+                    if (!showAllDots && !payload.isDirectPuzzleSync) {
+                      return null;
+                    }
+                    if (payload.isDirectPuzzleSync) {
+                      return (
+                        <circle
+                          key={`dot-puz-${cx}-${cy}`}
+                          cx={cx}
+                          cy={cy}
+                          r={3.5}
+                          fill="#38bdf8"
+                          stroke="#0c0f14"
+                          strokeWidth={1.5}
+                        />
+                      );
+                    }
+                    return (
+                      <circle
+                        key={`dot-puz-carry-${cx}-${cy}`}
+                        cx={cx}
+                        cy={cy}
+                        r={2}
+                        fill="#38bdf8"
+                        fillOpacity={0.65}
+                        stroke="#0c0f14"
+                        strokeWidth={1}
+                      />
+                    );
+                  }}
+                  activeDot={{
+                    r: 5.5,
+                    fill: '#38bdf8',
+                    stroke: '#ffffff',
+                    strokeWidth: 2,
+                  }}
+                  isAnimationActive={false}
+                />
+              )}
+
               {/* Recharts Brush component for fluid sliding and zooming */}
               {showBrush && (
                 <Brush
@@ -1729,12 +1877,13 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 <th className="py-2.5 px-4">Cible Théorique</th>
                 <th className="py-2.5 px-4">Écart Cible</th>
                 <th className="py-2.5 px-4">Cadence</th>
+                <th className="py-2.5 px-4 text-sky-400">Problèmes</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-800/60 bg-[#0d1117]">
               {paginatedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-neutral-500 font-sans italic">
+                  <td colSpan={8} className="py-8 text-center text-neutral-500 font-sans italic">
                     Aucune journée ne correspond aux filtres sélectionnés.
                   </td>
                 </tr>
@@ -1789,6 +1938,9 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                     </td>
                     <td className="py-2.5 px-4 uppercase text-[11px] text-neutral-400 whitespace-nowrap">
                       {row.mode || 'N/A'}
+                    </td>
+                    <td className="py-2.5 px-4 whitespace-nowrap font-semibold text-sky-400">
+                      {row.puzzlesElo !== null ? row.puzzlesElo : <span className="text-neutral-600">—</span>}
                     </td>
                   </tr>
                 ))

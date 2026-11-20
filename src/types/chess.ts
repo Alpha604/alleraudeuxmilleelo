@@ -60,6 +60,7 @@ export interface SyncRecord {
   blitz: number | null;
   rapid: number | null;
   bullet: number | null;
+  puzzles?: number | null; // Rating Problèmes (Tactique) — suivi graphique uniquement, hors cadence
   bestRating: number;
   bestMode: GameMode;
   source: 'API Chess.com directe' | 'Proxy API' | 'Import fichier' | 'Saisie manuelle';
