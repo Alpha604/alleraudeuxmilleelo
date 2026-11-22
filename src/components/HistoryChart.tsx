@@ -335,14 +335,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
         realElo = null;
       }
 
-      // Optional Problèmes (Tactique) curve — strictly non-cadence overlay
+      // Optional Problèmes (Tactique) curve — strictly manual Journal entries (entered the next day)
       let puzzlesElo: number | null = null;
       let isDirectPuzzleSync = false;
       const recordedPuzzle =
         typeof journalRecord?.puzzles === 'number' && journalRecord.puzzles > 0
           ? journalRecord.puzzles
-          : key === todayKey && typeof livePuzzlesRating === 'number' && livePuzzlesRating > 0
-          ? livePuzzlesRating
           : null;
 
       if (recordedPuzzle !== null && isPastOrToday) {
@@ -400,15 +398,14 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     startDateStr,
     targetDateStr,
     todayKey,
-    livePuzzlesRating,
   ]);
 
-  // Current Problèmes rating (strictly outside official cadences)
+  // Current Problèmes rating (strictly manual entries from Journal, outside official cadences)
   const currentPuzzlesElo = useMemo(() => {
     const withPuzzles = allChartData.filter((p) => p.puzzlesElo !== null);
     if (withPuzzles.length > 0) return withPuzzles[withPuzzles.length - 1].puzzlesElo!;
-    return typeof livePuzzlesRating === 'number' && livePuzzlesRating > 0 ? livePuzzlesRating : null;
-  }, [allChartData, livePuzzlesRating]);
+    return null;
+  }, [allChartData]);
 
   // Today index in full timeline
   const todayIndex = useMemo(() => {

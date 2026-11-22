@@ -36,6 +36,7 @@ import {
   JsonBinUpdateEventDetail,
   reconcileCloudSync,
   saveServerData,
+  verifyJsonBinSync,
 } from './utils/cloudSync';
 import { fetchChessComData } from './utils/chessApi';
 import {
@@ -48,13 +49,21 @@ import {
   MODE_START_ELOS,
 } from './utils/eloEngine';
 import { LoginPage } from './components/LoginPage';
-import { CreateAccountModal } from './components/CreateAccountModal';
 import { ProfileView } from './components/ProfileView';
-import { AdminAccountsManagerModal } from './components/AdminAccountsManagerModal';
-import { pullAccountsRegistryFromJsonBin } from './utils/accountsRegistryCloud';
+import { SitePauseOverlay } from './components/SitePauseOverlay';
+import {
+  detectDeviceCategory,
+  evaluateSiteActivity,
+  fetchSiteActivity,
+  formatRemainingDuration,
+  getLocalSiteActivityConfig,
+  SITE_PAUSE_MODE_META,
+  SiteActivityConfig,
+} from './utils/siteActivity';
 import {
   clearUserSession,
   getActiveUserSession,
+  getTrustedIps,
   isAdminSessionActive,
   isRunningInIframe,
   revokeAdminSession,
@@ -71,51 +80,47 @@ import {
   saveStoredSettings,
 } from './utils/storage';
 
+function ensureDirectAlphaSession(): UserSession {
+  const existing = getActiveUserSession();
+  if (existing && existing.username === 'alpharomeo1500' && !existing.isSpectator) {
+    return existing;
+  }
+  saveUserSession('alpharomeo1500', false);
+  return (
+    getActiveUserSession() || {
+      username: 'alpharomeo1500',
+      connectedAt: Date.now(),
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+      isSpectator: false,
+    }
+  );
+}
+
 export default function App() {
   // Strict Iframe & Embed Mode Detection
   const isIframe = useMemo(() => isRunningInIframe(), []);
 
-  // Active 24-hour User Session state
-  const [userSession, setUserSession] = useState<UserSession | null>(() => getActiveUserSession());
+  // Direct single-account @alpharomeo1500 entry WITHOUT elevated permissions (2FA still required for admin actions)
+  const [userSession, setUserSession] = useState<UserSession | null>(() => ensureDirectAlphaSession());
 
-  // Account creation wizard state (Admin only)
-  const [createAccountModalOpen, setCreateAccountModalOpen] = useState(false);
-
-  // Admin players and accounts manager state (Admin only)
-  const [adminAccountsManagerOpen, setAdminAccountsManagerOpen] = useState(false);
-
-  // Admin 2FA Session state
+  // Admin 2FA Session state (strictly false on fresh load unless unlocked by 2FA)
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminSessionActive());
-  const [hasAdminRole, setHasAdminRole] = useState<boolean>(() => {
-    try {
-      const active = getActiveUserSession();
-      if (isAdminSessionActive() || active?.username === 'alpharomeo1500') return true;
-      return typeof window !== 'undefined' && localStorage.getItem('roadto2000_admin_role_v1') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [hasAdminRole, setHasAdminRole] = useState<boolean>(() => true);
   const [securityModalOpen, setSecurityModalOpen] = useState(false);
   const [securityModalTitle, setSecurityModalTitle] = useState('Accès Protégé');
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
-  // Load settings from local persistent storage (bound to active user session if available)
+  // Load settings bound strictly to @alpharomeo1500
   const [settings, setSettings] = useState<AppSettings>(() => {
-    const s = getStoredSettings();
-    const active = getActiveUserSession();
-    if (active && active.username) {
-      s.username = active.username;
-    }
-    purgeLegacyAndStaleData(s.username);
+    const s = getStoredSettings('alpharomeo1500');
+    s.username = 'alpharomeo1500';
+    purgeLegacyAndStaleData('alpharomeo1500');
     return s;
   });
 
-  // Sync history strictly bound to active username
+  // Sync history strictly bound to @alpharomeo1500
   const [syncHistory, setSyncHistory] = useState<SyncRecord[]>(() => {
-    const s = getStoredSettings();
-    const active = getActiveUserSession();
-    const targetUser = active?.username || s.username;
-    return getStoredSyncHistory(targetUser);
+    return getStoredSyncHistory('alpharomeo1500');
   });
 
   // Navigation tab
@@ -126,10 +131,7 @@ export default function App() {
   const [profile, setProfile] = useState<ChessComProfileResponse | undefined>(undefined);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
-    const s = getStoredSettings();
-    const active = getActiveUserSession();
-    const targetUser = active?.username || s.username;
-    const history = getStoredSyncHistory(targetUser);
+    const history = getStoredSyncHistory('alpharomeo1500');
     return history.length > 0 ? history[0].timestamp : null;
   });
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -138,15 +140,22 @@ export default function App() {
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
   const [jsonBinStatus, setJsonBinStatus] = useState<'synced' | 'pending_keys' | 'error' | 'syncing'>('pending_keys');
   const [lastJsonBinSyncTime, setLastJsonBinSyncTime] = useState<number | null>(() => {
-    const s = getStoredSettings();
-    const active = getActiveUserSession();
-    const targetUser = active?.username || s.username;
-    return getLocalMetrics(targetUser).lastSyncTime;
+    return getLocalMetrics('alpharomeo1500').lastSyncTime;
   });
+  const [confirmedDayHashes, setConfirmedDayHashes] = useState<Record<string, string>>(() => {
+    return getLocalMetrics('alpharomeo1500').confirmedDayHashes || {};
+  });
+  const [isVerifyingJsonBin, setIsVerifyingJsonBin] = useState<boolean>(false);
   const manualSyncAfterReconcileRef = useRef<boolean>(false);
   const [isNetworkOnline, setIsNetworkOnline] = useState<boolean>(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
+
+  // Site Activity / Maintenance & Pause Control state
+  const deviceType = useMemo(() => detectDeviceCategory(), []);
+  const [siteActivityConfig, setSiteActivityConfig] = useState<SiteActivityConfig>(() => getLocalSiteActivityConfig());
+  const [clientIp, setClientIp] = useState<string>('');
+  const [activityNowTick, setActivityNowTick] = useState<number>(() => Date.now());
 
   // Desktop Right Sidebar collapse/expand state with persistence
   const [isSidebarExpanded, setIsSidebarExpanded] = useState<boolean>(() => {
@@ -219,6 +228,9 @@ export default function App() {
           if (info.lastSyncTime) {
             setLastJsonBinSyncTime(info.lastSyncTime);
           }
+          if (info.confirmedDayHashes) {
+            setConfirmedDayHashes(info.confirmedDayHashes);
+          }
         }
       } catch {}
     };
@@ -230,6 +242,9 @@ export default function App() {
         setJsonBinStatus(detail.lastStatus);
         if (detail.lastSyncTime) {
           setLastJsonBinSyncTime(detail.lastSyncTime);
+        }
+        if (detail.confirmedDayHashes) {
+          setConfirmedDayHashes(detail.confirmedDayHashes);
         }
       }
     };
@@ -245,6 +260,62 @@ export default function App() {
       clearInterval(interval);
     };
   }, [settings.username]);
+
+  // Fetch & poll Site Activity / Pause configuration
+  const refreshSiteActivity = useCallback(async () => {
+    try {
+      const res = await fetchSiteActivity();
+      setSiteActivityConfig(res.config);
+      if (res.clientIp) setClientIp(res.clientIp);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    refreshSiteActivity();
+    const handleUpdated = (e: Event) => {
+      const custom = e as CustomEvent<SiteActivityConfig>;
+      if (custom.detail) {
+        setSiteActivityConfig(custom.detail);
+      }
+    };
+    window.addEventListener('roadto2000:site-activity-updated', handleUpdated);
+    const pollId = setInterval(refreshSiteActivity, 10000);
+    return () => {
+      window.removeEventListener('roadto2000:site-activity-updated', handleUpdated);
+      clearInterval(pollId);
+    };
+  }, [refreshSiteActivity]);
+
+  // Live 1-second tick for countdown & scheduled auto-resume timers
+  useEffect(() => {
+    const needsLiveTick =
+      siteActivityConfig.enabled ||
+      siteActivityConfig.scheduleType !== 'immediate' ||
+      siteActivityConfig.autoResume;
+    if (!needsLiveTick) return;
+
+    const timer = setInterval(() => {
+      setActivityNowTick(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [siteActivityConfig.enabled, siteActivityConfig.scheduleType, siteActivityConfig.autoResume]);
+
+  const siteActivityEvaluation = useMemo(() => {
+    return evaluateSiteActivity(siteActivityConfig, {
+      isAdmin,
+      isIframe,
+      deviceType,
+      clientIp,
+      trustedIps: getTrustedIps(),
+      now: activityNowTick,
+    });
+  }, [siteActivityConfig, isAdmin, isIframe, deviceType, clientIp, activityNowTick]);
+
+  useEffect(() => {
+    if (siteActivityEvaluation.autoResumedExpired) {
+      refreshSiteActivity();
+    }
+  }, [siteActivityEvaluation.autoResumedExpired, refreshSiteActivity]);
 
   // Periodic check for admin session validity & BroadcastChannel synchronization
   useEffect(() => {
@@ -311,6 +382,9 @@ export default function App() {
       if (result.lastSyncTime) {
         setLastJsonBinSyncTime(result.lastSyncTime);
       }
+      if (result.confirmedDayHashes) {
+        setConfirmedDayHashes(result.confirmedDayHashes);
+      }
 
       if (result.history && result.history.length > 0 && !options?.replaceExact) {
         setSyncHistory(result.history);
@@ -325,9 +399,9 @@ export default function App() {
       } else if (options?.notifySuccess) {
         if (result.jsonBinSynced && result.lastSyncTime) {
           showToast(
-            `JSONBin mis à jour le ${formatJsonBinTimestamp(result.lastSyncTime)}.`,
+            `JSONBin vérifié et mis à jour le ${formatJsonBinTimestamp(result.lastSyncTime)}.`,
             'success',
-            'Sauvegarde JSONBin OK'
+            'Sauvegarde JSONBin Confirmée'
           );
         } else if (result.skipped && result.lastSyncTime) {
           showToast(
@@ -348,6 +422,37 @@ export default function App() {
     },
     [userSession?.isSpectator, showToast]
   );
+
+  const handleVerifyJsonBinSync = useCallback(async () => {
+    if (isVerifyingJsonBin) return;
+    setIsVerifyingJsonBin(true);
+    try {
+      const check = await verifyJsonBinSync(settings.username, syncHistory);
+      if (check.confirmedDayHashes) {
+        setConfirmedDayHashes(check.confirmedDayHashes);
+      }
+      if (check.lastSyncTime) {
+        setLastJsonBinSyncTime(check.lastSyncTime);
+      }
+      if (check.error) {
+        showToast(`Vérification impossible : ${check.error}`, 'warning', 'Vérification JSONBin');
+      } else if (check.verified) {
+        showToast(
+          `Vérification réussie : les ${check.matchingDays} relevé(s) correspondent exactement à JSONBin.`,
+          'success',
+          'JSONBin Synchronisé'
+        );
+      } else {
+        showToast(
+          `${check.pendingDays} relevé(s) local(aux) pas encore confirmé(s) sur JSONBin (${check.matchingDays}/${check.totalLocalDays} confirmés).`,
+          'warning',
+          'Synchronisation en attente'
+        );
+      }
+    } finally {
+      setIsVerifyingJsonBin(false);
+    }
+  }, [isVerifyingJsonBin, settings.username, syncHistory, showToast]);
 
   // In spectator or iframe mode, ensure user cannot access restricted tabs
   useEffect(() => {
@@ -471,6 +576,7 @@ export default function App() {
         }
 
         // Add to persistent sync history strictly isolated to activeUser
+        // Problèmes (puzzles) is NOT auto-synced: it is entered manually the next day (remains null until entered)
         const { isDuplicate, history } = addSyncRecord(
           {
             timestamp: result.timestamp,
@@ -478,7 +584,7 @@ export default function App() {
             bullet: result.stats.chess_bullet?.last?.rating ?? null,
             blitz: result.stats.chess_blitz?.last?.rating ?? null,
             rapid: result.stats.chess_rapid?.last?.rating ?? null,
-            puzzles: result.stats.tactics?.highest?.rating ?? null,
+            puzzles: null,
             bestRating: bestInfo.rating,
             bestMode: bestInfo.mode,
             source: result.source,
@@ -542,6 +648,9 @@ export default function App() {
           setLastJsonBinSyncTime(res.lastJsonBinSyncTime);
           setJsonBinStatus('synced');
         }
+        if (res.confirmedDayHashes) {
+          setConfirmedDayHashes(res.confirmedDayHashes);
+        }
         if (res.didUpdate || (res.history.length > 0 && syncHistory.length === 0)) {
           setSyncHistory(res.history);
           if (res.history.length > 0) {
@@ -549,7 +658,7 @@ export default function App() {
           }
         }
         if (res.settings && JSON.stringify(res.settings) !== JSON.stringify(settings)) {
-          setSettings(res.settings);
+          setSettings({ ...res.settings, username: 'alpharomeo1500' });
         }
       } catch (err) {
         console.warn('Reconciliation error:', err);
@@ -563,7 +672,6 @@ export default function App() {
     };
 
     if (userSession) {
-      pullAccountsRegistryFromJsonBin(false).catch(() => {});
       doReconciliation(true);
     }
 
@@ -604,40 +712,27 @@ export default function App() {
       return;
     }
 
-    const oldUser = settings.username.trim().toLowerCase();
-    const newUser = updated.username.trim().toLowerCase();
-    const isNewUser = oldUser !== newUser;
+    const requestedUser = updated.username.trim().toLowerCase();
+    const lockedUpdated: AppSettings = {
+      ...updated,
+      username: 'alpharomeo1500',
+    };
 
-    setSettings(updated);
-    saveStoredSettings(updated);
-
-    if (isNewUser) {
-      // 1. Immediately wipe previous player's stats, profile and timestamps completely
-      setStats(null);
-      setProfile(undefined);
-      setLastSyncTime(null);
-
-      // 2. Switch account context and load this new user's isolated history & JSONBin timestamp
-      handleAccountSwitch(newUser);
-      const newUserHistory = getStoredSyncHistory(newUser);
-      setSyncHistory(newUserHistory);
-      setLastJsonBinSyncTime(getLocalMetrics(newUser).lastSyncTime);
-
+    if (requestedUser && requestedUser !== 'alpharomeo1500') {
       showToast(
-        `Compte Chess.com basculé sur @${newUser}. Les données du profil précédent ont été écartées. Synchronisation en cours...`,
-        'info',
-        'Changement de compte'
+        'Le changement de compte est temporairement bloqué (Mode Mono-Compte @alpharomeo1500).',
+        'warning',
+        'Compte verrouillé'
       );
-
-      // 3. Let useEffect reconcile from JSONBin first, then run manual sync
-      manualSyncAfterReconcileRef.current = true;
-    } else {
-      // Persist updated settings directly to server & JSONBin
-      persistToCloudAndNotify(newUser, syncHistory, updated, {
-        force: true,
-        notifySuccess: true,
-      });
     }
+
+    setSettings(lockedUpdated);
+    saveStoredSettings(lockedUpdated);
+
+    persistToCloudAndNotify('alpharomeo1500', syncHistory, lockedUpdated, {
+      force: true,
+      notifySuccess: true,
+    });
   };
 
   // Dedicated Hard Purge of all cached data for current account
@@ -673,129 +768,80 @@ export default function App() {
     });
   };
 
-  // Handle successful login from LoginPage (with credentials / 2FA / spectator)
+  // Single-account login handler (@alpharomeo1500)
   const handleLoginSuccess = useCallback(
-    (loggedUser: string, adminUnlocked: boolean, isSpectator = false) => {
-      const cleanUser = loggedUser.trim().toLowerCase();
-      saveUserSession(cleanUser, isSpectator);
+    (loggedUser: string, adminUnlocked: boolean, _isSpectator = false) => {
+      const cleanUser = 'alpharomeo1500';
+      saveUserSession(cleanUser, false);
       setUserSession(getActiveUserSession());
       if (adminUnlocked) {
         setIsAdmin(true);
         setHasAdminRole(true);
-        try {
-          localStorage.setItem('roadto2000_admin_role_v1', 'true');
-        } catch {}
       } else {
+        revokeAdminSession();
         setIsAdmin(false);
-        setHasAdminRole(false);
-        try {
-          localStorage.removeItem('roadto2000_admin_role_v1');
-        } catch {}
+        setHasAdminRole(true);
       }
 
-      // Switch active account and reset stats
       setStats(null);
       setProfile(undefined);
       setLastSyncTime(null);
 
-      // Load account-specific settings if saved
       const nextSettings = getStoredSettings(cleanUser);
+      nextSettings.username = cleanUser;
       setSettings(nextSettings);
       saveStoredSettings(nextSettings);
 
       handleAccountSwitch(cleanUser);
       const newUserHistory = getStoredSyncHistory(cleanUser);
       setSyncHistory(newUserHistory);
-      setLastJsonBinSyncTime(getLocalMetrics(cleanUser).lastSyncTime);
+      const metrics = getLocalMetrics(cleanUser);
+      setLastJsonBinSyncTime(metrics.lastSyncTime);
+      setConfirmedDayHashes(metrics.confirmedDayHashes || {});
       if (newUserHistory.length > 0) {
         setLastSyncTime(newUserHistory[0].timestamp);
       }
 
       showToast(
-        isSpectator
-          ? `Accès en mode Spectateur pour @${cleanUser} (Lecture Seule).`
-          : `Bienvenue @${cleanUser} ! Session active pour 24 heures.`,
+        adminUnlocked
+          ? `Connecté sur @${cleanUser} avec permissions Admin (A2F).`
+          : `Connecté sur @${cleanUser} sans permissions.`,
         'success',
-        isSpectator ? 'Mode Spectateur' : 'Connexion réussie'
-      );
-
-      if (!isSpectator) {
-        manualSyncAfterReconcileRef.current = true;
-      }
-    },
-    [showToast]
-  );
-
-  // Instant 1-Click Account Switch for already authenticated users (no A2F re-entry required)
-  const handleQuickSwitchAccount = useCallback(
-    (targetUsername: string) => {
-      if (userSession?.isSpectator || isIframe) {
-        showToast('Changement rapide indisponible en mode Spectateur / Iframe.', 'warning');
-        return;
-      }
-
-      const cleanUser = targetUsername.trim().toLowerCase();
-      if (!cleanUser || cleanUser === settings.username.trim().toLowerCase()) {
-        return;
-      }
-
-      saveUserSession(cleanUser, false);
-      setUserSession(getActiveUserSession());
-
-      // Load target account's persisted settings if present
-      const nextSettings = getStoredSettings(cleanUser);
-
-      setStats(null);
-      setProfile(undefined);
-      setLastSyncTime(null);
-      setSettings(nextSettings);
-      saveStoredSettings(nextSettings);
-
-      handleAccountSwitch(cleanUser);
-      const targetHistory = getStoredSyncHistory(cleanUser);
-      setSyncHistory(targetHistory);
-      setLastJsonBinSyncTime(getLocalMetrics(cleanUser).lastSyncTime);
-      if (targetHistory.length > 0) {
-        setLastSyncTime(targetHistory[0].timestamp);
-      }
-
-      if (currentTab === 'admin') {
-        setCurrentTab('dashboard');
-      }
-
-      showToast(
-        `Compte basculé instantanément vers @${cleanUser}.`,
-        'success',
-        'Switch Rapide'
+        'Session active'
       );
 
       manualSyncAfterReconcileRef.current = true;
     },
-    [userSession?.isSpectator, isIframe, settings.username, currentTab, showToast]
+    [showToast]
   );
 
-  // User logout
+  // Blocked multi-account switch
+  const handleQuickSwitchAccount = useCallback(
+    (_targetUsername: string) => {
+      showToast('Le basculement multi-comptes est temporairement bloqué.', 'warning', 'Mode Mono-Compte');
+    },
+    [showToast]
+  );
+
+  // User logout / lock session
   const handleLogout = useCallback(() => {
     clearUserSession();
     revokeAdminSession();
     setIsAdmin(false);
-    setHasAdminRole(false);
-    try {
-      localStorage.removeItem('roadto2000_admin_role_v1');
-    } catch {}
+    setHasAdminRole(true);
     setUserSession(null);
     setCurrentTab('dashboard');
-    showToast('Vous avez été déconnecté avec succès.', 'info', 'Déconnexion');
+    showToast('Session verrouillée. Reconnectez-vous en mode lecture ou avec l’A2F.', 'info', 'Session fermée');
   }, [showToast]);
 
-  // Open Account Creation Wizard (Protected by Admin 2FA)
+  // Blocked Account Creation Wizard
   const handleOpenCreateAccount = useCallback(() => {
-    if (!isAdmin) {
-      handleOpenSecurityModal('Création de Compte Joueur (2FA)', () => setCreateAccountModalOpen(true));
-    } else {
-      setCreateAccountModalOpen(true);
-    }
-  }, [isAdmin, handleOpenSecurityModal]);
+    showToast(
+      'La création et la gestion des comptes sont temporairement bloquées.',
+      'warning',
+      'Fonctionnalité bloquée'
+    );
+  }, [showToast]);
 
   // Toggle Theme cycling (dark -> light -> system)
   const handleToggleTheme = () => {
@@ -915,19 +961,46 @@ export default function App() {
     };
   }, [syncHistory, currentElo, settings.startElo, settings.targetElo, activeBestMode]);
 
-  // When no active user session exists, display the complete Login Page
+  // Render pause overlay when Site Activity Manager blocks the current session (device / iframe / IP)
+  if (siteActivityEvaluation.isBlocked) {
+    return (
+      <>
+        <SitePauseOverlay
+          config={siteActivityConfig}
+          evaluation={siteActivityEvaluation}
+          isIframe={isIframe}
+          clientIp={clientIp}
+          deviceType={deviceType}
+          onOpenAdminUnlock={() => handleOpenSecurityModal('Déverrouillage Administrateur (Site en pause)')}
+          onRefreshStatus={refreshSiteActivity}
+        />
+        <NotificationToast toasts={toasts} onDismiss={dismissToast} />
+        {securityModalOpen && (
+          <SecurityModal
+            isOpen={securityModalOpen}
+            onClose={() => setSecurityModalOpen(false)}
+            onSuccess={handleSecuritySuccess}
+            actionTitle={securityModalTitle}
+            onShowMessage={showToast}
+          />
+        )}
+      </>
+    );
+  }
+
+  // When user manually locked/closed session, display the single-account @alpharomeo1500 portal
   if (!userSession) {
     return (
       <LoginPage
         onLoginSuccess={handleLoginSuccess}
-        defaultUsername={settings.username}
+        defaultUsername="alpharomeo1500"
       />
     );
   }
 
-  const isSpectator = !!userSession.isSpectator;
-  const effectiveIsIframe = isIframe || isSpectator;
-  const hasAdminAccess = !isSpectator && (isAdmin || hasAdminRole || userSession.username === 'alpharomeo1500');
+  const isSpectator = false;
+  const effectiveIsIframe = isIframe;
+  const hasAdminAccess = true;
 
   return (
     <div
@@ -995,23 +1068,55 @@ export default function App() {
 
       {/* Main Content Viewport - Fully responsive for Mobile, Tablet & PC */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-24 sm:pb-8 space-y-5 sm:space-y-8">
-        {/* Spectator Mode Notice Banner */}
-        {isSpectator && (
-          <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-sky-200 backdrop-blur-sm">
+        {/* Scheduled Countdown Warning Banner */}
+        {siteActivityEvaluation.isCountdownActive && siteActivityConfig.showCountdownBanner && (
+          <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs backdrop-blur-sm">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2 font-black text-amber-300">
+                <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+                <span>
+                  Pause programmée ({SITE_PAUSE_MODE_META[siteActivityConfig.mode].label}) dans{' '}
+                  <span className="font-mono text-white">
+                    {formatRemainingDuration(siteActivityEvaluation.secondsUntilPause)}
+                  </span>
+                </span>
+              </div>
+              <p className="text-neutral-300">
+                {siteActivityConfig.customTitle} — Pensez à enregistrer vos saisies avant l'interruption.
+              </p>
+            </div>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setCurrentTab('admin')}
+                className="px-3 py-1.5 rounded-xl bg-amber-500 text-black font-bold text-xs hover:bg-amber-400 transition-colors shrink-0 self-start sm:self-center"
+              >
+                Gérer la programmation
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Admin Bypass Active Banner while site is paused for visitors */}
+        {siteActivityEvaluation.isBypassedByAdmin && (
+          <div className="rounded-2xl border border-[#10b981]/35 bg-[#10b981]/10 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs backdrop-blur-sm">
             <div className="flex items-center gap-2.5">
-              <span className="h-2 w-2 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
+              <span className="h-2 w-2 rounded-full bg-[#10b981]" />
               <div>
-                <strong className="text-white font-bold">Mode Spectateur (Lecture Seule)</strong>
-                <span className="text-sky-300/80 ml-2">
-                  Accès restreint au Tableau de bord, Graphiques et Calendrier. Le Journal Syncs et les modifications sont verrouillés.
+                <strong className="text-[#10b981] font-bold">
+                  Site en pause ({SITE_PAUSE_MODE_META[siteActivityConfig.mode].label})
+                </strong>
+                <span className="text-neutral-300 ml-2">
+                  Accès maintenu via votre session Administrateur 2FA.
                 </span>
               </div>
             </div>
             <button
-              onClick={handleLogout}
-              className="px-3 py-1.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-200 text-xs font-bold transition-all shrink-0"
+              type="button"
+              onClick={() => setCurrentTab('admin')}
+              className="px-3 py-1.5 rounded-xl bg-[#10b981] text-black font-bold text-xs hover:bg-emerald-400 transition-colors shrink-0 self-start sm:self-center"
             >
-              Se connecter
+              Activité du site
             </button>
           </div>
         )}
@@ -1061,7 +1166,6 @@ export default function App() {
             targetDateStr={settings.targetDate}
             username={settings.username}
             defaultMode={settings.selectedMode}
-            livePuzzlesRating={stats?.tactics?.highest?.rating ?? null}
           />
         )}
 
@@ -1098,6 +1202,9 @@ export default function App() {
             startDateStr={settings.startDate}
             lastJsonBinSyncTime={lastJsonBinSyncTime}
             jsonBinStatus={jsonBinStatus}
+            confirmedDayHashes={confirmedDayHashes}
+            onVerifyJsonBinSync={handleVerifyJsonBinSync}
+            isVerifyingJsonBin={isVerifyingJsonBin}
             onOpenNetworkModal={() => setNetworkModalOpen(true)}
           />
         )}
@@ -1159,6 +1266,9 @@ export default function App() {
             onQuickSwitchAccount={handleQuickSwitchAccount}
             onSelectTab={setCurrentTab}
             onShowMessage={showToast}
+            siteActivityConfig={siteActivityConfig}
+            clientIp={clientIp}
+            onSiteActivityUpdated={(updated) => setSiteActivityConfig(updated)}
           />
         )}
       </main>
@@ -1198,28 +1308,6 @@ export default function App() {
               setCurrentTab('settings');
             }
           }}
-        />
-      )}
-
-      {/* Admin-only Create Account Wizard Modal */}
-      {createAccountModalOpen && (
-        <CreateAccountModal
-          isOpen={createAccountModalOpen}
-          onClose={() => setCreateAccountModalOpen(false)}
-          onAccountCreated={(newAcc) => {
-            showToast(`Compte @${newAcc} créé avec succès !`, 'success', 'Création de Compte');
-          }}
-          onShowMessage={showToast}
-        />
-      )}
-
-      {/* Admin-only Accounts & Players Manager Modal (Ban, Suspend, Regenerate A2F, Delete) */}
-      {adminAccountsManagerOpen && (
-        <AdminAccountsManagerModal
-          isOpen={adminAccountsManagerOpen}
-          onClose={() => setAdminAccountsManagerOpen(false)}
-          onOpenCreateAccount={() => setCreateAccountModalOpen(true)}
-          onNotify={showToast}
         />
       )}
 

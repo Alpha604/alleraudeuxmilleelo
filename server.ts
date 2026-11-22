@@ -649,6 +649,24 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
       .slice(0, 500);
   }
 
+  function computeRecordVerificationHash(r: any, username: string): string {
+    const clean = (username || 'alpharomeo1500').trim().toLowerCase();
+    const dayKey = normalizeDayKey(r?.timestamp || '') || '';
+    return `${clean}|${dayKey}|${r?.bullet ?? ''}|${r?.blitz ?? ''}|${r?.rapid ?? ''}|${r?.puzzles ?? ''}|${r?.bestRating ?? ''}|${r?.bestMode ?? ''}`;
+  }
+
+  function buildConfirmedDayHashes(records: any[], username: string): Record<string, string> {
+    const map: Record<string, string> = {};
+    if (!Array.isArray(records)) return map;
+    for (const r of records) {
+      if (!r || !r.timestamp) continue;
+      const dayKey = normalizeDayKey(r.timestamp);
+      if (!dayKey) continue;
+      map[dayKey] = computeRecordVerificationHash(r, username);
+    }
+    return map;
+  }
+
   app.get('/api/user-data/:username', (req: Request, res: Response) => {
     try {
       const username = (req.params.username || '').trim().toLowerCase();
@@ -670,6 +688,7 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
           jsonBinLastSyncTime: userCfg.lastSyncTime || null,
           jsonBinRemoteUpdatedAt: userCfg.remoteUpdatedAt || null,
           jsonBinStatus: userCfg.lastStatus,
+          confirmedDayHashes: userCfg.confirmedDayHashes || {},
         });
         return;
       }
@@ -682,6 +701,7 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
         jsonBinLastSyncTime: userCfg.lastSyncTime || null,
         jsonBinRemoteUpdatedAt: userCfg.remoteUpdatedAt || null,
         jsonBinStatus: userCfg.lastStatus,
+        confirmedDayHashes: userCfg.confirmedDayHashes || {},
       });
     } catch (err: any) {
       console.error('[RoadTo2000] Failed to read user data:', err);
@@ -824,6 +844,7 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
     lastStatus: 'synced' | 'pending_keys' | 'error' | 'syncing';
     lastError?: string;
     lastPushedSignature?: string;
+    confirmedDayHashes?: Record<string, string>;
     requestsToday: number;
     savedRequests: number;
     lastDayTracked: string;
@@ -1126,6 +1147,7 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
     error?: string | null;
     mergedHistory?: any[];
     mergedSettings?: any;
+    confirmedDayHashes?: Record<string, string>;
   }> {
     const cleanUser = (username || 'alpharomeo1500').trim().toLowerCase();
     const cfg = getJsonBinUserConfig(cleanUser);
@@ -1156,9 +1178,11 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
       };
     }
 
-    // Quota Optimization: skip ONLY when full data+settings signature is genuinely identical
+    // Quota Optimization: skip ONLY when full data+settings signature AND confirmedDayHashes exist and match
     const initialSig = computeDataSignature(cleanUser, data);
-    if (!force && !replaceExact && cfg.lastPushedSignature === initialSig && cfg.lastStatus === 'synced') {
+    const hasConfirmedHashes =
+      cfg.confirmedDayHashes && Object.keys(cfg.confirmedDayHashes).length >= (Array.isArray(data.history) ? data.history.length : 0);
+    if (!force && !replaceExact && hasConfirmedHashes && cfg.lastPushedSignature === initialSig && cfg.lastStatus === 'synced') {
       cfg.savedRequests = (cfg.savedRequests || 0) + 1;
       cfg.lastSkippedReason = 'Données et paramètres strictement identiques : 0 requête consommée';
       cfg.lastStatus = 'synced';
@@ -1170,6 +1194,7 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
         lastSyncTime: cfg.lastSyncTime,
         remoteUpdatedAt: cfg.remoteUpdatedAt || null,
         status: 'synced',
+        confirmedDayHashes: cfg.confirmedDayHashes || {},
       };
     }
 
@@ -1250,6 +1275,7 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
 
       // If merging with remote reveals nothing changed remotely vs local, skip the PUT too
       if (!force && !replaceExact && cfg.lastPushedSignature === finalSig && previousStatus === 'synced') {
+        cfg.confirmedDayHashes = buildConfirmedDayHashes(finalRecords, cleanUser);
         cfg.savedRequests = (cfg.savedRequests || 0) + 1;
         cfg.lastSkippedReason = 'Cache JSONBin déjà strictement identique';
         cfg.lastStatus = 'synced';
@@ -1263,6 +1289,7 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
           status: 'synced',
           mergedHistory: finalRecords,
           mergedSettings: finalSettings,
+          confirmedDayHashes: cfg.confirmedDayHashes,
         };
       }
 
@@ -1320,11 +1347,21 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
         throw new Error(`JSONBin erreur ${res.status}: ${errText.substring(0, 120)}`);
       }
 
+      // Parse echoed remote JSONBin payload to verify what JSONBin actually saved
+      const putBody = await res.json().catch(() => null);
+      const confirmedRemoteRecords = Array.isArray(putBody?.record?.records)
+        ? putBody.record.records
+        : Array.isArray(putBody?.record?.history)
+        ? putBody.record.history
+        : finalRecords;
+      const confirmedDayHashes = buildConfirmedDayHashes(confirmedRemoteRecords, cleanUser);
+
       const nowMs = Date.now();
       cfg.requestsToday = (cfg.requestsToday || 0) + 1;
       cfg.lastSyncTime = nowMs;
       cfg.remoteUpdatedAt = exportedAt;
       cfg.lastPushedSignature = finalSig;
+      cfg.confirmedDayHashes = confirmedDayHashes;
       cfg.lastSkippedReason = undefined;
       cfg.lastStatus = 'synced';
       cfg.lastError = undefined;
@@ -1338,6 +1375,7 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
         status: 'synced',
         mergedHistory: finalRecords,
         mergedSettings: finalSettings,
+        confirmedDayHashes,
       };
     } catch (err: any) {
       cfg.lastStatus = 'error';
@@ -1360,6 +1398,7 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
       remoteUpdatedAt: cfg.remoteUpdatedAt || null,
       lastStatus: cfg.lastStatus,
       lastError: cfg.lastError || null,
+      confirmedDayHashes: cfg.confirmedDayHashes || {},
       quotaInfo: {
         requestsToday: cfg.requestsToday || 0,
         savedRequests: cfg.savedRequests || 0,
@@ -1509,6 +1548,7 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
         status: result.status,
         history: currentData.history,
         settings: currentData.settings,
+        confirmedDayHashes: result.confirmedDayHashes || getJsonBinUserConfig(username).confirmedDayHashes || {},
       });
     } catch (err: any) {
       res.status(500).json({
@@ -1596,12 +1636,16 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
 
       fs.writeFileSync(filePath, JSON.stringify(updatedPayload, null, 2), 'utf-8');
 
+      // Strictly confirm ONLY records truly present on remote JSONBin!
+      const confirmedRemoteDayHashes = buildConfirmedDayHashes(incomingHistory, username);
+
       cfg.requestsToday = (cfg.requestsToday || 0) + 1;
       cfg.lastSyncTime = nowMs;
       cfg.remoteUpdatedAt = typeof binRecord.exportedAt === 'string' ? binRecord.exportedAt : new Date(nowMs).toISOString();
       cfg.lastStatus = 'synced';
       cfg.lastError = undefined;
-      cfg.lastPushedSignature = computeDataSignature(username, updatedPayload);
+      cfg.confirmedDayHashes = confirmedRemoteDayHashes;
+      cfg.lastPushedSignature = computeDataSignature(username, { history: incomingHistory, settings: binRecord.settings || updatedPayload.settings });
       saveJsonBinStoreToDisk();
 
       res.json({
@@ -1611,6 +1655,7 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
         count: updatedPayload.history.length,
         lastSyncTime: cfg.lastSyncTime,
         remoteUpdatedAt: cfg.remoteUpdatedAt,
+        confirmedDayHashes: confirmedRemoteDayHashes,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Erreur lors du pull JSONBin' });
@@ -1669,6 +1714,99 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
       res.json({ success: true, accountsCount: Array.isArray(payload.accounts) ? payload.accounts.length : 0 });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Failed to save accounts registry payload' });
+    }
+  });
+
+  // 8e. Site Activity & Maintenance/Pause Control Persistence
+  const SITE_ACTIVITY_FILE = path.resolve(storageDir, 'roadto2000_site_activity.json');
+
+  function getDefaultSiteActivityServer() {
+    return {
+      enabled: false,
+      mode: 'maintenance',
+      customTitle: 'Maintenance technique en cours',
+      customMessage: 'Une opération de maintenance est en cours pour sécuriser et optimiser vos données.',
+      scheduleType: 'immediate',
+      countdownMinutes: 5,
+      pauseAtTimestamp: null,
+      resumeType: 'manual',
+      resumeDurationMinutes: 30,
+      resumeAtTimestamp: null,
+      autoResume: false,
+      showCountdownBanner: true,
+      devices: {
+        all: true,
+        desktop: true,
+        mobile: true,
+        tablet: true,
+      },
+      iframePolicy: 'block_all',
+      ipPolicy: {
+        mode: 'all',
+        ips: [],
+        exemptTrustedAdminIps: true,
+      },
+      allowAdminBypass: true,
+      updatedAt: 0,
+      updatedBy: 'alpharomeo1500',
+    };
+  }
+
+  function loadSiteActivityServer() {
+    const def = getDefaultSiteActivityServer();
+    if (fs.existsSync(SITE_ACTIVITY_FILE)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(SITE_ACTIVITY_FILE, 'utf-8'));
+        const merged = { ...def, ...parsed };
+        if (
+          merged.enabled &&
+          merged.autoResume &&
+          typeof merged.resumeAtTimestamp === 'number' &&
+          merged.resumeAtTimestamp > 0 &&
+          Date.now() >= merged.resumeAtTimestamp
+        ) {
+          merged.enabled = false;
+          merged.updatedAt = Date.now();
+          fs.writeFileSync(SITE_ACTIVITY_FILE, JSON.stringify(merged, null, 2), 'utf-8');
+        }
+        return merged;
+      } catch {}
+    }
+    return def;
+  }
+
+  app.get('/api/site-activity', (req: Request, res: Response) => {
+    const config = loadSiteActivityServer();
+    res.json({
+      success: true,
+      config,
+      clientIp: extractClientIp(req),
+      serverTime: Date.now(),
+    });
+  });
+
+  app.post('/api/site-activity', (req: Request, res: Response) => {
+    try {
+      const def = getDefaultSiteActivityServer();
+      const incoming = req.body && typeof req.body === 'object' ? req.body : {};
+      const next = {
+        ...def,
+        ...incoming,
+        devices: {
+          ...def.devices,
+          ...(incoming.devices || {}),
+        },
+        ipPolicy: {
+          ...def.ipPolicy,
+          ...(incoming.ipPolicy || {}),
+          ips: Array.isArray(incoming.ipPolicy?.ips) ? incoming.ipPolicy.ips : def.ipPolicy.ips,
+        },
+        updatedAt: Date.now(),
+      };
+      fs.writeFileSync(SITE_ACTIVITY_FILE, JSON.stringify(next, null, 2), 'utf-8');
+      res.json({ success: true, config: next });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed to save site activity config' });
     }
   });
 

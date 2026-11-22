@@ -11,6 +11,8 @@ import {
   Lock,
   LogOut,
   Settings,
+  ShieldCheck,
+  Unlock,
   User,
 } from 'lucide-react';
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
@@ -26,6 +28,8 @@ interface UserDropdownProps {
   isSpectator?: boolean;
   onSelectTab: (tab: NavTab) => void;
   onLogout: () => void;
+  onOpenSecurityModal?: (title?: string) => void;
+  onLockAdmin?: () => void;
   sessionExpiresAt?: number;
   placement?: 'bottom-right' | 'top-right' | 'sidebar-bottom';
 }
@@ -40,12 +44,12 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
   isSpectator,
   onSelectTab,
   onLogout,
+  onOpenSecurityModal,
+  onLockAdmin,
   sessionExpiresAt,
   placement = 'bottom-right',
 }) => {
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const isAlphaRomeo = username.toLowerCase() === 'alpharomeo1500';
 
   // Format joined date
   const joinedDateFormatted = profile?.joined
@@ -223,13 +227,13 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
                 <span className="text-sm font-bold text-white truncate">
                   {profile?.name || username}
                 </span>
-                {isAlphaRomeo ? (
-                  <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-[#facc15]/20 border border-[#facc15]/40 text-[#facc15] text-[9px] font-black uppercase tracking-wider shrink-0">
-                    Admin
+                {isAdmin ? (
+                  <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-[#10b981]/20 border border-[#10b981]/40 text-[#10b981] text-[9px] font-black uppercase tracking-wider shrink-0">
+                    Permissions A2F
                   </span>
                 ) : (
-                  <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-[9px] font-black uppercase tracking-wider shrink-0">
-                    Joueur
+                  <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-neutral-800 border border-neutral-700 text-neutral-300 text-[9px] font-bold uppercase tracking-wider shrink-0">
+                    Sans permissions
                   </span>
                 )}
               </div>
@@ -323,17 +327,43 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
           {!isAdmin && <Lock className="h-3 w-3 text-neutral-500" />}
         </button>
 
-        {/* Session status info */}
+        {/* Session & Permissions status */}
         <div className="px-2.5 py-1.5 rounded-xl bg-neutral-950/60 border border-neutral-800/60 flex items-center justify-between text-[10px] text-neutral-400">
           <div className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[#10b981] shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
-            <span>Session 24h</span>
+            <span className={`h-2 w-2 rounded-full ${isAdmin ? 'bg-[#10b981]' : 'bg-amber-400'}`} />
+            <span>{isAdmin ? 'Admin 2FA actif' : 'Accès sans permissions'}</span>
           </div>
           <span className="font-mono text-[9px]">{sessionExpFormatted}</span>
         </div>
 
-        {/* Déconnexion uniquement (Changer de compte supprimé) */}
-        <div className="pt-1 border-t border-neutral-800/60 mt-1">
+        {/* Unlock/Lock Permissions & Reset Session */}
+        <div className="pt-1 border-t border-neutral-800/60 mt-1 space-y-1">
+          {isAdmin && onLockAdmin ? (
+            <button
+              type="button"
+              onClick={() => {
+                onLockAdmin();
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 p-2 rounded-xl text-amber-400 hover:bg-amber-500/15 transition-colors font-bold"
+            >
+              <Unlock className="h-4 w-4" />
+              <span>Retirer les permissions (Verrouiller 2FA)</span>
+            </button>
+          ) : !isAdmin && onOpenSecurityModal ? (
+            <button
+              type="button"
+              onClick={() => {
+                onOpenSecurityModal('Déverrouiller les permissions Admin');
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 p-2 rounded-xl text-[#facc15] hover:bg-[#facc15]/15 transition-colors font-bold"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              <span>Déverrouiller les permissions (A2F)</span>
+            </button>
+          ) : null}
+
           <button
             type="button"
             onClick={() => {
@@ -343,7 +373,7 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
             className="w-full flex items-center gap-2.5 p-2 rounded-xl text-[#ef4444] hover:bg-[#ef4444]/15 transition-colors font-bold"
           >
             <LogOut className="h-4 w-4" />
-            <span>Déconnexion</span>
+            <span>Fermer / Réinitialiser la session</span>
           </button>
         </div>
       </div>

@@ -3,15 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Activity,
-  ArrowLeftRight,
   BarChart2,
   Calendar,
-  Check,
   CheckCircle2,
-  ChevronDown,
   Code2,
   Database,
   Lock,
@@ -24,7 +21,6 @@ import {
 } from 'lucide-react';
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
 import { formatJsonBinShortTime, formatJsonBinTimestamp } from '../utils/cloudSync';
-import { AccountStatus, getPublicAuthorizedAccounts } from '../utils/security';
 import { NavTab } from './Navbar';
 import { UserDropdown } from './UserDropdown';
 
@@ -77,22 +73,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout = () => {},
   sessionExpiresAt,
   hasAdminAccess = false,
-  onQuickSwitchAccount,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [switcherOpen, setSwitcherOpen] = useState(false);
-  const [authorizedAccounts, setAuthorizedAccounts] = useState<
-    { username: string; status: AccountStatus; isMaster: boolean }[]
-  >([]);
-
-  useEffect(() => {
-    const refresh = () => setAuthorizedAccounts(getPublicAuthorizedAccounts());
-    refresh();
-    window.addEventListener('roadto2000:accounts-updated', refresh);
-    return () => window.removeEventListener('roadto2000:accounts-updated', refresh);
-  }, [username, currentTab, switcherOpen]);
-
-  const activeSwitchAccounts = authorizedAccounts.filter((a) => a.status === 'active');
 
   const handleTabClick = (tab: NavTab) => {
     if (isSpectator && (tab === 'history' || tab === 'iframe' || tab === 'settings' || tab === 'tests' || tab === 'admin')) {
@@ -222,79 +204,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </div>
 
-        {/* Action Controls Section: Quick Account Switch, Sync, JSONBin, 2FA */}
+        {/* Action Controls Section: Sync, JSONBin, 2FA (Single-Account Mode) */}
       <div className="border-t border-neutral-800/80 p-2.5 space-y-2 bg-[#090c12]/60">
-        {/* 1-Click Quick Account Switcher (Authenticated users) */}
-        {!isIframe && !isSpectator && onQuickSwitchAccount && activeSwitchAccounts.length > 1 && (
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setSwitcherOpen((prev) => !prev)}
-              title="Basculer instantanément de compte sans reconnexion"
-              className={`w-full flex items-center rounded-xl font-bold text-xs transition-all border border-[#facc15]/30 bg-[#facc15]/10 text-[#facc15] hover:bg-[#facc15]/15 ${
-                isExpanded ? 'justify-between px-3 py-2' : 'justify-center p-2.5'
-              }`}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <ArrowLeftRight className="h-4 w-4 shrink-0" />
-                {isExpanded && <span className="truncate">Changer de compte</span>}
-              </div>
-              {isExpanded && (
-                <ChevronDown
-                  className={`h-3.5 w-3.5 shrink-0 transition-transform ${switcherOpen ? 'rotate-180' : ''}`}
-                />
-              )}
-            </button>
-
-            {switcherOpen && (
-              <div
-                className={
-                  isExpanded
-                    ? 'mt-1.5 rounded-xl border border-neutral-800 bg-neutral-950/95 p-1.5 space-y-1 max-h-44 overflow-y-auto shadow-inner'
-                    : 'absolute left-full ml-3 bottom-0 z-50 w-56 rounded-2xl border border-neutral-800 bg-[#0c0f14]/98 backdrop-blur-xl p-2 space-y-1 shadow-2xl'
-                }
-              >
-                {!isExpanded && (
-                  <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-neutral-400 border-b border-neutral-800/80 mb-1">
-                    Switch Rapide
-                  </div>
-                )}
-                {activeSwitchAccounts.map((acc) => {
-                  const isCurrent = acc.username.toLowerCase() === username.toLowerCase();
-                  return (
-                    <button
-                      key={acc.username}
-                      type="button"
-                      onClick={() => {
-                        setSwitcherOpen(false);
-                        if (!isCurrent) {
-                          onQuickSwitchAccount(acc.username);
-                        }
-                      }}
-                      className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-[11px] transition-all text-left ${
-                        isCurrent
-                          ? 'bg-[#facc15]/15 text-[#facc15] font-black'
-                          : 'text-neutral-300 hover:bg-neutral-800/80 hover:text-white'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className={`h-5 w-5 rounded-md flex items-center justify-center text-[9px] font-black shrink-0 ${
-                            acc.isMaster ? 'bg-[#facc15] text-black' : 'bg-neutral-800 text-neutral-200'
-                          }`}
-                        >
-                          {acc.username.substring(0, 2).toUpperCase()}
-                        </span>
-                        <span className="font-mono truncate">@{acc.username}</span>
-                      </div>
-                      {isCurrent && <Check className="h-3 w-3 text-[#facc15] shrink-0" />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Spectator Mode Indicator */}
         {isSpectator && (
@@ -482,8 +393,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           username={username}
           isAdmin={isAdmin}
           isSpectator={isSpectator}
-          onSelectTab={onSelectTab}
+          onSelectTab={handleTabClick}
           onLogout={onLogout}
+          onOpenSecurityModal={onOpenSecurityModal}
+          onLockAdmin={onLockAdmin}
           sessionExpiresAt={sessionExpiresAt}
           placement="sidebar-bottom"
         />

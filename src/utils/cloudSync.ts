@@ -8,6 +8,7 @@ import {
   getStoredSettings,
   getStoredSyncHistory,
   mergeSyncHistories,
+  normalizeParisDayKey,
   OFFICIAL_DAILY_RECORDS,
   saveStoredSettings,
   saveStoredSyncHistory,
@@ -39,6 +40,28 @@ export interface JsonBinUpdateEventDetail {
   lastError?: string | null;
   pushed?: boolean;
   skipped?: boolean;
+  confirmedDayHashes?: Record<string, string>;
+}
+
+export function computeRecordVerificationHash(
+  r: Partial<SyncRecord> | null | undefined,
+  username = 'alpharomeo1500'
+): string {
+  const clean = (username || 'alpharomeo1500').trim().toLowerCase();
+  const dayKey = (r?.timestamp ? normalizeParisDayKey(r.timestamp) : null) || '';
+  return `${clean}|${dayKey}|${r?.bullet ?? ''}|${r?.blitz ?? ''}|${r?.rapid ?? ''}|${r?.puzzles ?? ''}|${r?.bestRating ?? ''}|${r?.bestMode ?? ''}`;
+}
+
+export function buildConfirmedDayHashes(records: any[], username = 'alpharomeo1500'): Record<string, string> {
+  const map: Record<string, string> = {};
+  if (!Array.isArray(records)) return map;
+  for (const r of records) {
+    if (!r || !r.timestamp) continue;
+    const dayKey = normalizeParisDayKey(r.timestamp);
+    if (!dayKey) continue;
+    map[dayKey] = computeRecordVerificationHash(r, username);
+  }
+  return map;
 }
 
 export function formatJsonBinTimestamp(ts: number | string | null | undefined): string {
@@ -123,6 +146,7 @@ interface LocalMetrics {
   lastSyncTime: number | null;
   remoteUpdatedAt?: string | null;
   lastSignature?: string;
+  confirmedDayHashes?: Record<string, string>;
   lastSkippedReason?: string | null;
   lastStatus: 'synced' | 'pending_keys' | 'error' | 'syncing';
   lastError?: string | null;
@@ -184,6 +208,7 @@ export interface JsonBinStatusInfo {
   remoteUpdatedAt?: string | null;
   lastStatus: 'synced' | 'pending_keys' | 'error' | 'syncing';
   lastError: string | null;
+  confirmedDayHashes?: Record<string, string>;
   quotaInfo?: {
     requestsToday: number;
     savedRequests: number;
@@ -205,6 +230,7 @@ export interface SaveServerDataResult {
   error?: string | null;
   history?: SyncRecord[];
   settings?: AppSettings | null;
+  confirmedDayHashes?: Record<string, string>;
 }
 
 export function computeClientDataSignature(
@@ -254,6 +280,7 @@ export async function fetchServerData(username: string): Promise<{
   lastUpdated: number;
   jsonBinLastSyncTime?: number | null;
   jsonBinRemoteUpdatedAt?: string | null;
+  confirmedDayHashes?: Record<string, string>;
 } | null> {
   const clean = (username || '').trim().toLowerCase();
   if (!clean) return null;
@@ -263,6 +290,7 @@ export async function fetchServerData(username: string): Promise<{
   let lastUpdated = 0;
   let jsonBinLastSyncTime: number | null = null;
   let jsonBinRemoteUpdatedAt: string | null = null;
+  let confirmedDayHashes: Record<string, string> | undefined = undefined;
   let serverAvailable = false;
 
   // 1. Try local Express server endpoint
@@ -281,12 +309,16 @@ export async function fetchServerData(username: string): Promise<{
         lastUpdated = data.lastUpdated || 0;
         jsonBinLastSyncTime = data.jsonBinLastSyncTime || null;
         jsonBinRemoteUpdatedAt = data.jsonBinRemoteUpdatedAt || null;
+        if (data.confirmedDayHashes && typeof data.confirmedDayHashes === 'object') {
+          confirmedDayHashes = data.confirmedDayHashes;
+        }
 
-        if (jsonBinLastSyncTime) {
+        if (jsonBinLastSyncTime || confirmedDayHashes) {
           saveLocalMetrics(clean, {
-            lastSyncTime: jsonBinLastSyncTime,
+            ...(jsonBinLastSyncTime ? { lastSyncTime: jsonBinLastSyncTime } : {}),
             remoteUpdatedAt: jsonBinRemoteUpdatedAt,
             lastStatus: data.jsonBinStatus || 'synced',
+            ...(confirmedDayHashes ? { confirmedDayHashes } : {}),
           });
         }
       }
@@ -302,6 +334,7 @@ export async function fetchServerData(username: string): Promise<{
       lastUpdated,
       jsonBinLastSyncTime,
       jsonBinRemoteUpdatedAt,
+      confirmedDayHashes,
     };
   }
 
@@ -314,6 +347,7 @@ export async function fetchServerData(username: string): Promise<{
       lastUpdated: Date.now(),
       jsonBinLastSyncTime: pullResult.lastSyncTime ?? null,
       jsonBinRemoteUpdatedAt: pullResult.remoteUpdatedAt ?? null,
+      confirmedDayHashes: pullResult.confirmedDayHashes ?? confirmedDayHashes,
     };
   }
 
@@ -324,6 +358,7 @@ export async function fetchServerData(username: string): Promise<{
       lastUpdated,
       jsonBinLastSyncTime,
       jsonBinRemoteUpdatedAt,
+      confirmedDayHashes,
     };
   }
 
@@ -388,6 +423,11 @@ export async function saveServerData(
           saveStoredSyncHistory(data.history, clean);
         }
 
+        const confirmedDayHashes =
+          status === 'synced' && jb.confirmedDayHashes && typeof jb.confirmedDayHashes === 'object'
+            ? jb.confirmedDayHashes
+            : getLocalMetrics(clean).confirmedDayHashes;
+
         saveLocalMetrics(clean, {
           lastSyncTime,
           remoteUpdatedAt,
@@ -395,6 +435,7 @@ export async function saveServerData(
           lastError: jb.error || null,
           lastSkippedReason: jb.reason || null,
           lastSignature: computeClientDataSignature(clean, data.history || history, data.settings || settings),
+          ...(confirmedDayHashes ? { confirmedDayHashes } : {}),
         });
 
         emitJsonBinUpdate({
@@ -405,6 +446,7 @@ export async function saveServerData(
           lastError: jb.error || null,
           pushed: Boolean(jb.pushed),
           skipped: Boolean(jb.skipped),
+          confirmedDayHashes,
         });
 
         return {
@@ -418,6 +460,7 @@ export async function saveServerData(
           error: jb.error || null,
           history: data.history,
           settings: data.settings || null,
+          confirmedDayHashes,
         };
       }
     }
@@ -443,6 +486,7 @@ export async function saveServerData(
     status: metrics.lastStatus,
     error: directRes.error || null,
     history: directRes.history,
+    confirmedDayHashes: directRes.confirmedDayHashes ?? metrics.confirmedDayHashes,
   };
 }
 
@@ -461,6 +505,7 @@ export async function reconcileCloudSync(
   settings?: AppSettings;
   didUpdate: boolean;
   lastJsonBinSyncTime: number | null;
+  confirmedDayHashes?: Record<string, string>;
 }> {
   const clean = (username || '').trim().toLowerCase();
   if (!clean) {
@@ -486,7 +531,9 @@ export async function reconcileCloudSync(
 
   let remoteHistory: SyncRecord[] = [];
   let remoteSettings: AppSettings | null = null;
-  let lastJsonBinSyncTime: number | null = getLocalMetrics(clean).lastSyncTime;
+  const initialMetrics = getLocalMetrics(clean);
+  let lastJsonBinSyncTime: number | null = initialMetrics.lastSyncTime;
+  let confirmedDayHashes: Record<string, string> | undefined = initialMetrics.confirmedDayHashes;
 
   // 1. Check Express server
   const serverResult = await fetchServerData(clean);
@@ -494,6 +541,7 @@ export async function reconcileCloudSync(
     remoteHistory = mergeSyncHistories(serverResult.history || [], remoteHistory, clean);
     if (serverResult.settings) remoteSettings = serverResult.settings;
     if (serverResult.jsonBinLastSyncTime) lastJsonBinSyncTime = serverResult.jsonBinLastSyncTime;
+    if (serverResult.confirmedDayHashes) confirmedDayHashes = serverResult.confirmedDayHashes;
   }
 
   // 2. Directly pull latest from JSONBin when needed (only non-spectator OR when cache is empty)
@@ -514,6 +562,9 @@ export async function reconcileCloudSync(
       if (binPull.lastSyncTime) {
         lastJsonBinSyncTime = binPull.lastSyncTime;
       }
+      if (binPull.confirmedDayHashes) {
+        confirmedDayHashes = binPull.confirmedDayHashes;
+      }
     }
   }
 
@@ -523,6 +574,7 @@ export async function reconcileCloudSync(
       settings: localSettings,
       didUpdate: false,
       lastJsonBinSyncTime,
+      confirmedDayHashes,
     };
   }
 
@@ -573,6 +625,7 @@ export async function reconcileCloudSync(
     settings: nextSettings,
     didUpdate: didHistoryChange || didSettingsChange,
     lastJsonBinSyncTime,
+    confirmedDayHashes,
   };
 }
 
@@ -589,12 +642,15 @@ export async function fetchJsonBinStatus(username = 'alpharomeo1500'): Promise<J
       if (contentType.includes('application/json')) {
         const data = await res.json();
         if (data && typeof data.configured === 'boolean') {
-          if (data.lastSyncTime) {
+          if (data.lastSyncTime || data.confirmedDayHashes) {
             saveLocalMetrics(cleanUser, {
-              lastSyncTime: data.lastSyncTime,
+              ...(data.lastSyncTime ? { lastSyncTime: data.lastSyncTime } : {}),
               remoteUpdatedAt: data.remoteUpdatedAt || null,
               lastStatus: data.lastStatus || 'synced',
               lastError: data.lastError || null,
+              ...(data.confirmedDayHashes && typeof data.confirmedDayHashes === 'object'
+                ? { confirmedDayHashes: data.confirmedDayHashes }
+                : {}),
             });
           }
           return data;
@@ -618,6 +674,7 @@ export async function fetchJsonBinStatus(username = 'alpharomeo1500'): Promise<J
     remoteUpdatedAt: metrics.remoteUpdatedAt || null,
     lastStatus: creds.binId ? metrics.lastStatus : 'pending_keys',
     lastError: metrics.lastError || null,
+    confirmedDayHashes: metrics.confirmedDayHashes || {},
     quotaInfo: {
       requestsToday: metrics.requestsToday,
       savedRequests: metrics.savedRequests,
@@ -739,6 +796,7 @@ export async function syncNowToJsonBin(
   lastSyncTime?: number | null;
   remoteUpdatedAt?: string | null;
   history?: SyncRecord[];
+  confirmedDayHashes?: Record<string, string>;
 }> {
   const cleanUser = username.trim().toLowerCase();
   const creds = getClientJsonBinCredentials(cleanUser);
@@ -769,6 +827,10 @@ export async function syncNowToJsonBin(
           data.status === 'error' ? 'error' : data.status === 'pending_keys' ? 'pending_keys' : 'synced';
         const lastSyncTime = data.lastSyncTime ?? getLocalMetrics(cleanUser).lastSyncTime;
         const remoteUpdatedAt = data.remoteUpdatedAt ?? null;
+        const confirmedDayHashes =
+          status === 'synced' && data.confirmedDayHashes && typeof data.confirmedDayHashes === 'object'
+            ? data.confirmedDayHashes
+            : getLocalMetrics(cleanUser).confirmedDayHashes;
 
         if (Array.isArray(data.history) && data.history.length > 0 && !replaceExact) {
           saveStoredSyncHistory(data.history, cleanUser);
@@ -780,6 +842,7 @@ export async function syncNowToJsonBin(
           lastStatus: status,
           lastError: data.error || null,
           lastSkippedReason: data.reason || null,
+          ...(confirmedDayHashes ? { confirmedDayHashes } : {}),
         });
 
         emitJsonBinUpdate({
@@ -790,6 +853,7 @@ export async function syncNowToJsonBin(
           lastError: data.error || null,
           pushed: Boolean(data.pushed),
           skipped: Boolean(data.skipped),
+          confirmedDayHashes,
         });
 
         return {
@@ -800,6 +864,7 @@ export async function syncNowToJsonBin(
           lastSyncTime,
           remoteUpdatedAt,
           history: data?.history,
+          confirmedDayHashes,
         };
       }
     } else if (res.status >= 500) {
@@ -954,12 +1019,22 @@ export async function syncNowToJsonBin(
       return { success: false, error: `Erreur ${res.status} JSONBin` };
     }
 
+    // Parse echoed remote JSONBin payload to verify what JSONBin actually stored
+    const putBody = await res.json().catch(() => null);
+    const echoedRecords = Array.isArray(putBody?.record?.records)
+      ? putBody.record.records
+      : Array.isArray(putBody?.record?.history)
+      ? putBody.record.history
+      : recordsToPush;
+    const confirmedDayHashes = buildConfirmedDayHashes(echoedRecords, cleanUser);
+
     const nowMs = Date.now();
     saveLocalMetrics(cleanUser, {
       requestsToday: (metrics.requestsToday || 0) + 1,
       lastSyncTime: nowMs,
       remoteUpdatedAt: exportedAt,
       lastSignature: finalSig,
+      confirmedDayHashes,
       lastSkippedReason: null,
       lastStatus: 'synced',
       lastError: null,
@@ -973,9 +1048,16 @@ export async function syncNowToJsonBin(
       lastError: null,
       pushed: true,
       skipped: false,
+      confirmedDayHashes,
     });
 
-    return { success: true, lastSyncTime: nowMs, remoteUpdatedAt: exportedAt, history: recordsToPush };
+    return {
+      success: true,
+      lastSyncTime: nowMs,
+      remoteUpdatedAt: exportedAt,
+      history: recordsToPush,
+      confirmedDayHashes,
+    };
   } catch (err: any) {
     const errMsg = err?.message || 'Erreur réseau vers JSONBin';
     saveLocalMetrics(cleanUser, { lastStatus: 'error', lastError: errMsg });
@@ -995,6 +1077,7 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
   settings?: AppSettings | null;
   lastSyncTime?: number | null;
   remoteUpdatedAt?: string | null;
+  confirmedDayHashes?: Record<string, string>;
   error?: string;
 }> {
   const cleanUser = (targetUsername || getStoredSettings().username || 'alpharomeo1500').trim().toLowerCase();
@@ -1025,12 +1108,18 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
           }
           const lastSyncTime = data.lastSyncTime || Date.now();
           const remoteUpdatedAt = data.remoteUpdatedAt || null;
+          const confirmedDayHashes =
+            data.confirmedDayHashes && typeof data.confirmedDayHashes === 'object'
+              ? data.confirmedDayHashes
+              : buildConfirmedDayHashes(data.history, cleanUser);
+
           saveLocalMetrics(cleanUser, {
             lastStatus: 'synced',
             lastError: null,
             lastSyncTime,
             remoteUpdatedAt,
             lastSignature: computeClientDataSignature(cleanUser, mergedLocal, data.settings),
+            confirmedDayHashes,
           });
           emitJsonBinUpdate({
             username: cleanUser,
@@ -1038,6 +1127,7 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
             remoteUpdatedAt,
             lastStatus: 'synced',
             lastError: null,
+            confirmedDayHashes,
           });
           return {
             success: true,
@@ -1045,6 +1135,7 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
             settings: data.settings || null,
             lastSyncTime,
             remoteUpdatedAt,
+            confirmedDayHashes,
           };
         }
       }
@@ -1110,6 +1201,8 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
 
     const nowMs = Date.now();
     const remoteUpdatedAt = typeof binRecord.exportedAt === 'string' ? binRecord.exportedAt : null;
+    // Strictly confirm ONLY records truly present on remote JSONBin
+    const confirmedDayHashes = buildConfirmedDayHashes(rawList, username);
 
     saveLocalMetrics(username, {
       lastStatus: 'synced',
@@ -1117,6 +1210,7 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
       lastSyncTime: nowMs,
       remoteUpdatedAt,
       lastSignature: computeClientDataSignature(username, mergedHistory, restoredSettings),
+      confirmedDayHashes,
     });
 
     emitJsonBinUpdate({
@@ -1125,6 +1219,7 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
       remoteUpdatedAt,
       lastStatus: 'synced',
       lastError: null,
+      confirmedDayHashes,
     });
 
     return {
@@ -1133,6 +1228,7 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
       settings: restoredSettings,
       lastSyncTime: nowMs,
       remoteUpdatedAt,
+      confirmedDayHashes,
     };
   } catch (err: any) {
     const errMsg = err?.message || 'Erreur réseau vers JSONBin';
@@ -1145,6 +1241,66 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
     });
     return { success: false, error: errMsg };
   }
+}
+
+/**
+ * Verifies live against remote JSONBin /latest that local records strictly match what is stored in the cloud.
+ */
+export async function verifyJsonBinSync(
+  username = 'alpharomeo1500',
+  localHistoryOverride?: SyncRecord[]
+): Promise<{
+  verified: boolean;
+  matchingDays: number;
+  pendingDays: number;
+  totalLocalDays: number;
+  confirmedDayHashes: Record<string, string>;
+  lastSyncTime: number | null;
+  error?: string;
+}> {
+  const cleanUser = username.trim().toLowerCase();
+  const localRecords = localHistoryOverride ?? getStoredSyncHistory(cleanUser);
+
+  emitJsonBinUpdate({
+    username: cleanUser,
+    lastSyncTime: getLocalMetrics(cleanUser).lastSyncTime,
+    lastStatus: 'syncing',
+  });
+
+  const pullRes = await pullFromJsonBin(cleanUser);
+  if (!pullRes.success) {
+    return {
+      verified: false,
+      matchingDays: 0,
+      pendingDays: localRecords.length,
+      totalLocalDays: localRecords.length,
+      confirmedDayHashes: getLocalMetrics(cleanUser).confirmedDayHashes || {},
+      lastSyncTime: getLocalMetrics(cleanUser).lastSyncTime,
+      error: pullRes.error || 'Vérification JSONBin impossible',
+    };
+  }
+
+  const confirmedDayHashes = pullRes.confirmedDayHashes || {};
+  let matchingDays = 0;
+  let pendingDays = 0;
+  for (const r of localRecords) {
+    const dayKey = normalizeParisDayKey(r.timestamp);
+    const hash = computeRecordVerificationHash(r, cleanUser);
+    if (dayKey && confirmedDayHashes[dayKey] === hash) {
+      matchingDays++;
+    } else {
+      pendingDays++;
+    }
+  }
+
+  return {
+    verified: pendingDays === 0,
+    matchingDays,
+    pendingDays,
+    totalLocalDays: localRecords.length,
+    confirmedDayHashes,
+    lastSyncTime: pullRes.lastSyncTime ?? getLocalMetrics(cleanUser).lastSyncTime,
+  };
 }
 
 /**

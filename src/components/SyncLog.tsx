@@ -32,9 +32,10 @@ import {
   exportSyncHistoryJSON,
   getStoredSettings,
   importSyncHistory,
+  normalizeParisDayKey,
   saveStoredSyncHistory,
 } from '../utils/storage';
-import { formatJsonBinTimestamp } from '../utils/cloudSync';
+import { computeRecordVerificationHash, formatJsonBinTimestamp } from '../utils/cloudSync';
 import { SecurePurgeModal } from './SecurePurgeModal';
 
 interface SyncLogProps {
@@ -49,6 +50,9 @@ interface SyncLogProps {
   startDateStr?: string;
   lastJsonBinSyncTime?: number | null;
   jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  confirmedDayHashes?: Record<string, string>;
+  onVerifyJsonBinSync?: () => Promise<void> | void;
+  isVerifyingJsonBin?: boolean;
   onOpenNetworkModal?: () => void;
 }
 
@@ -59,6 +63,8 @@ interface DayEntry {
   isToday: boolean;
   isPast: boolean;
   status: 'synced' | 'missing';
+  syncState: 'missing' | 'verifying' | 'verified' | 'pending';
+  hasPuzzles: boolean;
   record?: SyncRecord;
 }
 
@@ -74,12 +80,16 @@ export const SyncLog: React.FC<SyncLogProps> = ({
   startDateStr = '2026-11-02',
   lastJsonBinSyncTime,
   jsonBinStatus = 'synced',
+  confirmedDayHashes = {},
+  onVerifyJsonBinSync,
+  isVerifyingJsonBin = false,
   onOpenNetworkModal,
 }) => {
   const [secureModalOpen, setSecureModalOpen] = useState(false);
-  const [filterMode, setFilterMode] = useState<'all' | 'missing' | 'synced'>('all');
+  const [filterMode, setFilterMode] = useState<'all' | 'missing' | 'synced' | 'puzzles_pending'>('all');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const puzzlesInputRef = useRef<HTMLInputElement>(null);
 
   // Manual Add / Edit Modal state (Admin only)
   const [manualModalOpen, setManualModalOpen] = useState(false);
@@ -137,6 +147,22 @@ export const SyncLog: React.FC<SyncLogProps> = ({
       const isToday = key === todayKey;
       const isPast = key < todayKey;
       const status: 'synced' | 'missing' = record ? 'synced' : 'missing';
+      const hasPuzzles = Boolean(record && typeof record.puzzles === 'number' && record.puzzles > 0);
+
+      let syncState: 'missing' | 'verifying' | 'verified' | 'pending' = 'missing';
+      if (record) {
+        if (jsonBinStatus === 'syncing' || isVerifyingJsonBin) {
+          syncState = 'verifying';
+        } else {
+          const parisKey = normalizeParisDayKey(record.timestamp) || key;
+          const expectedHash = computeRecordVerificationHash(record, username);
+          if (jsonBinStatus === 'synced' && confirmedDayHashes?.[parisKey] === expectedHash) {
+            syncState = 'verified';
+          } else {
+            syncState = 'pending';
+          }
+        }
+      }
 
       days.push({
         dateKey: key,
@@ -151,6 +177,8 @@ export const SyncLog: React.FC<SyncLogProps> = ({
         isToday,
         isPast,
         status,
+        syncState,
+        hasPuzzles,
         record,
       });
 
@@ -159,7 +187,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
     }
 
     return days;
-  }, [effectiveStartDate, today, todayKey, recordsByDateKey]);
+  }, [effectiveStartDate, today, todayKey, recordsByDateKey, jsonBinStatus, isVerifyingJsonBin, confirmedDayHashes, username]);
 
   // Filter and sort days
   const filteredDays = useMemo(() => {
@@ -169,6 +197,8 @@ export const SyncLog: React.FC<SyncLogProps> = ({
       list = list.filter((d) => d.status === 'missing');
     } else if (filterMode === 'synced') {
       list = list.filter((d) => d.status === 'synced');
+    } else if (filterMode === 'puzzles_pending') {
+      list = list.filter((d) => d.record && !d.hasPuzzles);
     }
 
     if (sortOrder === 'desc') {
@@ -183,7 +213,10 @@ export const SyncLog: React.FC<SyncLogProps> = ({
   // Summary counts
   const totalDaysCount = allDays.length;
   const syncedDaysCount = allDays.filter((d) => d.status === 'synced').length;
+  const verifiedCloudCount = allDays.filter((d) => d.syncState === 'verified').length;
+  const pendingCloudCount = allDays.filter((d) => d.syncState === 'pending').length;
   const missingDaysCount = allDays.filter((d) => d.status === 'missing').length;
+  const puzzlesPendingCount = allDays.filter((d) => d.record && !d.hasPuzzles).length;
 
   // Trigger manual completion of a missing date with pre-fill from the sync right above (Admin only)
   const handleOpenAddModal = (dateKey: string, index: number) => {
@@ -235,11 +268,15 @@ export const SyncLog: React.FC<SyncLogProps> = ({
   };
 
   // Trigger modification of an existing sync (Admin only)
-  const handleOpenEditModal = (day: DayEntry) => {
+  const handleOpenEditModal = (day: DayEntry, focusPuzzles = false) => {
     if (isIframe) return;
     if (!isAdmin) {
       if (onOpenSecurityModal) {
-        onOpenSecurityModal('Modifier une synchronisation existante (2FA requis)');
+        onOpenSecurityModal(
+          focusPuzzles
+            ? 'Saisir le score Problèmes du lendemain (2FA requis)'
+            : 'Modifier une synchronisation existante (2FA requis)'
+        );
       }
       return;
     }
@@ -251,6 +288,11 @@ export const SyncLog: React.FC<SyncLogProps> = ({
     setManualRapid(String(day.record?.rapid ?? ''));
     setManualPuzzles(day.record?.puzzles ? String(day.record.puzzles) : '');
     setManualModalOpen(true);
+    if (focusPuzzles) {
+      setTimeout(() => {
+        puzzlesInputRef.current?.focus();
+      }, 120);
+    }
   };
 
   // Save manual record (Create or Update)
@@ -422,20 +464,37 @@ export const SyncLog: React.FC<SyncLogProps> = ({
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-mono transition-colors ${
                 jsonBinStatus === 'error'
                   ? 'border-[#ef4444]/40 bg-[#ef4444]/10 text-[#ef4444]'
-                  : jsonBinStatus === 'syncing'
+                  : jsonBinStatus === 'syncing' || isVerifyingJsonBin
                   ? 'border-[#facc15]/40 bg-[#facc15]/10 text-[#facc15]'
+                  : pendingCloudCount > 0
+                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
                   : 'border-[#10b981]/30 bg-[#10b981]/10 text-[#10b981] hover:bg-[#10b981]/20'
               }`}
             >
               <Clock className="h-3 w-3 shrink-0" />
               <span>
-                {jsonBinStatus === 'syncing'
-                  ? 'Sauvegarde JSONBin en cours...'
+                {jsonBinStatus === 'syncing' || isVerifyingJsonBin
+                  ? 'Vérification JSONBin en cours...'
                   : jsonBinStatus === 'error'
                   ? 'Erreur JSONBin (cliquez pour vérifier)'
-                  : `Dernière MàJ JSONBin : ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`}
+                  : pendingCloudCount > 0
+                  ? `${pendingCloudCount} relevé(s) en attente de confirmation · MàJ : ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`
+                  : `Confirmé JSONBin (${verifiedCloudCount}/${syncedDaysCount}) · ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`}
               </span>
             </button>
+
+            {onVerifyJsonBinSync && !isIframe && (
+              <button
+                type="button"
+                onClick={() => onVerifyJsonBinSync()}
+                disabled={isVerifyingJsonBin || jsonBinStatus === 'syncing'}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-neutral-700 bg-neutral-900 hover:border-[#facc15] text-[11px] font-bold text-neutral-200 hover:text-white transition-colors disabled:opacity-50"
+                title="Contrôler en direct sur JSONBin que chaque relevé correspond exactement"
+              >
+                <Zap className={`h-3 w-3 text-[#facc15] ${isVerifyingJsonBin ? 'animate-pulse' : ''}`} />
+                <span>{isVerifyingJsonBin ? 'Vérification...' : 'Vérifier JSONBin'}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -498,7 +557,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
       {/* KPI & Filter / Sort Toolbar */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 items-center rounded-2xl border border-neutral-800 bg-[#0c0f14] p-3 sm:p-4">
         {/* KPI stats */}
-        <div className="md:col-span-6 flex flex-wrap items-center gap-2 sm:gap-4">
+        <div className="md:col-span-6 flex flex-wrap items-center gap-2 sm:gap-3">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs">
             <Calendar className="h-4 w-4 text-neutral-400" />
             <span className="text-neutral-400">Total :</span>
@@ -507,8 +566,22 @@ export const SyncLog: React.FC<SyncLogProps> = ({
 
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#10b981]/10 border border-[#10b981]/30 text-xs">
             <span className="h-2 w-2 rounded-full bg-[#10b981]" />
-            <span className="text-[#10b981] font-bold">{syncedDaysCount} faits</span>
+            <span className="text-[#10b981] font-bold">{verifiedCloudCount} synchronisés</span>
           </div>
+
+          {pendingCloudCount > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs">
+              <span className="h-2 w-2 rounded-full bg-amber-400" />
+              <span className="text-amber-400 font-bold">{pendingCloudCount} en attente</span>
+            </div>
+          )}
+
+          {puzzlesPendingCount > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-500/15 border border-orange-500/40 text-xs">
+              <span className="h-2 w-2 rounded-full bg-orange-400" />
+              <span className="text-orange-400 font-bold">{puzzlesPendingCount} problèmes à compléter</span>
+            </div>
+          )}
 
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#ef4444]/10 border border-[#ef4444]/30 text-xs">
             <span className="h-2 w-2 rounded-full bg-[#ef4444]" />
@@ -519,7 +592,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
         {/* Filter buttons & sort dropdown */}
         <div className="md:col-span-6 flex flex-wrap items-center justify-start md:justify-end gap-2">
           {/* Filter segment */}
-          <div className="flex items-center p-1 rounded-xl bg-neutral-900 border border-neutral-800 text-xs">
+          <div className="flex flex-wrap items-center p-1 rounded-xl bg-neutral-900 border border-neutral-800 text-xs gap-1">
             <button
               onClick={() => setFilterMode('all')}
               className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
@@ -550,6 +623,18 @@ export const SyncLog: React.FC<SyncLogProps> = ({
             >
               Faits ({syncedDaysCount})
             </button>
+            {puzzlesPendingCount > 0 && (
+              <button
+                onClick={() => setFilterMode('puzzles_pending')}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+                  filterMode === 'puzzles_pending'
+                    ? 'bg-orange-500 text-black shadow-sm'
+                    : 'text-orange-400 hover:bg-orange-500/15'
+                }`}
+              >
+                À compléter ({puzzlesPendingCount})
+              </button>
+            )}
           </div>
 
           {/* Sort toggle */}
@@ -618,15 +703,31 @@ export const SyncLog: React.FC<SyncLogProps> = ({
 
                       {/* Status */}
                       <td className="py-3 px-4 text-center whitespace-nowrap">
-                        {isMissing ? (
+                        {day.syncState === 'missing' ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#ef4444]/20 border border-[#ef4444]/40 text-[#ef4444] text-[10px] font-bold uppercase tracking-wider">
                             <span className="h-1.5 w-1.5 rounded-full bg-[#ef4444] shrink-0" />
                             Manqué
                           </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#10b981]/20 border border-[#10b981]/40 text-[#10b981] text-[10px] font-bold uppercase tracking-wider">
+                        ) : day.syncState === 'verifying' ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#facc15]/15 border border-[#facc15]/40 text-[#facc15] text-[10px] font-bold uppercase tracking-wider">
+                            <span className="h-1.5 w-1.5 rounded-full bg-[#facc15] animate-ping shrink-0" />
+                            Vérification
+                          </span>
+                        ) : day.syncState === 'verified' ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#10b981]/20 border border-[#10b981]/40 text-[#10b981] text-[10px] font-bold uppercase tracking-wider"
+                            title="Empreinte confirmée identique sur JSONBin"
+                          >
                             <span className="h-1.5 w-1.5 rounded-full bg-[#10b981] shrink-0" />
                             Synchronisé
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-400 text-[10px] font-bold uppercase tracking-wider"
+                            title="Relevé enregistré localement, en attente de confirmation distante JSONBin"
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                            En attente
                           </span>
                         )}
                       </td>
@@ -664,14 +765,33 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                         )}
                       </td>
 
-                      {/* Problèmes (hors cadence) */}
+                      {/* Problèmes (saisie manuelle du lendemain — hors cadence) */}
                       <td className="py-3 px-4 text-right tabular-nums">
-                        {rec?.puzzles ? (
-                          <span className="text-sky-400 font-semibold" title="Score Problèmes (hors cadence)">
-                            {rec.puzzles}
-                          </span>
-                        ) : (
+                        {!rec ? (
                           <span className="text-neutral-600">—</span>
+                        ) : typeof rec.puzzles === 'number' && rec.puzzles > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => !isIframe && handleOpenEditModal(day, true)}
+                            className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 font-semibold transition-colors"
+                            title="Score Problèmes saisi manuellement (cliquez pour modifier)"
+                          >
+                            <span>{rec.puzzles}</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => !isIframe && handleOpenEditModal(day, true)}
+                            title={
+                              isAdmin
+                                ? 'Saisir manuellement le ELO Problèmes du lendemain'
+                                : 'Cliquez pour saisir le ELO Problèmes (2FA requis)'
+                            }
+                            className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-orange-500/20 border border-orange-500/50 text-orange-400 hover:bg-orange-500/30 text-[10px] font-sans font-bold uppercase tracking-wider transition-all active:scale-95"
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-orange-400 shrink-0" />
+                            <span>À compléter</span>
+                          </button>
                         )}
                       </td>
 
@@ -810,17 +930,18 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-sky-400 font-sans mb-1">
-                    Problèmes / Tactique (optionnel — graphique uniquement, hors cadence)
+                  <label className="block text-xs font-bold text-orange-400 font-sans mb-1">
+                    Problèmes / Tactique (saisie manuelle du lendemain — hors cadence)
                   </label>
                   <input
+                    ref={puzzlesInputRef}
                     type="number"
                     min="100"
                     max="4500"
-                    placeholder="Ex: 2021 (optionnel)"
+                    placeholder="Ex: 2021 (laisser vide si à compléter plus tard)"
                     value={manualPuzzles}
                     onChange={(e) => setManualPuzzles(e.target.value)}
-                    className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-sky-400 focus:outline-none"
+                    className="w-full rounded-xl border border-orange-500/40 bg-neutral-900 px-3 py-2 text-sm text-white placeholder-neutral-600 focus:border-orange-400 focus:outline-none"
                   />
                 </div>
               </div>

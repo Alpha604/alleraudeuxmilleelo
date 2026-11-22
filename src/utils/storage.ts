@@ -447,6 +447,11 @@ export function addSyncRecord(
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === dayKey;
   });
 
+  const resolvedPuzzles =
+    typeof data.puzzles === 'number' && data.puzzles > 0
+      ? data.puzzles
+      : existingSameDay?.puzzles ?? null;
+
   const nowMs = syncDate.getTime();
   const TEN_MINUTES_MS = 10 * 60 * 1000;
 
@@ -457,7 +462,7 @@ export function addSyncRecord(
     existingSameDay.bullet === data.bullet &&
     existingSameDay.blitz === data.blitz &&
     existingSameDay.rapid === data.rapid &&
-    (existingSameDay.puzzles ?? null) === (data.puzzles ?? null) &&
+    (existingSameDay.puzzles ?? null) === resolvedPuzzles &&
     existingSameDay.bestRating === data.bestRating &&
     nowMs - new Date(existingSameDay.timestamp).getTime() < TEN_MINUTES_MS
   ) {
@@ -470,6 +475,7 @@ export function addSyncRecord(
 
   const newRecord: SyncRecord = {
     ...data,
+    puzzles: resolvedPuzzles,
     username: targetUser,
     id: `sync_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
   };
