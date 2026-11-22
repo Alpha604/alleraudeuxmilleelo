@@ -406,7 +406,10 @@ function generateSessionValidationCode(sessionId: string): string {
     });
   });
 
-const DEFAULT_TOTP_SECRET = 'JBSWY3DPEHPK3PXP';
+const TOTP_ROTATION_VERSION = 3;
+const DEFAULT_TOTP_SECRET = 'BKEN3KF7SV47667G';
+const TOTP_CLOUD_BIN_ID = '6af9f1d7ffd5d16053c38f30';
+const TOTP_CLOUD_API_KEY = '$2a$10$nOO6WNU996CcWwBht/K8MuDshQsOPktO28uEy.WTBESmEHAsRjcZy';
 const TOTP_CONFIG_FILE = path.resolve(
   fs.existsSync(path.resolve(__dirname, 'data')) ? path.resolve(__dirname, 'data') : os.tmpdir(),
   'roadto2000_totp_config.json'
@@ -416,8 +419,11 @@ interface ServerTotpConfig {
   secret: string;
   enrolled: boolean;
   isCustom: boolean;
+  rotationVersion: number;
   updatedAt: number;
 }
+
+let lastCloudTotpPullAt = 0;
 
 function loadServerTotpConfig(): ServerTotpConfig {
   try {
@@ -426,11 +432,12 @@ function loadServerTotpConfig(): ServerTotpConfig {
       const cleanSec = typeof parsed?.secret === 'string'
         ? parsed.secret.trim().toUpperCase().replace(/[^A-Z2-7]/g, '')
         : '';
-      if (cleanSec.length >= 16) {
+      if (cleanSec.length >= 16 && parsed?.rotationVersion === TOTP_ROTATION_VERSION) {
         return {
           secret: cleanSec,
-          enrolled: parsed.enrolled !== false,
+          enrolled: parsed.enrolled === true,
           isCustom: Boolean(parsed.isCustom) && cleanSec !== DEFAULT_TOTP_SECRET,
+          rotationVersion: TOTP_ROTATION_VERSION,
           updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now(),
         };
       }
@@ -438,8 +445,9 @@ function loadServerTotpConfig(): ServerTotpConfig {
   } catch {}
   return {
     secret: DEFAULT_TOTP_SECRET,
-    enrolled: true,
+    enrolled: false,
     isCustom: false,
+    rotationVersion: TOTP_ROTATION_VERSION,
     updatedAt: 0,
   };
 }
@@ -450,6 +458,77 @@ function saveServerTotpConfig(cfg: ServerTotpConfig): void {
   } catch (err) {
     console.warn('[RoadTo2000] Failed to save TOTP config:', err);
   }
+}
+
+async function pullTotpConfigFromCloud(force = false): Promise<ServerTotpConfig> {
+  const local = loadServerTotpConfig();
+  const now = Date.now();
+  if (!force && now - lastCloudTotpPullAt < 5000) return local;
+
+  try {
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${TOTP_CLOUD_BIN_ID}/latest`, {
+      headers: {
+        'X-Master-Key': TOTP_CLOUD_API_KEY,
+        'X-Access-Key': TOTP_CLOUD_API_KEY,
+      },
+    });
+    if (res.ok) {
+      lastCloudTotpPullAt = Date.now();
+      const body = await res.json();
+      const t = (body?.record || body)?.totpConfig;
+      if (
+        t &&
+        t.rotationVersion === TOTP_ROTATION_VERSION &&
+        typeof t.secret === 'string'
+      ) {
+        const cleanSec = t.secret.trim().toUpperCase().replace(/[^A-Z2-7]/g, '');
+        if (cleanSec.length >= 16 && (t.updatedAt || 0) >= (local.updatedAt || 0)) {
+          const merged: ServerTotpConfig = {
+            secret: cleanSec,
+            enrolled: Boolean(t.enrolled),
+            isCustom: cleanSec !== DEFAULT_TOTP_SECRET,
+            rotationVersion: TOTP_ROTATION_VERSION,
+            updatedAt: typeof t.updatedAt === 'number' ? t.updatedAt : Date.now(),
+          };
+          saveServerTotpConfig(merged);
+          return merged;
+        }
+      }
+    }
+  } catch {}
+  return local;
+}
+
+async function pushTotpConfigToCloud(cfg: ServerTotpConfig): Promise<boolean> {
+  try {
+    const headers: Record<string, string> = {
+      'X-Master-Key': TOTP_CLOUD_API_KEY,
+      'X-Access-Key': TOTP_CLOUD_API_KEY,
+    };
+    let remoteRecord: Record<string, any> = {};
+    const latestRes = await fetch(`https://api.jsonbin.io/v3/b/${TOTP_CLOUD_BIN_ID}/latest`, { headers });
+    if (latestRes.ok) {
+      const body = await latestRes.json();
+      remoteRecord = body?.record || body || {};
+    }
+    const mergedPayload = {
+      ...remoteRecord,
+      totpConfig: cfg,
+    };
+    const putRes = await fetch(`https://api.jsonbin.io/v3/b/${TOTP_CLOUD_BIN_ID}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: JSON.stringify(mergedPayload),
+    });
+    if (putRes.ok) {
+      lastCloudTotpPullAt = Date.now();
+      return true;
+    }
+  } catch {}
+  return false;
 }
 
 function base32ToBuffer(base32: string): Buffer {
@@ -497,18 +576,20 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
 }
 
   // 6a. Server TOTP Configuration, Verification & Sync Endpoints
-  app.get('/api/auth/totp/config', (_req: Request, res: Response) => {
-    const cfg = loadServerTotpConfig();
+  app.get('/api/auth/totp/config', async (req: Request, res: Response) => {
+    const force = req.query.force === '1' || req.query.force === 'true';
+    const cfg = await pullTotpConfigFromCloud(force);
     res.json({
       success: true,
       secret: cfg.secret,
       enrolled: cfg.enrolled,
       isCustom: cfg.isCustom,
+      rotationVersion: cfg.rotationVersion,
       serverTime: Date.now(),
     });
   });
 
-  app.post('/api/auth/totp/sync', (req: Request, res: Response) => {
+  app.post('/api/auth/totp/sync', async (req: Request, res: Response) => {
     const { secret, enrolled } = req.body || {};
     const cleanSec = typeof secret === 'string'
       ? secret.trim().toUpperCase().replace(/[^A-Z2-7]/g, '')
@@ -521,15 +602,17 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
 
     const next: ServerTotpConfig = {
       secret: cleanSec,
-      enrolled: enrolled !== false,
+      enrolled: Boolean(enrolled),
       isCustom: cleanSec !== DEFAULT_TOTP_SECRET,
+      rotationVersion: TOTP_ROTATION_VERSION,
       updatedAt: Date.now(),
     };
     saveServerTotpConfig(next);
-    res.json({ success: true, ...next });
+    const cloudSynced = await pushTotpConfigToCloud(next);
+    res.json({ success: true, cloudSynced, ...next });
   });
 
-  app.post('/api/auth/totp/verify', (req: Request, res: Response) => {
+  app.post('/api/auth/totp/verify', async (req: Request, res: Response) => {
     const { code, secret: clientSecret } = req.body || {};
     const cleanCode = String(code || '').trim().replace(/\D/g, '');
     if (cleanCode.length !== 6) {
@@ -537,13 +620,12 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
       return;
     }
 
-    const cfg = loadServerTotpConfig();
+    const cfg = await pullTotpConfigFromCloud(false);
     if (verifyServerTotpCode(cleanCode, cfg.secret)) {
       res.json({ valid: true, activeSecret: cfg.secret, serverTime: Date.now() });
       return;
     }
 
-    // Also allow clientSecret match or default secret if no custom secret has locked out default
     const cleanClient = typeof clientSecret === 'string'
       ? clientSecret.trim().toUpperCase().replace(/[^A-Z2-7]/g, '')
       : '';

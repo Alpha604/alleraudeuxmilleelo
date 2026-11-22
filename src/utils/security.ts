@@ -372,21 +372,36 @@ export async function generateQrCodeDataUrl(text: string): Promise<string> {
 }
 
 /**
+ * Checks if URL explicitly forces read-only embed mode.
+ */
+export function isExplicitReadOnlyEmbed(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return (
+      params.get('embed') === 'true' ||
+      params.get('mode') === 'iframe' ||
+      params.get('view') === 'readonly'
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Checks if the current page is running inside an external iframe or explicitly in embed mode.
- * Distinguishes AI Studio's top-level preview host from external website embeds.
+ * Distinguishes AI Studio's top-level preview workbench from third-party external embeds.
  */
 export function isRunningInIframe(): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('embed') === 'true' || params.get('mode') === 'iframe' || params.get('view') === 'readonly') {
+    if (isExplicitReadOnlyEmbed()) {
       return true;
     }
 
     const inFrame = window.self !== window.top;
     if (!inFrame) return false;
 
-    // Inside AI Studio's workbench preview iframe: keep normal app unless hosted on a third-party site
     let ancestorHost = '';
     try {
       const ancestors = (window.location as unknown as { ancestorOrigins?: DOMStringList }).ancestorOrigins;
@@ -396,25 +411,30 @@ export function isRunningInIframe(): boolean {
     } catch {}
     const referrer = (typeof document !== 'undefined' ? document.referrer || '' : '').toLowerCase();
 
-    if (
-      ancestorHost.includes('aistudio.google.com') ||
-      referrer.includes('aistudio.google.com')
-    ) {
+    const isAiStudioParent = (val: string) =>
+      val.includes('aistudio.google.com') ||
+      val.includes('makersuite.google.com') ||
+      val.includes('googleusercontent.com') ||
+      val.includes('usercontent.goog') ||
+      val.includes('google.com');
+
+    if (isAiStudioParent(ancestorHost) || isAiStudioParent(referrer)) {
       return false;
     }
 
     const host = window.location.hostname.toLowerCase();
-    // If opened standalone on run.app/localhost inside an unknown parent, treat as iframe unless same-origin
-    if (
-      (host === 'localhost' || host === '127.0.0.1') &&
-      (!ancestorHost && !referrer)
-    ) {
+    // On run.app or localhost inside an unreadable/privacy-stripped parent without an external ancestor, assume preview unless explicit ?embed=true
+    if (!ancestorHost && !referrer) {
+      return false;
+    }
+
+    if ((host === 'localhost' || host === '127.0.0.1') && !ancestorHost) {
       return false;
     }
 
     return true;
   } catch {
-    return window.self !== window.top;
+    return false;
   }
 }
 
@@ -522,11 +542,16 @@ function hmacSha1(keyBytes: Uint8Array, message: Uint8Array): Uint8Array {
 
 /**
  * Standard RFC 6238 TOTP (Time-based One-Time Password) Support
- * Works 100% deterministically across HTTP/HTTPS, mobile, desktop, and Node.
+ * Works 100% deterministically across HTTP/HTTPS, mobile, desktop, and Cloud JSONBin.
  */
-export const DEFAULT_TOTP_SECRET = 'JBSWY3DPEHPK3PXP';
-const ADMIN_TOTP_SECRET_KEY = 'roadto2000_totp_secret_v2';
-const ADMIN_TOTP_ENROLLED_KEY = 'roadto2000_totp_enrolled_v2';
+export const TOTP_ROTATION_VERSION = 3;
+export const DEFAULT_TOTP_SECRET = 'BKEN3KF7SV47667G';
+const ADMIN_TOTP_SECRET_KEY = 'roadto2000_totp_secret_v3';
+const ADMIN_TOTP_ENROLLED_KEY = 'roadto2000_totp_enrolled_v3';
+const ADMIN_TOTP_UPDATED_AT_KEY = 'roadto2000_totp_updated_v3';
+
+const CLOUD_BIN_ID = '6af9f1d7ffd5d16053c38f30';
+const CLOUD_API_KEY = '$2a$10$nOO6WNU996CcWwBht/K8MuDshQsOPktO28uEy.WTBESmEHAsRjcZy';
 
 export function generateRandomBase32Secret(length = 16): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -558,6 +583,7 @@ export function setTotpSecret(secret: string): void {
   const clean = secret.trim().toUpperCase().replace(/[^A-Z2-7]/g, '');
   if (clean.length >= 16) {
     safeSet(ADMIN_TOTP_SECRET_KEY, clean);
+    safeSet(ADMIN_TOTP_UPDATED_AT_KEY, String(Date.now()));
   }
 }
 
@@ -565,56 +591,168 @@ export function generateNewTotpSecret(): string {
   const newSecret = generateRandomBase32Secret(16);
   safeSet(ADMIN_TOTP_SECRET_KEY, newSecret);
   safeSet(ADMIN_TOTP_ENROLLED_KEY, 'false');
+  safeSet(ADMIN_TOTP_UPDATED_AT_KEY, String(Date.now()));
   return newSecret;
+}
+
+export async function rotateAndSyncTotpSecret(customSecret?: string): Promise<string> {
+  const nextSecret = (customSecret || generateRandomBase32Secret(16))
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z2-7]/g, '');
+  const validSecret = nextSecret.length >= 16 ? nextSecret : generateRandomBase32Secret(16);
+  safeSet(ADMIN_TOTP_SECRET_KEY, validSecret);
+  safeSet(ADMIN_TOTP_ENROLLED_KEY, 'false');
+  safeSet(ADMIN_TOTP_UPDATED_AT_KEY, String(Date.now()));
+  await syncTotpSecretToServer(validSecret, false);
+  return validSecret;
 }
 
 export function resetTotpToDefaultSecret(): string {
   safeSet(ADMIN_TOTP_SECRET_KEY, DEFAULT_TOTP_SECRET);
   safeSet(ADMIN_TOTP_ENROLLED_KEY, 'false');
+  safeSet(ADMIN_TOTP_UPDATED_AT_KEY, String(Date.now()));
   return DEFAULT_TOTP_SECRET;
 }
 
 export function isTotpEnrolled(): boolean {
   const stored = safeGet(ADMIN_TOTP_ENROLLED_KEY);
-  // Default to true because the user has already paired their Microsoft Authenticator!
-  if (stored === null) return true;
+  // Start un-enrolled on fresh v3 rotation until the user scans & verifies their first 6-digit code!
+  if (stored === null) return false;
   return stored === 'true';
 }
 
 export function setTotpEnrolled(enrolled: boolean): void {
   safeSet(ADMIN_TOTP_ENROLLED_KEY, enrolled ? 'true' : 'false');
+  safeSet(ADMIN_TOTP_UPDATED_AT_KEY, String(Date.now()));
 }
 
-export async function syncTotpSecretToServer(secret: string, enrolled = true): Promise<boolean> {
+async function pushTotpConfigToCloudDirect(secret: string, enrolled: boolean): Promise<boolean> {
+  if (typeof fetch === 'undefined') return false;
   try {
-    if (typeof fetch === 'undefined') return false;
-    const res = await fetch('/api/auth/totp/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ secret, enrolled }),
+    const readHeaders: Record<string, string> = {
+      'X-Master-Key': CLOUD_API_KEY,
+      'X-Access-Key': CLOUD_API_KEY,
+    };
+    let remoteRecord: Record<string, any> = {};
+    const latestRes = await fetch(`https://api.jsonbin.io/v3/b/${CLOUD_BIN_ID}/latest`, {
+      headers: readHeaders,
+      cache: 'no-store',
     });
-    return res.ok;
+    if (latestRes.ok) {
+      const body = await latestRes.json();
+      remoteRecord = body?.record || body || {};
+    }
+    const mergedPayload = {
+      ...remoteRecord,
+      totpConfig: {
+        secret,
+        enrolled,
+        isCustom: secret !== DEFAULT_TOTP_SECRET,
+        rotationVersion: TOTP_ROTATION_VERSION,
+        updatedAt: Date.now(),
+      },
+    };
+    const putRes = await fetch(`https://api.jsonbin.io/v3/b/${CLOUD_BIN_ID}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...readHeaders,
+      },
+      body: JSON.stringify(mergedPayload),
+    });
+    return putRes.ok;
   } catch {
     return false;
   }
 }
 
-export async function fetchTotpConfigFromServer(): Promise<{ secret: string; enrolled: boolean } | null> {
+async function pullTotpConfigFromCloudDirect(): Promise<{ secret: string; enrolled: boolean } | null> {
+  if (typeof fetch === 'undefined') return null;
   try {
-    if (typeof fetch === 'undefined') return null;
-    const res = await fetch('/api/auth/totp/config', { cache: 'no-store' });
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${CLOUD_BIN_ID}/latest`, {
+      headers: {
+        'X-Master-Key': CLOUD_API_KEY,
+        'X-Access-Key': CLOUD_API_KEY,
+      },
+      cache: 'no-store',
+    });
     if (!res.ok) return null;
-    const ct = res.headers.get('content-type') || '';
-    if (!ct.includes('application/json')) return null;
-    const data = await res.json();
-    if (data?.secret && typeof data.secret === 'string' && data.secret.length >= 16) {
-      setTotpSecret(data.secret);
-      if (typeof data.enrolled === 'boolean') {
-        setTotpEnrolled(data.enrolled);
-      }
-      return { secret: data.secret, enrolled: Boolean(data.enrolled) };
+    const body = await res.json();
+    const t = (body?.record || body)?.totpConfig;
+    if (
+      t &&
+      t.rotationVersion === TOTP_ROTATION_VERSION &&
+      typeof t.secret === 'string' &&
+      t.secret.trim().length >= 16
+    ) {
+      return {
+        secret: t.secret.trim().toUpperCase().replace(/[^A-Z2-7]/g, ''),
+        enrolled: Boolean(t.enrolled),
+      };
     }
   } catch {}
+  return null;
+}
+
+export async function syncTotpSecretToServer(secret: string, enrolled = true): Promise<boolean> {
+  const clean = secret.trim().toUpperCase().replace(/[^A-Z2-7]/g, '');
+  if (clean.length < 16) return false;
+  safeSet(ADMIN_TOTP_SECRET_KEY, clean);
+  safeSet(ADMIN_TOTP_ENROLLED_KEY, enrolled ? 'true' : 'false');
+  safeSet(ADMIN_TOTP_UPDATED_AT_KEY, String(Date.now()));
+
+  try {
+    if (typeof fetch !== 'undefined') {
+      const res = await fetch('/api/auth/totp/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret: clean, enrolled, rotationVersion: TOTP_ROTATION_VERSION }),
+      });
+      if (res.ok) {
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const data = await res.json();
+          if (data?.cloudSynced) return true;
+        }
+      }
+    }
+  } catch {}
+
+  return await pushTotpConfigToCloudDirect(clean, enrolled);
+}
+
+export async function fetchTotpConfigFromServer(): Promise<{ secret: string; enrolled: boolean } | null> {
+  try {
+    if (typeof fetch !== 'undefined') {
+      const res = await fetch('/api/auth/totp/config', { cache: 'no-store' });
+      if (res.ok) {
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const data = await res.json();
+          if (
+            data?.secret &&
+            typeof data.secret === 'string' &&
+            data.secret.length >= 16 &&
+            data.rotationVersion === TOTP_ROTATION_VERSION
+          ) {
+            setTotpSecret(data.secret);
+            if (typeof data.enrolled === 'boolean') {
+              setTotpEnrolled(data.enrolled);
+            }
+            return { secret: data.secret, enrolled: Boolean(data.enrolled) };
+          }
+        }
+      }
+    }
+  } catch {}
+
+  const cloud = await pullTotpConfigFromCloudDirect();
+  if (cloud) {
+    setTotpSecret(cloud.secret);
+    setTotpEnrolled(cloud.enrolled);
+    return cloud;
+  }
   return null;
 }
 

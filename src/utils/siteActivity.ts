@@ -301,6 +301,7 @@ export function evaluateSiteActivity(
     clientIp: string;
     trustedIps: string[];
     isAdmin: boolean;
+    adminOverride?: boolean;
   }
 ): SiteActivityEvaluation {
   const now = context.now ?? Date.now();
@@ -392,7 +393,8 @@ export function evaluateSiteActivity(
 
   const matchesTarget = matchesDevice && matchesIframe && matchesIp;
   const wouldBlock = isPausedTimeReached && matchesTarget;
-  const isBypassedByAdmin = wouldBlock && context.isAdmin && config.allowAdminBypass;
+  const isBypassedByAdmin =
+    wouldBlock && context.isAdmin && (config.allowAdminBypass || Boolean(context.adminOverride));
   const isBlocked = wouldBlock && !isBypassedByAdmin;
 
   return {

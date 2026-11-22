@@ -21,8 +21,10 @@ import {
   getTotpSecret,
   getTotpUri,
   isTotpEnrolled,
+  rotateAndSyncTotpSecret,
   setAdminSession,
   setTotpEnrolled,
+  syncTotpSecretToServer,
   verifyTotpCode,
 } from '../utils/security';
 
@@ -178,6 +180,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
         setTotpEnrolled(true);
         setIsEnrolled(true);
         setShowPairingQr(false);
+        syncTotpSecretToServer(secretKey, true).catch(() => {});
 
         setUnlockingState({
           step: 1,
@@ -348,26 +351,42 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                 </div>
 
                 <p className="text-[11px] text-neutral-300 text-center leading-relaxed">
-                  Scannez ce QR Code dans <strong>Microsoft Authenticator</strong> ou <strong>Google Authenticator</strong>.
+                  Scannez ce QR Code dans <strong>Microsoft Authenticator</strong> ou <strong>Google Authenticator</strong>, puis entrez le code à 6 chiffres ci-dessous pour activer.
                 </p>
 
                 <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-[11px] font-mono">
                   <span className="text-neutral-400 truncate">
                     Clé : <strong className="text-[#facc15]">{secretKey}</strong>
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (navigator?.clipboard) {
-                        navigator.clipboard.writeText(secretKey);
-                        setCopiedSecret(true);
-                        setTimeout(() => setCopiedSecret(false), 2000);
-                      }
-                    }}
-                    className="text-neutral-300 hover:text-white shrink-0 p-1 rounded"
-                  >
-                    {copiedSecret ? 'Copié !' : 'Copier'}
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (navigator?.clipboard) {
+                          navigator.clipboard.writeText(secretKey);
+                          setCopiedSecret(true);
+                          setTimeout(() => setCopiedSecret(false), 2000);
+                        }
+                      }}
+                      className="text-neutral-300 hover:text-white px-1.5 py-0.5 rounded border border-neutral-800 bg-neutral-950"
+                    >
+                      {copiedSecret ? 'Copié !' : 'Copier'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const fresh = await rotateAndSyncTotpSecret();
+                        setSecretKey(fresh);
+                        setIsEnrolled(false);
+                        setCode('');
+                        setErrorMessage('');
+                        onShowMessage('Nouvelle clé A2F générée ! Scannez le nouveau QR code.', 'info');
+                      }}
+                      className="text-[#facc15] hover:text-black hover:bg-[#facc15] px-2 py-0.5 rounded border border-[#facc15]/40 font-sans font-bold transition-colors"
+                    >
+                      Nouvelle clé
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (

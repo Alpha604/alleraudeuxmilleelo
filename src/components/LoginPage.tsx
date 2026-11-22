@@ -9,11 +9,22 @@ import {
   Crown,
   KeyRound,
   Lock,
+  QrCode,
   Shield,
   ShieldCheck,
   Smartphone,
 } from 'lucide-react';
-import { authenticateWithTotpOnly } from '../utils/security';
+import {
+  authenticateWithTotpOnly,
+  fetchTotpConfigFromServer,
+  generateQrCodeDataUrl,
+  getTotpSecret,
+  getTotpUri,
+  isTotpEnrolled,
+  rotateAndSyncTotpSecret,
+  setTotpEnrolled,
+  syncTotpSecretToServer,
+} from '../utils/security';
 
 interface LoginPageProps {
   onLoginSuccess: (username: string, isAdmin: boolean, isSpectator?: boolean) => void;
@@ -26,11 +37,31 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [totpCode, setTotpCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [enrolled, setEnrolled] = useState<boolean>(() => isTotpEnrolled());
+  const [secretKey, setSecretKey] = useState<string>(() => getTotpSecret());
+  const [qrUrl, setQrUrl] = useState<string>('');
   const codeInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setTimeout(() => codeInputRef.current?.focus(), 120);
+    fetchTotpConfigFromServer().then((cfg) => {
+      if (cfg) {
+        setSecretKey(cfg.secret);
+        setEnrolled(cfg.enrolled);
+      }
+    });
   }, []);
+
+  useEffect(() => {
+    if (enrolled) return;
+    let active = true;
+    generateQrCodeDataUrl(getTotpUri('Romeo', 'RoadTo2000Elo', secretKey)).then((url) => {
+      if (active) setQrUrl(url);
+    });
+    return () => {
+      active = false;
+    };
+  }, [enrolled, secretKey]);
 
   const handleDirectAccessWithoutPermissions = () => {
     onLoginSuccess('alpharomeo1500', false, false);
@@ -49,6 +80,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     try {
       const res = await authenticateWithTotpOnly('alpharomeo1500', cleaned);
       if (res.success) {
+        setTotpEnrolled(true);
+        setEnrolled(true);
+        syncTotpSecretToServer(secretKey, true).catch(() => {});
         onLoginSuccess('alpharomeo1500', true, false);
       } else {
         setErrorMessage(res.error || 'Code A2F invalide ou expiré.');
@@ -165,6 +199,44 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             </span>
             <div className="border-t border-neutral-800 w-full" />
           </div>
+
+          {/* New 2FA Pairing Panel (shown until first code verification completes) */}
+          {!enrolled && (
+            <div className="rounded-2xl border border-[#facc15]/35 bg-neutral-950/90 p-4 space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-[#facc15] flex items-center gap-1.5">
+                  <QrCode className="h-4 w-4" />
+                  <span>Configurer la nouvelle clé A2F</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const fresh = await rotateAndSyncTotpSecret();
+                    setSecretKey(fresh);
+                    setErrorMessage(null);
+                  }}
+                  className="text-[11px] font-bold text-[#facc15] hover:underline"
+                >
+                  Nouvelle clé
+                </button>
+              </div>
+              {qrUrl && (
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                  <div className="p-2 rounded-xl bg-white border border-neutral-700 shrink-0">
+                    <img src={qrUrl} alt="QR Code A2F" className="h-32 w-32 object-contain" />
+                  </div>
+                  <div className="space-y-1.5 text-xs text-neutral-300">
+                    <p>
+                      Scannez ce QR Code dans <strong>Microsoft</strong> ou <strong>Google Authenticator</strong> puis entrez le code à 6 chiffres ci-dessous.
+                    </p>
+                    <div className="font-mono text-[11px] text-[#facc15] bg-neutral-900 px-2.5 py-1 rounded-lg border border-neutral-800 inline-block">
+                      {secretKey}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Optional Direct 2FA Unlock */}
           <form onSubmit={handleTotpSubmit} className="space-y-4">

@@ -68,6 +68,7 @@ import {
   getClientIp,
   getTrustedIps,
   isAdminSessionActive,
+  isExplicitReadOnlyEmbed,
   isRunningInIframe,
   revokeAdminSession,
   saveUserSession,
@@ -159,6 +160,7 @@ export default function App() {
   const [siteActivityConfig, setSiteActivityConfig] = useState<SiteActivityConfig>(() => getLocalSiteActivityConfig());
   const [clientIp, setClientIp] = useState<string>('');
   const [serverClockOffsetMs, setServerClockOffsetMs] = useState<number>(0);
+  const [pauseAdminOverride, setPauseAdminOverride] = useState<boolean>(false);
   const [activityNowTick, setActivityNowTick] = useState<number>(() => Date.now());
 
   // Desktop Right Sidebar collapse/expand state with persistence
@@ -366,8 +368,9 @@ export default function App() {
       clientIp,
       trustedIps: getTrustedIps(),
       now: activityNowTick + serverClockOffsetMs,
+      adminOverride: pauseAdminOverride,
     });
-  }, [siteActivityConfig, isAdmin, isIframe, deviceType, clientIp, activityNowTick, serverClockOffsetMs]);
+  }, [siteActivityConfig, isAdmin, isIframe, deviceType, clientIp, activityNowTick, serverClockOffsetMs, pauseAdminOverride]);
 
   useEffect(() => {
     if (siteActivityEvaluation.autoResumedExpired) {
@@ -536,22 +539,23 @@ export default function App() {
 
   // Open Security Modal with custom title and optional callback upon unlock
   const handleOpenSecurityModal = useCallback((title: string = 'Accès Protégé', onGranted?: () => void) => {
-    if (isIframe) {
+    if (isExplicitReadOnlyEmbed()) {
       showToast('Cette action est désactivée en mode Iframe consultation.', 'warning');
       return;
     }
-    if (isAdmin) {
+    if (isAdmin && !siteActivityEvaluation.isBlocked) {
       if (onGranted) onGranted();
       return;
     }
     setSecurityModalTitle(title);
     setPendingAction(() => onGranted || null);
     setSecurityModalOpen(true);
-  }, [isAdmin, isIframe, showToast]);
+  }, [isAdmin, siteActivityEvaluation.isBlocked, showToast]);
 
   const handleSecuritySuccess = useCallback(() => {
     setIsAdmin(true);
     setHasAdminRole(true);
+    setPauseAdminOverride(true);
     try {
       localStorage.setItem('roadto2000_admin_role_v1', 'true');
     } catch {}
@@ -565,6 +569,7 @@ export default function App() {
   const handleLockAdmin = useCallback(() => {
     revokeAdminSession();
     setIsAdmin(false);
+    setPauseAdminOverride(false);
     if (currentTab === 'settings' || currentTab === 'tests' || currentTab === 'admin') {
       setCurrentTab('dashboard');
     }
@@ -886,6 +891,7 @@ export default function App() {
     clearUserSession();
     revokeAdminSession();
     setIsAdmin(false);
+    setPauseAdminOverride(false);
     setHasAdminRole(true);
     setUserSession(null);
     setCurrentTab('dashboard');
@@ -1030,6 +1036,12 @@ export default function App() {
           clientIp={clientIp}
           deviceType={deviceType}
           onOpenAdminUnlock={() => handleOpenSecurityModal('Déverrouillage Administrateur (Site en pause)')}
+          onAdminUnlocked={() => {
+            setIsAdmin(true);
+            setHasAdminRole(true);
+            setPauseAdminOverride(true);
+            showToast('Déverrouillage A2F réussi. Accès Administrateur accordé.', 'success', 'Accès Admin');
+          }}
           onRefreshStatus={() => refreshSiteActivity(true)}
         />
         <NotificationToast toasts={toasts} onDismiss={dismissToast} />
