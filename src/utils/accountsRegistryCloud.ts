@@ -269,10 +269,31 @@ export async function pushAccountsRegistryToJsonBin(): Promise<{
       headers['X-Access-Key'] = cfg.apiKey;
     }
 
+    // Read existing remote record first (Merge-Before-PUT) to preserve siteActivity, totpConfig, etc.
+    let remoteRecord: Record<string, any> = {};
+    try {
+      const latestRes = await fetch(`https://api.jsonbin.io/v3/b/${cfg.binId}/latest`, {
+        headers: cfg.apiKey
+          ? { 'X-Master-Key': cfg.apiKey, 'X-Access-Key': cfg.apiKey }
+          : {},
+      });
+      if (latestRes.ok) {
+        const latestBody = await latestRes.json();
+        if (latestBody && typeof latestBody === 'object') {
+          remoteRecord = latestBody.record || latestBody;
+        }
+      }
+    } catch {}
+
+    const mergedPayload = {
+      ...remoteRecord,
+      ...payload,
+    };
+
     const res = await fetch(`https://api.jsonbin.io/v3/b/${cfg.binId}`, {
       method: 'PUT',
       headers,
-      body: JSON.stringify(payload),
+      body: JSON.stringify(mergedPayload),
     });
 
     if (!res.ok) {

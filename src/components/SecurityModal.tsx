@@ -7,21 +7,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
-  Copy,
-  Eye,
-  EyeOff,
   KeyRound,
   Lock,
   QrCode,
-  RefreshCw,
-  ShieldAlert,
   ShieldCheck,
   Smartphone,
   Unlock,
   X,
 } from 'lucide-react';
 import {
-  generateNewTotpSecret,
+  fetchTotpConfigFromServer,
   generateQrCodeDataUrl,
   getTotpSecret,
   getTotpUri,
@@ -64,6 +59,9 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
   const [showQrVerifyInput, setShowQrVerifyInput] = useState<boolean>(false);
   const [qrRevealError, setQrRevealError] = useState<string>('');
 
+  // Live 30s TOTP countdown bar
+  const [secondsLeft, setSecondsLeft] = useState<number>(() => 30 - (Math.floor(Date.now() / 1000) % 30));
+
   // Live visual unlock animation
   const [unlockingState, setUnlockingState] = useState<{
     step: number;
@@ -71,13 +69,52 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
   } | null>(null);
 
   const unlockedRef = useRef(false);
+  const verifyingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Generate QR code for pairing when needed
+  // Reset modal state on open and reconcile TOTP secret from server
   useEffect(() => {
     if (!isOpen) return;
     let isMounted = true;
+
     unlockedRef.current = false;
+    verifyingRef.current = false;
+    setCode('');
+    setErrorMessage('');
+    setIsUnlocked(false);
+    setUnlockingState(null);
+    setIsVerifying(false);
+    setQrVerifyCode('');
+    setQrRevealError('');
+    setShowQrVerifyInput(false);
+
+    const localSec = getTotpSecret();
+    const enrolled = isTotpEnrolled();
+    setSecretKey(localSec);
+    setIsEnrolled(enrolled);
+    setShowPairingQr(!enrolled);
+
+    fetchTotpConfigFromServer().then((serverCfg) => {
+      if (isMounted && serverCfg) {
+        setSecretKey(serverCfg.secret);
+        setIsEnrolled(serverCfg.enrolled);
+        setShowPairingQr(!serverCfg.enrolled);
+      }
+    });
+
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 150);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen]);
+
+  // Generate QR code when secretKey changes or modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    let isMounted = true;
 
     async function loadQr() {
       const uri = getTotpUri('Romeo', 'RoadTo2000Elo', secretKey);
@@ -86,16 +123,19 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     }
 
     loadQr();
-
-    // Auto-focus code input
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 150);
-
     return () => {
       isMounted = false;
     };
   }, [isOpen, secretKey]);
+
+  // 1-second timer for live 30s TOTP period indicator
+  useEffect(() => {
+    if (!isOpen) return;
+    const interval = setInterval(() => {
+      setSecondsLeft(30 - (Math.floor(Date.now() / 1000) % 30));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isOpen]);
 
   // Complete unlock callback
   const completeUnlock = React.useCallback(() => {
@@ -107,12 +147,14 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     setTimeout(() => {
       onSuccess();
       onClose();
-    }, 1100);
+    }, 800);
   }, [onSuccess, onClose, onShowMessage]);
 
   // Verify the 6-digit TOTP code
   const handleVerify = async (e?: React.FormEvent, directCode?: string) => {
     if (e) e.preventDefault();
+    if (verifyingRef.current || unlockedRef.current || unlockingState) return;
+
     setErrorMessage('');
     const input = (directCode !== undefined ? directCode : code).trim().replace(/\D/g, '');
 
@@ -126,21 +168,20 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
       return;
     }
 
+    verifyingRef.current = true;
     setIsVerifying(true);
 
     try {
       const isValid = await verifyTotpCode(input, secretKey);
 
       if (isValid) {
-        // Confirm enrollment so QR code is permanently masked on future visits
         setTotpEnrolled(true);
         setIsEnrolled(true);
         setShowPairingQr(false);
 
-        // Visual unlock progress sequence
         setUnlockingState({
           step: 1,
-          message: 'Code Microsoft Authenticator validé !',
+          message: 'Code Authenticator validé !',
         });
 
         setTimeout(() => {
@@ -148,25 +189,28 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
             step: 2,
             message: 'Attribution des privilèges administrateur...',
           });
-        }, 450);
+        }, 350);
 
         setTimeout(() => {
           setUnlockingState({
             step: 3,
             message: 'Ouverture de votre session...',
           });
-        }, 850);
+        }, 700);
 
         setTimeout(() => {
           completeUnlock();
-        }, 1300);
+        }, 1050);
         return;
       }
 
-      setErrorMessage('Code incorrect ou expiré. Entrez les 6 chiffres affichés en ce moment dans votre application Authenticator.');
+      setErrorMessage(
+        'Code incorrect ou expiré. Vérifiez que vous lisez bien « RoadTo2000Elo (Romeo) » dans Authenticator.'
+      );
     } catch {
       setErrorMessage('Une erreur est survenue lors de la vérification.');
     } finally {
+      verifyingRef.current = false;
       setIsVerifying(false);
     }
   };
@@ -175,7 +219,6 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     const cleaned = e.target.value.replace(/\D/g, '').slice(0, 6);
     setCode(cleaned);
     setErrorMessage('');
-    // Auto-verify as soon as 6 digits are typed!
     if (cleaned.length === 6) {
       handleVerify(undefined, cleaned);
     }
@@ -208,22 +251,10 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     }
   };
 
-  // Regenerate a brand new unique private secret (invalidates any old phone)
-  const handleRegenerateSecret = async () => {
-    if (window.confirm('Voulez-vous générer une NOUVELLE clé secrète ? Vos anciens codes Authenticator cesseront immédiatement de fonctionner et vous devrez rescanner le QR code avec votre téléphone.')) {
-      const newSec = generateNewTotpSecret();
-      setSecretKey(newSec);
-      setIsEnrolled(false);
-      setShowPairingQr(true);
-      setCode('');
-      onShowMessage('Nouvelle clé secrète générée. Scannez le nouveau QR code avec votre téléphone.', 'info');
-    }
-  };
-
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xl p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-xl p-4 animate-in fade-in duration-200">
       <div className="relative w-full max-w-md rounded-3xl border border-white/[0.12] bg-[#0c1019]/95 p-6 sm:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.8)] backdrop-blur-2xl space-y-6">
         {/* Close Button */}
         <button
@@ -241,7 +272,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
           </div>
           <div>
             <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-              <span>Authentification 2FA Exclusive</span>
+              <span>Authentification 2FA Principale</span>
             </h3>
             <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
               Pour déverrouiller <strong className="text-[#facc15]">{actionTitle}</strong>, confirmez votre identité avec votre application Authenticator.
@@ -264,14 +295,12 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                 <CheckCircle2 className="h-3 w-3 text-emerald-400" />
                 <span>Code Microsoft / Google Authenticator Confirmé</span>
               </div>
-              <h4 className="text-sm font-bold text-white pt-1">
-                {unlockingState.message}
-              </h4>
+              <h4 className="text-sm font-bold text-white pt-1">{unlockingState.message}</h4>
             </div>
 
             <div className="h-2 w-full bg-neutral-950 rounded-full overflow-hidden border border-neutral-800 max-w-xs mx-auto">
               <div
-                className="h-full bg-gradient-to-r from-[#facc15] via-emerald-400 to-emerald-300 transition-all duration-500 ease-out"
+                className="h-full bg-gradient-to-r from-[#facc15] via-emerald-400 to-emerald-300 transition-all duration-300 ease-out"
                 style={{ width: `${(unlockingState.step / 3) * 100}%` }}
               />
             </div>
@@ -281,18 +310,17 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
           <div className="p-8 text-center space-y-3 bg-emerald-950/30 border border-emerald-600/50 rounded-2xl animate-in zoom-in-95">
             <CheckCircle2 className="h-12 w-12 text-emerald-400 mx-auto animate-bounce" />
             <h4 className="text-base font-bold text-emerald-300">Session Administrateur Active !</h4>
-            <p className="text-xs text-neutral-400">Application des droits d'administration en cours...</p>
+            <p className="text-xs text-neutral-400">Application des droits d&apos;administration en cours...</p>
           </div>
         ) : (
-          /* STATE 3: Primary 2FA Code Input (With Protected QR Code Pairing) */
+          /* STATE 3: Primary 2FA Code Input */
           <div className="space-y-5">
-            {/* PAIRING QR CODE SECTION (Only shown during setup or when explicitly unlocked by the owner) */}
             {showPairingQr ? (
               <div className="rounded-xl border border-[#facc15]/30 bg-neutral-950/90 p-4 space-y-3 animate-in fade-in">
                 <div className="flex items-center justify-between text-xs border-b border-neutral-800 pb-2">
                   <span className="font-bold text-[#facc15] flex items-center gap-1.5">
                     <QrCode className="h-4 w-4" />
-                    <span>Jumelage Initial (À scanner une seule fois)</span>
+                    <span>Jumelage Authenticator (A2F Principale)</span>
                   </span>
                   {isEnrolled && (
                     <button
@@ -300,7 +328,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                       onClick={() => setShowPairingQr(false)}
                       className="text-[11px] text-neutral-400 hover:text-white"
                     >
-                      Masquer le QR Code
+                      Masquer
                     </button>
                   )}
                 </div>
@@ -321,15 +349,12 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
 
                 <p className="text-[11px] text-neutral-300 text-center leading-relaxed">
                   Scannez ce QR Code dans <strong>Microsoft Authenticator</strong> ou <strong>Google Authenticator</strong>.
-                  <br />
-                  <span className="text-[#facc15] text-[10px]">
-                    Une fois jumelé, le QR Code sera masqué pour garantir que vous seul possédez les codes sur votre téléphone.
-                  </span>
                 </p>
 
-                {/* Secret Key in text for manual entry */}
                 <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-[11px] font-mono">
-                  <span className="text-neutral-400 truncate">Clé : <strong className="text-[#facc15]">{secretKey}</strong></span>
+                  <span className="text-neutral-400 truncate">
+                    Clé : <strong className="text-[#facc15]">{secretKey}</strong>
+                  </span>
                   <button
                     type="button"
                     onClick={() => {
@@ -340,38 +365,42 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                       }
                     }}
                     className="text-neutral-300 hover:text-white shrink-0 p-1 rounded"
-                    title="Copier la clé secrète"
                   >
                     {copiedSecret ? 'Copié !' : 'Copier'}
                   </button>
                 </div>
               </div>
-            ) : isEnrolled ? (
-              <div className="rounded-xl border border-neutral-800 bg-neutral-950/70 p-3.5 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <Smartphone className="h-4 w-4 text-[#facc15]" />
-                  <div>
-                    <span className="font-bold text-white block">Application Authenticator Configurée</span>
-                    <span className="text-[11px] text-neutral-400">Jumelé en toute sécurité à votre appareil mobile</span>
+            ) : (
+              <div className="rounded-xl border border-neutral-800 bg-neutral-950/70 p-3.5 flex items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Smartphone className="h-4 w-4 text-[#facc15] shrink-0" />
+                  <div className="min-w-0">
+                    <span className="font-bold text-white block truncate">RoadTo2000Elo (Romeo)</span>
+                    <span className="text-[11px] text-neutral-400 font-mono">
+                      Renouvellement dans {secondsLeft}s
+                    </span>
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowQrVerifyInput(true)}
-                  className="text-[11px] font-medium text-neutral-400 hover:text-white underline underline-offset-2"
+                  onClick={() => setShowQrVerifyInput((v) => !v)}
+                  className="text-[11px] font-medium text-neutral-400 hover:text-[#facc15] underline underline-offset-2 shrink-0"
                 >
-                  Afficher à nouveau le QR
+                  {showQrVerifyInput ? 'Fermer QR' : 'Afficher le QR'}
                 </button>
               </div>
-            ) : null}
+            )}
 
-            {/* 2FA CODE PROMPT TO REVEAL QR CODE */}
+            {/* SINGLE QR REVEAL PROMPT (when unlocked via current A2F code) */}
             {showQrVerifyInput && !showPairingQr && (
-              <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-4 space-y-3 animate-in fade-in">
+              <form
+                onSubmit={handleAuthorizeQrReveal}
+                className="rounded-xl border border-neutral-800 bg-neutral-950 p-3.5 space-y-2.5 animate-in fade-in"
+              >
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-white flex items-center gap-1.5">
                     <KeyRound className="h-3.5 w-3.5 text-[#facc15]" />
-                    <span>Entrez votre code A2F actuel pour réafficher le QR Code</span>
+                    <span>Entrez le code actuel pour révéler le QR</span>
                   </span>
                   <button
                     type="button"
@@ -382,40 +411,26 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                   </button>
                 </div>
 
-                <form onSubmit={handleAuthorizeQrReveal} className="space-y-2">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={6}
-                      value={qrVerifyCode}
-                      onChange={(e) => setQrVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      placeholder="Code A2F (6 chiffres)"
-                      className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-[#facc15] font-mono tracking-widest placeholder-neutral-500 focus:border-[#facc15] focus:outline-none"
-                    />
-                    <button
-                      type="submit"
-                      disabled={isAuthorizingQrReveal || qrVerifyCode.length !== 6}
-                      className="rounded-lg bg-[#facc15] hover:bg-[#eab308] text-black px-3 py-1.5 text-xs font-bold transition-all disabled:opacity-40"
-                    >
-                      {isAuthorizingQrReveal ? '...' : 'Révéler'}
-                    </button>
-                  </div>
-                  {qrRevealError && (
-                    <p className="text-[10px] text-rose-400 font-medium">{qrRevealError}</p>
-                  )}
-                </form>
-              </div>
-            )}
-            {/* MASKED PAIRING STATE: Informative Privacy Banner */}
-            {!showPairingQr && isEnrolled && (
-              <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 text-xs">
-                <div className="flex items-center gap-2 text-emerald-300">
-                  <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400" />
-                  <span className="font-semibold text-[11px]">Votre téléphone est jumelé et sécurisé</span>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={qrVerifyCode}
+                    onChange={(e) => setQrVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="Code A2F (6 chiffres)"
+                    className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-[#facc15] font-mono tracking-widest placeholder-neutral-500 focus:border-[#facc15] focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isAuthorizingQrReveal || qrVerifyCode.length !== 6}
+                    className="rounded-lg bg-[#facc15] hover:bg-[#eab308] text-black px-3 py-1.5 text-xs font-bold transition-all disabled:opacity-40"
+                  >
+                    {isAuthorizingQrReveal ? '...' : 'Révéler'}
+                  </button>
                 </div>
-                <span className="text-[10px] text-neutral-400 font-mono">QR Code masqué</span>
-              </div>
+                {qrRevealError && <p className="text-[10px] text-[#ef4444] font-medium">{qrRevealError}</p>}
+              </form>
             )}
 
             {/* 6-DIGIT CODE INPUT FORM */}
@@ -423,12 +438,17 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-semibold text-neutral-200">
-                    Code à 6 chiffres Microsoft / Google Authenticator
+                    Code à 6 chiffres Authenticator
                   </label>
-                  <span className="text-[10px] text-[#facc15] font-medium flex items-center gap-1">
-                    <Smartphone className="h-3 w-3" />
-                    <span>Sur votre smartphone</span>
-                  </span>
+                  <span className="text-[10px] font-mono text-neutral-400">{secondsLeft}s restantes</span>
+                </div>
+
+                {/* Live 30s indicator progress line */}
+                <div className="h-1 w-full bg-neutral-900 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-[#facc15]/70 transition-all duration-1000 ease-linear"
+                    style={{ width: `${(secondsLeft / 30) * 100}%` }}
+                  />
                 </div>
 
                 <div className="relative pt-1">
@@ -436,6 +456,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                     ref={inputRef}
                     type="text"
                     inputMode="numeric"
+                    autoComplete="one-time-code"
                     maxLength={6}
                     value={code}
                     onChange={handleCodeChange}
@@ -458,7 +479,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
 
               <div className="flex items-center justify-between gap-3 pt-1">
                 <span className="text-[10px] text-neutral-400 italic">
-                  Validation instantanée dès les 6 chiffres saisis
+                  Validation automatique dès 6 chiffres
                 </span>
 
                 <div className="flex items-center gap-2">
@@ -480,63 +501,6 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                 </div>
               </div>
             </form>
-
-            {/* RE-PAIRING / PRIVACY OPTIONS */}
-            {!showPairingQr && (
-              <div className="pt-2 border-t border-neutral-800 text-center space-y-2">
-                {!showQrVerifyInput ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowQrVerifyInput(true)}
-                    className="text-[11px] text-neutral-400 hover:text-[#facc15] underline transition-colors"
-                  >
-                    Changer de smartphone / Afficher le QR Code de jumelage
-                  </button>
-                ) : (
-                  <form onSubmit={handleAuthorizeQrReveal} className="p-3 rounded-xl bg-neutral-950 border border-neutral-800 space-y-2.5 text-left animate-in fade-in">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-semibold text-neutral-300">
-                        Entrez votre code A2F à 6 chiffres pour révéler le QR Code
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowQrVerifyInput(false)}
-                        className="text-[10px] text-neutral-500 hover:text-neutral-300"
-                      >
-                        Fermer
-                      </button>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        value={qrVerifyCode}
-                        onChange={(e) => setQrVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        placeholder="Code A2F (6 chiffres)"
-                        className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-[#facc15] font-mono tracking-widest placeholder-neutral-500 focus:border-[#facc15] focus:outline-none"
-                      />
-                      <button
-                        type="submit"
-                        disabled={isAuthorizingQrReveal || qrVerifyCode.length !== 6}
-                        className="rounded-lg bg-[#facc15] hover:bg-[#eab308] text-black px-3 py-1.5 text-xs font-bold transition-all disabled:opacity-40"
-                      >
-                        {isAuthorizingQrReveal ? '...' : 'Révéler'}
-                      </button>
-                    </div>
-
-                    {qrRevealError && (
-                      <p className="text-[10px] text-rose-400 font-medium">{qrRevealError}</p>
-                    )}
-
-                    <div className="pt-1 flex items-center justify-between text-[10px]">
-                      <span className="text-neutral-500">Sécurité anti-espionnage A2F</span>
-                    </div>
-                  </form>
-                )}
-              </div>
-            )}
           </div>
         )}
       </div>

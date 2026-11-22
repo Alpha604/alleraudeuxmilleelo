@@ -40,13 +40,21 @@ import {
 import {
   AccountStatus,
   addTrustedIp,
+  DEFAULT_TOTP_SECRET,
   deleteManagedAccount,
+  generateNewTotpSecret,
+  generateQrCodeDataUrl,
   getClientIp,
   getPublicAuthorizedAccounts,
+  getTotpSecret,
+  getTotpUri,
   getTrustedIps,
   isTotpEnrolled,
   removeTrustedIp,
+  resetTotpToDefaultSecret,
   setAccountStatus,
+  setTotpEnrolled,
+  syncTotpSecretToServer,
 } from '../utils/security';
 import {
   buildInitialJsonBinPayload,
@@ -118,6 +126,11 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<'all' | AccountStatus>('all');
   const [selectedUser, setSelectedUser] = useState<string>(currentUsername);
   const [confirmDeleteUser, setConfirmDeleteUser] = useState<string | null>(null);
+  const [showInline2FaQr, setShowInline2FaQr] = useState(false);
+  const [inline2FaSecret, setInline2FaSecret] = useState<string>(() => getTotpSecret());
+  const [inline2FaQrUrl, setInline2FaQrUrl] = useState<string>('');
+  const [copiedInlineSecret, setCopiedInlineSecret] = useState(false);
+  const [confirmRegenerateSecret, setConfirmRegenerateSecret] = useState(false);
   const [revealedBins, setRevealedBins] = useState<Record<string, boolean>>({});
   const [copiedBinUser, setCopiedBinUser] = useState<string | null>(null);
 
@@ -1039,18 +1052,28 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             </div>
 
             <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed">
-              Une seule clé TOTP Authenticator sécurise l'accès à tous les comptes et au Panel Admin. Aucun mot de passe maître ne permet de contourner le code à 6 chiffres.
+              Une seule clé TOTP Authenticator (Google / Microsoft Authenticator) sécurise le Panel Admin et le déverrouillage d'urgence. Aucun mot de passe maître ne contourne ce code.
             </p>
 
-            <div className="flex flex-wrap items-center gap-2.5 pt-2">
+            <div className="flex flex-wrap items-center gap-2.5 pt-1">
               <button
                 type="button"
-                onClick={() => onOpenSecurityModal('Gestion Authenticator 2FA')}
+                onClick={async () => {
+                  const next = !showInline2FaQr;
+                  setShowInline2FaQr(next);
+                  if (next) {
+                    const current = getTotpSecret();
+                    setInline2FaSecret(current);
+                    const url = await generateQrCodeDataUrl(getTotpUri('Romeo', 'RoadTo2000Elo', current));
+                    setInline2FaQrUrl(url);
+                  }
+                }}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold transition-colors"
               >
                 <QrCode className="h-3.5 w-3.5 text-[#facc15]" />
-                <span>Afficher QR / Changer de téléphone</span>
+                <span>{showInline2FaQr ? 'Masquer QR & Clé A2F' : 'Afficher QR / Clé secrète A2F'}</span>
               </button>
+
               <button
                 type="button"
                 onClick={onLockAdmin}
@@ -1060,6 +1083,98 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 <span>Verrouiller Session Admin</span>
               </button>
             </div>
+
+            {showInline2FaQr && (
+              <div className="p-4 rounded-xl border border-neutral-800 bg-neutral-950/90 space-y-3 text-xs">
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                  {inline2FaQrUrl && (
+                    <div className="p-2 bg-white rounded-xl border-2 border-[#facc15] shrink-0">
+                      <img src={inline2FaQrUrl} alt="QR Code A2F" className="h-36 w-36" />
+                    </div>
+                  )}
+                  <div className="space-y-2 flex-1 min-w-0 text-center sm:text-left">
+                    <div className="font-bold text-white">Compte : RoadTo2000Elo (Romeo)</div>
+                    <p className="text-[11px] text-neutral-400">
+                      Scannez ce QR Code dans votre application Authenticator pour associer un nouveau téléphone.
+                    </p>
+                    <div className="flex items-center gap-2 justify-center sm:justify-start">
+                      <code className="px-2.5 py-1 rounded-lg bg-[#0b0e14] border border-neutral-800 font-mono text-[#facc15] tracking-wider select-all">
+                        {inline2FaSecret}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(inline2FaSecret);
+                          setCopiedInlineSecret(true);
+                          setTimeout(() => setCopiedInlineSecret(false), 2000);
+                        }}
+                        className="px-2.5 py-1 rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-200 hover:text-white inline-flex items-center gap-1"
+                      >
+                        {copiedInlineSecret ? <Check className="h-3 w-3 text-[#10b981]" /> : <Copy className="h-3 w-3" />}
+                        <span>{copiedInlineSecret ? 'Copié' : 'Copier'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-neutral-800/80 flex flex-wrap items-center gap-2">
+                  {inline2FaSecret !== DEFAULT_TOTP_SECRET && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const def = resetTotpToDefaultSecret();
+                        setTotpEnrolled(true);
+                        await syncTotpSecretToServer(def, true);
+                        setInline2FaSecret(def);
+                        const url = await generateQrCodeDataUrl(getTotpUri('Romeo', 'RoadTo2000Elo', def));
+                        setInline2FaQrUrl(url);
+                        onShowMessage('Clé A2F restaurée sur la clé par défaut et synchronisée sur le serveur.', 'success', 'A2F Synchronisée');
+                      }}
+                      className="px-3 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-300 font-semibold hover:bg-amber-500/20"
+                    >
+                      Restaurer clé par défaut
+                    </button>
+                  )}
+
+                  {!confirmRegenerateSecret ? (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmRegenerateSecret(true)}
+                      className="px-3 py-1.5 rounded-lg border border-[#ef4444]/40 bg-[#ef4444]/10 text-[#ef4444] font-semibold hover:bg-[#ef4444]/20"
+                    >
+                      Générer une nouvelle clé A2F
+                    </button>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[#ef4444] font-semibold">Confirmer ? L’ancienne clé ne fonctionnera plus :</span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const fresh = generateNewTotpSecret();
+                          setTotpEnrolled(true);
+                          await syncTotpSecretToServer(fresh, true);
+                          setInline2FaSecret(fresh);
+                          const url = await generateQrCodeDataUrl(getTotpUri('Romeo', 'RoadTo2000Elo', fresh));
+                          setInline2FaQrUrl(url);
+                          setConfirmRegenerateSecret(false);
+                          onShowMessage('Nouvelle clé A2F générée et synchronisée. Scannez le nouveau QR code !', 'warning', 'Nouvelle Clé A2F');
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-[#ef4444] text-white font-bold"
+                      >
+                        Oui, régénérer
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmRegenerateSecret(false)}
+                        className="px-2.5 py-1 rounded-lg border border-neutral-700 text-neutral-300"
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </section>
 
           {/* Trusted IPs Management */}

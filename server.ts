@@ -407,6 +407,50 @@ function generateSessionValidationCode(sessionId: string): string {
   });
 
 const DEFAULT_TOTP_SECRET = 'JBSWY3DPEHPK3PXP';
+const TOTP_CONFIG_FILE = path.resolve(
+  fs.existsSync(path.resolve(__dirname, 'data')) ? path.resolve(__dirname, 'data') : os.tmpdir(),
+  'roadto2000_totp_config.json'
+);
+
+interface ServerTotpConfig {
+  secret: string;
+  enrolled: boolean;
+  isCustom: boolean;
+  updatedAt: number;
+}
+
+function loadServerTotpConfig(): ServerTotpConfig {
+  try {
+    if (fs.existsSync(TOTP_CONFIG_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(TOTP_CONFIG_FILE, 'utf-8'));
+      const cleanSec = typeof parsed?.secret === 'string'
+        ? parsed.secret.trim().toUpperCase().replace(/[^A-Z2-7]/g, '')
+        : '';
+      if (cleanSec.length >= 16) {
+        return {
+          secret: cleanSec,
+          enrolled: parsed.enrolled !== false,
+          isCustom: Boolean(parsed.isCustom) && cleanSec !== DEFAULT_TOTP_SECRET,
+          updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now(),
+        };
+      }
+    }
+  } catch {}
+  return {
+    secret: DEFAULT_TOTP_SECRET,
+    enrolled: true,
+    isCustom: false,
+    updatedAt: 0,
+  };
+}
+
+function saveServerTotpConfig(cfg: ServerTotpConfig): void {
+  try {
+    fs.writeFileSync(TOTP_CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('[RoadTo2000] Failed to save TOTP config:', err);
+  }
+}
 
 function base32ToBuffer(base32: string): Buffer {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -426,13 +470,14 @@ function base32ToBuffer(base32: string): Buffer {
   return Buffer.from(output);
 }
 
-function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): boolean {
+function verifyServerTotpCode(candidate: string, secret?: string): boolean {
   const clean = candidate.trim().replace(/\D/g, '');
   if (clean.length !== 6) return false;
-  const keyBuffer = base32ToBuffer(secret);
+  const activeSecret = secret || loadServerTotpConfig().secret || DEFAULT_TOTP_SECRET;
+  const keyBuffer = base32ToBuffer(activeSecret);
   const now = Date.now();
 
-  for (const offset of [0, -30000, 30000]) {
+  for (const offset of [0, -30000, 30000, -60000, 60000, -90000, 90000]) {
     const epoch = Math.floor((now + offset) / 1000);
     const timeStep = Math.floor(epoch / 30);
     const timeBuffer = Buffer.alloc(8);
@@ -450,6 +495,70 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
   }
   return false;
 }
+
+  // 6a. Server TOTP Configuration, Verification & Sync Endpoints
+  app.get('/api/auth/totp/config', (_req: Request, res: Response) => {
+    const cfg = loadServerTotpConfig();
+    res.json({
+      success: true,
+      secret: cfg.secret,
+      enrolled: cfg.enrolled,
+      isCustom: cfg.isCustom,
+      serverTime: Date.now(),
+    });
+  });
+
+  app.post('/api/auth/totp/sync', (req: Request, res: Response) => {
+    const { secret, enrolled } = req.body || {};
+    const cleanSec = typeof secret === 'string'
+      ? secret.trim().toUpperCase().replace(/[^A-Z2-7]/g, '')
+      : DEFAULT_TOTP_SECRET;
+
+    if (cleanSec.length < 16) {
+      res.status(400).json({ success: false, error: 'Secret Base32 invalide' });
+      return;
+    }
+
+    const next: ServerTotpConfig = {
+      secret: cleanSec,
+      enrolled: enrolled !== false,
+      isCustom: cleanSec !== DEFAULT_TOTP_SECRET,
+      updatedAt: Date.now(),
+    };
+    saveServerTotpConfig(next);
+    res.json({ success: true, ...next });
+  });
+
+  app.post('/api/auth/totp/verify', (req: Request, res: Response) => {
+    const { code, secret: clientSecret } = req.body || {};
+    const cleanCode = String(code || '').trim().replace(/\D/g, '');
+    if (cleanCode.length !== 6) {
+      res.json({ valid: false, error: 'Code à 6 chiffres requis' });
+      return;
+    }
+
+    const cfg = loadServerTotpConfig();
+    if (verifyServerTotpCode(cleanCode, cfg.secret)) {
+      res.json({ valid: true, activeSecret: cfg.secret, serverTime: Date.now() });
+      return;
+    }
+
+    // Also allow clientSecret match or default secret if no custom secret has locked out default
+    const cleanClient = typeof clientSecret === 'string'
+      ? clientSecret.trim().toUpperCase().replace(/[^A-Z2-7]/g, '')
+      : '';
+    if (cleanClient.length >= 16 && verifyServerTotpCode(cleanCode, cleanClient)) {
+      res.json({ valid: true, activeSecret: cleanClient, serverTime: Date.now() });
+      return;
+    }
+
+    if (!cfg.isCustom && verifyServerTotpCode(cleanCode, DEFAULT_TOTP_SECRET)) {
+      res.json({ valid: true, activeSecret: DEFAULT_TOTP_SECRET, serverTime: Date.now() });
+      return;
+    }
+
+    res.json({ valid: false, serverTime: Date.now() });
+  });
 
   // 6b. Verify 6-digit activation code or TOTP code submitted from desktop or phone
   app.post('/api/auth/session/verify-code', (req: Request, res: Response) => {
@@ -1717,8 +1826,23 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
     }
   });
 
-  // 8e. Site Activity & Maintenance/Pause Control Persistence
+  // 8e. Site Activity & Maintenance/Pause Control Persistence (Disk + Global JSONBin Cloud Sync)
   const SITE_ACTIVITY_FILE = path.resolve(storageDir, 'roadto2000_site_activity.json');
+  let lastCloudActivityPullAt = 0;
+  let lastCloudActivitySynced = false;
+
+  function getRegistryBinCreds() {
+    let binId = DEFAULT_REG_BIN_ID;
+    let apiKey = DEFAULT_REG_API_KEY;
+    if (fs.existsSync(ACCOUNTS_REGISTRY_CONFIG_FILE)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(ACCOUNTS_REGISTRY_CONFIG_FILE, 'utf-8'));
+        if (typeof parsed?.binId === 'string' && parsed.binId.trim()) binId = parsed.binId.trim();
+        if (typeof parsed?.apiKey === 'string' && parsed.apiKey.trim()) apiKey = parsed.apiKey.trim();
+      } catch {}
+    }
+    return { binId, apiKey };
+  }
 
   function getDefaultSiteActivityServer() {
     return {
@@ -1747,9 +1871,37 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
         exemptTrustedAdminIps: true,
       },
       allowAdminBypass: true,
+      revision: 0,
       updatedAt: 0,
       updatedBy: 'alpharomeo1500',
     };
+  }
+
+  function normalizeSiteActivityServer(raw: any) {
+    const def = getDefaultSiteActivityServer();
+    if (!raw || typeof raw !== 'object') return def;
+    return {
+      ...def,
+      ...raw,
+      devices: {
+        ...def.devices,
+        ...(raw.devices || {}),
+      },
+      ipPolicy: {
+        ...def.ipPolicy,
+        ...(raw.ipPolicy || {}),
+        ips: Array.isArray(raw.ipPolicy?.ips) ? raw.ipPolicy.ips : def.ipPolicy.ips,
+      },
+      revision: typeof raw.revision === 'number' && Number.isFinite(raw.revision) ? raw.revision : 0,
+      updatedAt: typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt) ? raw.updatedAt : 0,
+    };
+  }
+
+  function isNewerSiteActivity(a: any, b: any): boolean {
+    if ((a?.revision || 0) !== (b?.revision || 0)) {
+      return (a?.revision || 0) > (b?.revision || 0);
+    }
+    return (a?.updatedAt || 0) > (b?.updatedAt || 0);
   }
 
   function loadSiteActivityServer() {
@@ -1757,7 +1909,7 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
     if (fs.existsSync(SITE_ACTIVITY_FILE)) {
       try {
         const parsed = JSON.parse(fs.readFileSync(SITE_ACTIVITY_FILE, 'utf-8'));
-        const merged = { ...def, ...parsed };
+        const merged = normalizeSiteActivityServer(parsed);
         if (
           merged.enabled &&
           merged.autoResume &&
@@ -1766,6 +1918,7 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
           Date.now() >= merged.resumeAtTimestamp
         ) {
           merged.enabled = false;
+          merged.revision = (merged.revision || 0) + 1;
           merged.updatedAt = Date.now();
           fs.writeFileSync(SITE_ACTIVITY_FILE, JSON.stringify(merged, null, 2), 'utf-8');
         }
@@ -1775,36 +1928,147 @@ function verifyServerTotpCode(candidate: string, secret = DEFAULT_TOTP_SECRET): 
     return def;
   }
 
-  app.get('/api/site-activity', (req: Request, res: Response) => {
-    const config = loadSiteActivityServer();
+  async function pullSiteActivityFromCloud(force = false) {
+    const now = Date.now();
+    if (!force && now - lastCloudActivityPullAt < 5000) {
+      return { config: loadSiteActivityServer(), cloudSynced: lastCloudActivitySynced };
+    }
+
+    const localCfg = loadSiteActivityServer();
+    const { binId, apiKey } = getRegistryBinCreds();
+    if (!binId) return { config: localCfg, cloudSynced: false };
+
+    try {
+      const headers: Record<string, string> = {};
+      if (apiKey) {
+        headers['X-Master-Key'] = apiKey;
+        headers['X-Access-Key'] = apiKey;
+      }
+      const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, { headers });
+      if (res.ok) {
+        lastCloudActivityPullAt = Date.now();
+        lastCloudActivitySynced = true;
+        const body = await res.json();
+        const remoteRecord = body?.record || body;
+        if (remoteRecord?.siteActivity && typeof remoteRecord.siteActivity === 'object') {
+          const remoteCfg = normalizeSiteActivityServer(remoteRecord.siteActivity);
+
+          // Auto-resume expired remote config cleanly
+          if (
+            remoteCfg.enabled &&
+            remoteCfg.autoResume &&
+            typeof remoteCfg.resumeAtTimestamp === 'number' &&
+            remoteCfg.resumeAtTimestamp > 0 &&
+            Date.now() >= remoteCfg.resumeAtTimestamp
+          ) {
+            remoteCfg.enabled = false;
+            remoteCfg.revision = (remoteCfg.revision || 0) + 1;
+            remoteCfg.updatedAt = Date.now();
+          }
+
+          if (isNewerSiteActivity(remoteCfg, localCfg)) {
+            fs.writeFileSync(SITE_ACTIVITY_FILE, JSON.stringify(remoteCfg, null, 2), 'utf-8');
+            return { config: remoteCfg, cloudSynced: true };
+          }
+          if (isNewerSiteActivity(localCfg, remoteCfg) && localCfg.updatedAt > 0) {
+            // Local change is strictly newer (e.g. saved right before), sync it back to cloud
+            await pushSiteActivityToCloud(localCfg);
+            return { config: localCfg, cloudSynced: true };
+          }
+          return { config: localCfg.updatedAt >= remoteCfg.updatedAt ? localCfg : remoteCfg, cloudSynced: true };
+        }
+        return { config: localCfg, cloudSynced: true };
+      }
+    } catch (err: any) {
+      console.warn('[RoadTo2000] Cloud SiteActivity pull warning:', err?.message);
+    }
+    return { config: localCfg, cloudSynced: lastCloudActivitySynced };
+  }
+
+  async function pushSiteActivityToCloud(config: any): Promise<{ cloudSynced: boolean; cloudError?: string }> {
+    const { binId, apiKey } = getRegistryBinCreds();
+    if (!binId) return { cloudSynced: false, cloudError: 'Bin ID absent' };
+
+    try {
+      const readHeaders: Record<string, string> = {};
+      if (apiKey) {
+        readHeaders['X-Master-Key'] = apiKey;
+        readHeaders['X-Access-Key'] = apiKey;
+      }
+
+      // CRITICAL: Merge-Before-PUT so we NEVER overwrite accounts or existing fields in 6af9f1d7ffd5d16053c38f30!
+      let remoteRecord: Record<string, any> = {};
+      const latestRes = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, { headers: readHeaders });
+      if (latestRes.ok) {
+        const latestBody = await latestRes.json();
+        if (latestBody && typeof latestBody === 'object') {
+          remoteRecord = latestBody.record || latestBody;
+        }
+      }
+
+      const mergedPayload = {
+        ...remoteRecord,
+        siteActivity: config,
+      };
+
+      const putHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...readHeaders,
+      };
+      const putRes = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+        method: 'PUT',
+        headers: putHeaders,
+        body: JSON.stringify(mergedPayload),
+      });
+
+      if (!putRes.ok) {
+        const errText = await putRes.text().catch(() => '');
+        lastCloudActivitySynced = false;
+        return { cloudSynced: false, cloudError: `JSONBin HTTP ${putRes.status}: ${errText.slice(0, 80)}` };
+      }
+
+      lastCloudActivityPullAt = Date.now();
+      lastCloudActivitySynced = true;
+      return { cloudSynced: true };
+    } catch (err: any) {
+      lastCloudActivitySynced = false;
+      return { cloudSynced: false, cloudError: err?.message || 'Erreur réseau JSONBin' };
+    }
+  }
+
+  app.get('/api/site-activity', async (req: Request, res: Response) => {
+    const force = req.query.force === '1' || req.query.force === 'true';
+    const { config, cloudSynced } = await pullSiteActivityFromCloud(force);
     res.json({
       success: true,
       config,
+      cloudSynced,
       clientIp: extractClientIp(req),
       serverTime: Date.now(),
     });
   });
 
-  app.post('/api/site-activity', (req: Request, res: Response) => {
+  app.post('/api/site-activity', async (req: Request, res: Response) => {
     try {
-      const def = getDefaultSiteActivityServer();
+      const current = loadSiteActivityServer();
       const incoming = req.body && typeof req.body === 'object' ? req.body : {};
-      const next = {
-        ...def,
+      const next = normalizeSiteActivityServer({
+        ...current,
         ...incoming,
-        devices: {
-          ...def.devices,
-          ...(incoming.devices || {}),
-        },
-        ipPolicy: {
-          ...def.ipPolicy,
-          ...(incoming.ipPolicy || {}),
-          ips: Array.isArray(incoming.ipPolicy?.ips) ? incoming.ipPolicy.ips : def.ipPolicy.ips,
-        },
+        revision: Math.max(current.revision || 0, typeof incoming.revision === 'number' ? incoming.revision : 0) + 1,
         updatedAt: Date.now(),
-      };
+      });
+
       fs.writeFileSync(SITE_ACTIVITY_FILE, JSON.stringify(next, null, 2), 'utf-8');
-      res.json({ success: true, config: next });
+      const cloudRes = await pushSiteActivityToCloud(next);
+
+      res.json({
+        success: true,
+        config: next,
+        cloudSynced: cloudRes.cloudSynced,
+        cloudError: cloudRes.cloudError || null,
+        serverTime: Date.now(),
+      });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Failed to save site activity config' });
     }

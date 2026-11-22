@@ -42,6 +42,7 @@ export interface SiteActivityConfig {
     exemptTrustedAdminIps: boolean;
   };
   allowAdminBypass: boolean;
+  revision: number;
   updatedAt: number;
   updatedBy: string;
 }
@@ -125,6 +126,8 @@ export const SITE_PAUSE_MODE_META: Record<
 };
 
 const SITE_ACTIVITY_STORAGE_KEY = 'roadto2000_site_activity_v1';
+const GLOBAL_CLOUD_BIN_ID = '6af9f1d7ffd5d16053c38f30';
+const GLOBAL_CLOUD_API_KEY = '$2a$10$nOO6WNU996CcWwBht/K8MuDshQsOPktO28uEy.WTBESmEHAsRjcZy';
 
 export function getDefaultSiteActivityConfig(): SiteActivityConfig {
   return {
@@ -153,6 +156,7 @@ export function getDefaultSiteActivityConfig(): SiteActivityConfig {
       exemptTrustedAdminIps: true,
     },
     allowAdminBypass: true,
+    revision: 0,
     updatedAt: 0,
     updatedBy: 'alpharomeo1500',
   };
@@ -239,7 +243,8 @@ export function normalizeSiteActivityConfig(
       exemptTrustedAdminIps: raw.ipPolicy?.exemptTrustedAdminIps !== false,
     },
     allowAdminBypass: raw.allowAdminBypass !== false,
-    updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : Date.now(),
+    revision: typeof raw.revision === 'number' && Number.isFinite(raw.revision) ? raw.revision : 0,
+    updatedAt: typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt) ? raw.updatedAt : 0,
     updatedBy: typeof raw.updatedBy === 'string' ? raw.updatedBy : 'alpharomeo1500',
   };
 }
@@ -248,14 +253,23 @@ export function detectDeviceCategory(): DeviceCategory {
   if (typeof navigator === 'undefined') return 'desktop';
   const ua = (navigator.userAgent || '').toLowerCase();
   const width = typeof window !== 'undefined' ? window.innerWidth : 1280;
+  const maxTouch = typeof navigator.maxTouchPoints === 'number' ? navigator.maxTouchPoints : 0;
 
-  if (/ipad|tablet|playbook|silk|(android(?!.*mobi))/i.test(ua)) {
+  // Modern iPads identify as Macintosh + maxTouchPoints > 1
+  if (
+    /ipad|tablet|playbook|silk|(android(?!.*mobi))/i.test(ua) ||
+    (/macintosh/i.test(ua) && maxTouch > 1)
+  ) {
     return 'tablet';
   }
   if (/mobi|iphone|ipod|android|blackberry|iemobile|opera mini/i.test(ua) || width < 640) {
     return 'mobile';
   }
-  if (width >= 640 && width < 1024 && 'ontouchstart' in (typeof window !== 'undefined' ? window : {})) {
+  if (
+    width >= 640 &&
+    width < 1024 &&
+    (maxTouch > 0 || 'ontouchstart' in (typeof window !== 'undefined' ? window : {}))
+  ) {
     return 'tablet';
   }
   return 'desktop';
@@ -421,13 +435,118 @@ export function setLocalSiteActivityConfig(config: SiteActivityConfig): void {
   } catch {}
 }
 
-export async function fetchSiteActivity(): Promise<{
+function getRegistryCreds() {
+  try {
+    const binId =
+      (typeof window !== 'undefined' &&
+        window.localStorage?.getItem('roadto2000_accounts_registry_binid')?.trim()) ||
+      GLOBAL_CLOUD_BIN_ID;
+    const apiKey =
+      (typeof window !== 'undefined' &&
+        window.localStorage?.getItem('roadto2000_accounts_registry_apikey')?.trim()) ||
+      GLOBAL_CLOUD_API_KEY;
+    return { binId, apiKey };
+  } catch {
+    return { binId: GLOBAL_CLOUD_BIN_ID, apiKey: GLOBAL_CLOUD_API_KEY };
+  }
+}
+
+async function pullSiteActivityFromCloudDirect(): Promise<SiteActivityConfig | null> {
+  const { binId, apiKey } = getRegistryCreds();
+  if (!binId || typeof fetch === 'undefined') return null;
+
+  try {
+    const headers: Record<string, string> = {};
+    if (apiKey) {
+      headers['X-Master-Key'] = apiKey;
+      headers['X-Access-Key'] = apiKey;
+    }
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+      headers,
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    const record = body?.record || body;
+    if (record?.siteActivity && typeof record.siteActivity === 'object') {
+      return normalizeSiteActivityConfig(record.siteActivity);
+    }
+  } catch {}
+  return null;
+}
+
+async function pushSiteActivityToCloudDirect(
+  config: SiteActivityConfig
+): Promise<{ success: boolean; error?: string }> {
+  const { binId, apiKey } = getRegistryCreds();
+  if (!binId || typeof fetch === 'undefined') {
+    return { success: false, error: 'Bin Cloud non configuré' };
+  }
+
+  try {
+    const readHeaders: Record<string, string> = {};
+    if (apiKey) {
+      readHeaders['X-Master-Key'] = apiKey;
+      readHeaders['X-Access-Key'] = apiKey;
+    }
+
+    let remoteRecord: Record<string, any> = {};
+    const latestRes = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+      headers: readHeaders,
+      cache: 'no-store',
+    });
+    if (latestRes.ok) {
+      const latestBody = await latestRes.json();
+      if (latestBody && typeof latestBody === 'object') {
+        remoteRecord = latestBody.record || latestBody;
+      }
+    }
+
+    const mergedPayload = {
+      ...remoteRecord,
+      siteActivity: config,
+    };
+
+    const putHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...readHeaders,
+    };
+
+    const putRes = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+      method: 'PUT',
+      headers: putHeaders,
+      body: JSON.stringify(mergedPayload),
+    });
+
+    if (!putRes.ok) {
+      const errText = await putRes.text().catch(() => '');
+      return { success: false, error: `JSONBin HTTP ${putRes.status}: ${errText.slice(0, 80)}` };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Erreur réseau JSONBin' };
+  }
+}
+
+export function isConfigNewer(a: SiteActivityConfig, b: SiteActivityConfig): boolean {
+  if ((a.revision || 0) !== (b.revision || 0)) {
+    return (a.revision || 0) > (b.revision || 0);
+  }
+  return (a.updatedAt || 0) > (b.updatedAt || 0);
+}
+
+export async function fetchSiteActivity(forceCloud = false): Promise<{
   config: SiteActivityConfig;
   clientIp: string;
+  serverTime?: number;
+  cloudSynced: boolean;
 }> {
   const localConfig = getLocalSiteActivityConfig();
+
+  // 1. Primary path: Express backend (which reconciles local disk + JSONBin cloud cache)
   try {
-    const res = await fetch('/api/site-activity', {
+    const query = forceCloud ? '?force=1' : '';
+    const res = await fetch(`/api/site-activity${query}`, {
       headers: { Accept: 'application/json' },
       cache: 'no-store',
     });
@@ -437,34 +556,51 @@ export async function fetchSiteActivity(): Promise<{
         const data = await res.json();
         if (data?.config) {
           const normalized = normalizeSiteActivityConfig(data.config);
-          // Compare updatedAt so a newer local change isn't lost if server wasn't reachable briefly
-          const finalConfig =
-            localConfig.updatedAt > normalized.updatedAt ? localConfig : normalized;
-          setLocalSiteActivityConfig(finalConfig);
+          // Server/Cloud is strictly authoritative across devices so no stale local cache can override a pause
+          setLocalSiteActivityConfig(normalized);
           return {
-            config: finalConfig,
+            config: normalized,
             clientIp: typeof data.clientIp === 'string' ? data.clientIp : '',
+            serverTime: typeof data.serverTime === 'number' ? data.serverTime : undefined,
+            cloudSynced: Boolean(data.cloudSynced),
           };
         }
       }
     }
   } catch {}
 
+  // 2. Standalone / Shared-Static Fallback: fetch directly from JSONBin
+  const cloudCfg = await pullSiteActivityFromCloudDirect();
+  if (cloudCfg) {
+    setLocalSiteActivityConfig(cloudCfg);
+    return {
+      config: cloudCfg,
+      clientIp: '',
+      cloudSynced: true,
+    };
+  }
+
   return {
     config: localConfig,
     clientIp: '',
+    cloudSynced: false,
   };
 }
 
 export async function saveSiteActivity(
   config: SiteActivityConfig
-): Promise<{ success: boolean; config: SiteActivityConfig }> {
+): Promise<{ success: boolean; config: SiteActivityConfig; cloudSynced: boolean; error?: string }> {
+  const prevLocal = getLocalSiteActivityConfig();
+  const nextRevision = Math.max(prevLocal.revision || 0, config.revision || 0) + 1;
+
   const normalized = normalizeSiteActivityConfig({
     ...config,
+    revision: nextRevision,
     updatedAt: Date.now(),
   });
   setLocalSiteActivityConfig(normalized);
 
+  // 1. Save via Express backend (writes disk + pushes to JSONBin Cloud with Merge-Before-PUT)
   try {
     const res = await fetch('/api/site-activity', {
       method: 'POST',
@@ -475,14 +611,40 @@ export async function saveSiteActivity(
       body: JSON.stringify(normalized),
     });
     if (res.ok) {
-      const data = await res.json();
-      if (data?.config) {
-        const serverNorm = normalizeSiteActivityConfig(data.config);
-        setLocalSiteActivityConfig(serverNorm);
-        return { success: true, config: serverNorm };
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        const data = await res.json();
+        if (data?.config) {
+          const serverNorm = normalizeSiteActivityConfig(data.config);
+          setLocalSiteActivityConfig(serverNorm);
+
+          // If Express failed to reach JSONBin, try direct client push as fallback
+          if (!data.cloudSynced) {
+            const directFallback = await pushSiteActivityToCloudDirect(serverNorm);
+            return {
+              success: directFallback.success,
+              config: serverNorm,
+              cloudSynced: directFallback.success,
+              error: directFallback.error || data.cloudError || undefined,
+            };
+          }
+
+          return {
+            success: true,
+            config: serverNorm,
+            cloudSynced: true,
+          };
+        }
       }
     }
   } catch {}
 
-  return { success: true, config: normalized };
+  // 2. Direct JSONBin fallback if Express backend isn't reachable (static hosting)
+  const directRes = await pushSiteActivityToCloudDirect(normalized);
+  return {
+    success: directRes.success,
+    config: normalized,
+    cloudSynced: directRes.success,
+    error: directRes.error,
+  };
 }

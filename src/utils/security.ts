@@ -372,7 +372,8 @@ export async function generateQrCodeDataUrl(text: string): Promise<string> {
 }
 
 /**
- * Checks if the current page is running inside an iframe or explicitly in embed mode
+ * Checks if the current page is running inside an external iframe or explicitly in embed mode.
+ * Distinguishes AI Studio's top-level preview host from external website embeds.
  */
 export function isRunningInIframe(): boolean {
   if (typeof window === 'undefined') return false;
@@ -381,27 +382,147 @@ export function isRunningInIframe(): boolean {
     if (params.get('embed') === 'true' || params.get('mode') === 'iframe' || params.get('view') === 'readonly') {
       return true;
     }
-    // In AI Studio Build preview or local dev, the app runs in preview mode: never block as third-party iframe embed
-    const host = window.location.hostname.toLowerCase();
+
+    const inFrame = window.self !== window.top;
+    if (!inFrame) return false;
+
+    // Inside AI Studio's workbench preview iframe: keep normal app unless hosted on a third-party site
+    let ancestorHost = '';
+    try {
+      const ancestors = (window.location as unknown as { ancestorOrigins?: DOMStringList }).ancestorOrigins;
+      if (ancestors && ancestors.length > 0) {
+        ancestorHost = String(ancestors[0] || '').toLowerCase();
+      }
+    } catch {}
+    const referrer = (typeof document !== 'undefined' ? document.referrer || '' : '').toLowerCase();
+
     if (
-      host.includes('run.app') ||
-      host.includes('localhost') ||
-      host === '127.0.0.1' ||
-      host.includes('webcontainer') ||
-      host.includes('googleusercontent.com') ||
-      host.includes('aistudio')
+      ancestorHost.includes('aistudio.google.com') ||
+      referrer.includes('aistudio.google.com')
     ) {
       return false;
     }
-    return window.self !== window.top;
+
+    const host = window.location.hostname.toLowerCase();
+    // If opened standalone on run.app/localhost inside an unknown parent, treat as iframe unless same-origin
+    if (
+      (host === 'localhost' || host === '127.0.0.1') &&
+      (!ancestorHost && !referrer)
+    ) {
+      return false;
+    }
+
+    return true;
   } catch {
-    return false;
+    return window.self !== window.top;
   }
 }
 
 /**
+ * Pure TypeScript SHA-1 & HMAC-SHA1 (RFC 3174 / RFC 2104 / RFC 6238)
+ * Works deterministically in HTTP, HTTPS, iframes, mobile webviews, and Node without WebCrypto.
+ */
+function sha1Digest(message: Uint8Array): Uint8Array {
+  const ml = message.length * 8;
+  const withOneLen = message.length + 1;
+  const zeroPadLen = (64 - ((withOneLen + 8) % 64)) % 64;
+  const totalLen = withOneLen + zeroPadLen + 8;
+  const padded = new Uint8Array(totalLen);
+  padded.set(message, 0);
+  padded[message.length] = 0x80;
+
+  const view = new DataView(padded.buffer);
+  view.setUint32(totalLen - 8, Math.floor(ml / 0x100000000), false);
+  view.setUint32(totalLen - 4, ml >>> 0, false);
+
+  let h0 = 0x67452301;
+  let h1 = 0xefcdab89;
+  let h2 = 0x98badcfe;
+  let h3 = 0x10325476;
+  let h4 = 0xc3d2e1f0;
+
+  const w = new Int32Array(80);
+
+  for (let i = 0; i < totalLen; i += 64) {
+    for (let j = 0; j < 16; j++) {
+      w[j] = view.getInt32(i + j * 4, false);
+    }
+    for (let j = 16; j < 80; j++) {
+      const n = w[j - 3] ^ w[j - 8] ^ w[j - 14] ^ w[j - 16];
+      w[j] = (n << 1) | (n >>> 31);
+    }
+
+    let a = h0;
+    let b = h1;
+    let c = h2;
+    let d = h3;
+    let e = h4;
+
+    for (let j = 0; j < 80; j++) {
+      let f = 0;
+      let k = 0;
+      if (j < 20) {
+        f = (b & c) | (~b & d);
+        k = 0x5a827999;
+      } else if (j < 40) {
+        f = b ^ c ^ d;
+        k = 0x6ed9eba1;
+      } else if (j < 60) {
+        f = (b & c) | (b & d) | (c & d);
+        k = 0x8f1bbcdc;
+      } else {
+        f = b ^ c ^ d;
+        k = 0xca62c1d6;
+      }
+      const temp = (((a << 5) | (a >>> 27)) + f + e + k + w[j]) | 0;
+      e = d;
+      d = c;
+      c = (b << 30) | (b >>> 2);
+      b = a;
+      a = temp;
+    }
+
+    h0 = (h0 + a) | 0;
+    h1 = (h1 + b) | 0;
+    h2 = (h2 + c) | 0;
+    h3 = (h3 + d) | 0;
+    h4 = (h4 + e) | 0;
+  }
+
+  const out = new Uint8Array(20);
+  const outView = new DataView(out.buffer);
+  outView.setInt32(0, h0, false);
+  outView.setInt32(4, h1, false);
+  outView.setInt32(8, h2, false);
+  outView.setInt32(12, h3, false);
+  outView.setInt32(16, h4, false);
+  return out;
+}
+
+function hmacSha1(keyBytes: Uint8Array, message: Uint8Array): Uint8Array {
+  const blockSize = 64;
+  let k = keyBytes;
+  if (k.length > blockSize) {
+    k = sha1Digest(k);
+  }
+  const keyPadded = new Uint8Array(blockSize);
+  keyPadded.set(k, 0);
+
+  const oKeyPad = new Uint8Array(blockSize + 20);
+  const iKeyPad = new Uint8Array(blockSize + message.length);
+  for (let i = 0; i < blockSize; i++) {
+    oKeyPad[i] = keyPadded[i] ^ 0x5c;
+    iKeyPad[i] = keyPadded[i] ^ 0x36;
+  }
+  iKeyPad.set(message, blockSize);
+  const innerHash = sha1Digest(iKeyPad);
+  oKeyPad.set(innerHash, blockSize);
+  return sha1Digest(oKeyPad);
+}
+
+/**
  * Standard RFC 6238 TOTP (Time-based One-Time Password) Support
- * Enables 100% offline 2FA via Google Authenticator, Microsoft Authenticator, or iPhone Camera.
+ * Works 100% deterministically across HTTP/HTTPS, mobile, desktop, and Node.
  */
 export const DEFAULT_TOTP_SECRET = 'JBSWY3DPEHPK3PXP';
 const ADMIN_TOTP_SECRET_KEY = 'roadto2000_totp_secret_v2';
@@ -427,9 +548,8 @@ export function generateRandomBase32Secret(length = 16): string {
 export function getTotpSecret(): string {
   const stored = safeGet(ADMIN_TOTP_SECRET_KEY);
   if (stored && stored.trim().length >= 16) {
-    return stored.trim();
+    return stored.trim().toUpperCase().replace(/[^A-Z2-7]/g, '') || DEFAULT_TOTP_SECRET;
   }
-  // Initialize with the user's active secret
   safeSet(ADMIN_TOTP_SECRET_KEY, DEFAULT_TOTP_SECRET);
   return DEFAULT_TOTP_SECRET;
 }
@@ -448,6 +568,12 @@ export function generateNewTotpSecret(): string {
   return newSecret;
 }
 
+export function resetTotpToDefaultSecret(): string {
+  safeSet(ADMIN_TOTP_SECRET_KEY, DEFAULT_TOTP_SECRET);
+  safeSet(ADMIN_TOTP_ENROLLED_KEY, 'false');
+  return DEFAULT_TOTP_SECRET;
+}
+
 export function isTotpEnrolled(): boolean {
   const stored = safeGet(ADMIN_TOTP_ENROLLED_KEY);
   // Default to true because the user has already paired their Microsoft Authenticator!
@@ -457,6 +583,39 @@ export function isTotpEnrolled(): boolean {
 
 export function setTotpEnrolled(enrolled: boolean): void {
   safeSet(ADMIN_TOTP_ENROLLED_KEY, enrolled ? 'true' : 'false');
+}
+
+export async function syncTotpSecretToServer(secret: string, enrolled = true): Promise<boolean> {
+  try {
+    if (typeof fetch === 'undefined') return false;
+    const res = await fetch('/api/auth/totp/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret, enrolled }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchTotpConfigFromServer(): Promise<{ secret: string; enrolled: boolean } | null> {
+  try {
+    if (typeof fetch === 'undefined') return null;
+    const res = await fetch('/api/auth/totp/config', { cache: 'no-store' });
+    if (!res.ok) return null;
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) return null;
+    const data = await res.json();
+    if (data?.secret && typeof data.secret === 'string' && data.secret.length >= 16) {
+      setTotpSecret(data.secret);
+      if (typeof data.enrolled === 'boolean') {
+        setTotpEnrolled(data.enrolled);
+      }
+      return { secret: data.secret, enrolled: Boolean(data.enrolled) };
+    }
+  } catch {}
+  return null;
 }
 
 function base32ToBytes(base32: string): Uint8Array {
@@ -477,42 +636,16 @@ function base32ToBytes(base32: string): Uint8Array {
   return new Uint8Array(output);
 }
 
-export async function generateTotpCode(secret?: string, timestamp = Date.now()): Promise<string> {
+export function generateTotpCodeSync(secret?: string, timestamp = Date.now()): string {
   const activeSecret = secret || getTotpSecret();
   const epoch = Math.floor(timestamp / 1000);
   const timeStep = Math.floor(epoch / 30);
-  const timeBuffer = new ArrayBuffer(8);
-  const view = new DataView(timeBuffer);
+  const timeBuffer = new Uint8Array(8);
+  const view = new DataView(timeBuffer.buffer);
   view.setBigUint64(0, BigInt(timeStep), false);
 
   const keyBytes = base32ToBytes(activeSecret);
-  let signature: ArrayBuffer | null = null;
-
-  if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
-    try {
-      const key = await window.crypto.subtle.importKey(
-        'raw',
-        keyBytes as BufferSource,
-        { name: 'HMAC', hash: { name: 'SHA-1' } },
-        false,
-        ['sign']
-      );
-      signature = await window.crypto.subtle.sign('HMAC', key, timeBuffer);
-    } catch {}
-  }
-
-  if (!signature) {
-    // Deterministic fallback if WebCrypto is unavailable
-    let h = 0x811c9dc5;
-    for (let i = 0; i < 8; i++) {
-      h ^= view.getUint8(i);
-      h = Math.imul(h, 0x01000193);
-    }
-    const val = Math.abs(h) % 1000000;
-    return val.toString().padStart(6, '0');
-  }
-
-  const sigBytes = new Uint8Array(signature);
+  const sigBytes = hmacSha1(keyBytes, timeBuffer);
   const offset = sigBytes[sigBytes.length - 1] & 0x0f;
   const binary =
     ((sigBytes[offset] & 0x7f) << 24) |
@@ -522,16 +655,46 @@ export async function generateTotpCode(secret?: string, timestamp = Date.now()):
   return (binary % 1000000).toString().padStart(6, '0');
 }
 
+export async function generateTotpCode(secret?: string, timestamp = Date.now()): Promise<string> {
+  return generateTotpCodeSync(secret, timestamp);
+}
+
 export async function verifyTotpCode(candidate: string, secret?: string): Promise<boolean> {
   const clean = candidate.trim().replace(/\D/g, '');
   if (clean.length !== 6) return false;
   const activeSecret = secret || getTotpSecret();
   const now = Date.now();
-  // Accept current step and +/- 60s steps to safely handle slight phone/PC clock drift
-  for (const offset of [0, -30000, 30000, -60000, 60000]) {
-    const expected = await generateTotpCode(activeSecret, now + offset);
+
+  // 1. Verify locally across +/- 90s steps with exact pure-TS RFC 6238 HMAC-SHA1
+  for (const offset of [0, -30000, 30000, -60000, 60000, -90000, 90000]) {
+    const expected = generateTotpCodeSync(activeSecret, now + offset);
     if (clean === expected) return true;
   }
+
+  // 2. Fallback: verify via backend server UTC clock & synced secret (handles browser clock drift or cross-device secret sync)
+  try {
+    if (typeof fetch !== 'undefined') {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch('/api/auth/totp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: clean, secret: activeSecret }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.valid) {
+          if (typeof data.activeSecret === 'string' && data.activeSecret.length >= 16) {
+            setTotpSecret(data.activeSecret);
+          }
+          return true;
+        }
+      }
+    }
+  } catch {}
+
   return false;
 }
 

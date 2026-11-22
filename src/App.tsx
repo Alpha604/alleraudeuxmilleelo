@@ -53,6 +53,7 @@ import { ProfileView } from './components/ProfileView';
 import { SitePauseOverlay } from './components/SitePauseOverlay';
 import {
   detectDeviceCategory,
+  DeviceCategory,
   evaluateSiteActivity,
   fetchSiteActivity,
   formatRemainingDuration,
@@ -62,7 +63,9 @@ import {
 } from './utils/siteActivity';
 import {
   clearUserSession,
+  fetchTotpConfigFromServer,
   getActiveUserSession,
+  getClientIp,
   getTrustedIps,
   isAdminSessionActive,
   isRunningInIframe,
@@ -152,9 +155,10 @@ export default function App() {
   );
 
   // Site Activity / Maintenance & Pause Control state
-  const deviceType = useMemo(() => detectDeviceCategory(), []);
+  const [deviceType, setDeviceType] = useState<DeviceCategory>(() => detectDeviceCategory());
   const [siteActivityConfig, setSiteActivityConfig] = useState<SiteActivityConfig>(() => getLocalSiteActivityConfig());
   const [clientIp, setClientIp] = useState<string>('');
+  const [serverClockOffsetMs, setServerClockOffsetMs] = useState<number>(0);
   const [activityNowTick, setActivityNowTick] = useState<number>(() => Date.now());
 
   // Desktop Right Sidebar collapse/expand state with persistence
@@ -261,27 +265,81 @@ export default function App() {
     };
   }, [settings.username]);
 
-  // Fetch & poll Site Activity / Pause configuration
-  const refreshSiteActivity = useCallback(async () => {
+  // Reconcile TOTP secret from backend on mount & keep device category responsive to resize/rotation
+  useEffect(() => {
+    fetchTotpConfigFromServer().catch(() => {});
+
+    const updateDevice = () => {
+      const detected = detectDeviceCategory();
+      setDeviceType((prev) => (prev === detected ? prev : detected));
+    };
+    window.addEventListener('resize', updateDevice);
+    window.addEventListener('orientationchange', updateDevice);
+    return () => {
+      window.removeEventListener('resize', updateDevice);
+      window.removeEventListener('orientationchange', updateDevice);
+    };
+  }, []);
+
+  // Fetch & poll Site Activity / Pause configuration across all devices and iframes
+  const clientIpRef = useRef<string>('');
+  const refreshSiteActivity = useCallback(async (forceCloud = false) => {
     try {
-      const res = await fetchSiteActivity();
+      const res = await fetchSiteActivity(forceCloud);
       setSiteActivityConfig(res.config);
-      if (res.clientIp) setClientIp(res.clientIp);
+      if (typeof res.serverTime === 'number' && Number.isFinite(res.serverTime)) {
+        setServerClockOffsetMs(res.serverTime - Date.now());
+      }
+      if (res.clientIp) {
+        clientIpRef.current = res.clientIp;
+        setClientIp(res.clientIp);
+      } else if (!clientIpRef.current) {
+        const publicIp = await getClientIp();
+        if (publicIp) {
+          clientIpRef.current = publicIp;
+          setClientIp(publicIp);
+        }
+      }
     } catch {}
   }, []);
 
   useEffect(() => {
-    refreshSiteActivity();
+    refreshSiteActivity(true);
+
     const handleUpdated = (e: Event) => {
       const custom = e as CustomEvent<SiteActivityConfig>;
       if (custom.detail) {
         setSiteActivityConfig(custom.detail);
       }
     };
+    const handleVisibilityOrFocus = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        refreshSiteActivity(false);
+      }
+    };
+    const handleOnlineSync = () => refreshSiteActivity(true);
+    const handleStorageSync = (ev: StorageEvent) => {
+      if (ev.key === 'roadto2000_site_activity_v1') {
+        refreshSiteActivity(false);
+      }
+    };
+
     window.addEventListener('roadto2000:site-activity-updated', handleUpdated);
-    const pollId = setInterval(refreshSiteActivity, 10000);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('online', handleOnlineSync);
+    window.addEventListener('storage', handleStorageSync);
+
+    const pollId = setInterval(() => {
+      refreshSiteActivity(false);
+    }, 6000);
+
     return () => {
       window.removeEventListener('roadto2000:site-activity-updated', handleUpdated);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('online', handleOnlineSync);
+      window.removeEventListener('storage', handleStorageSync);
       clearInterval(pollId);
     };
   }, [refreshSiteActivity]);
@@ -307,13 +365,13 @@ export default function App() {
       deviceType,
       clientIp,
       trustedIps: getTrustedIps(),
-      now: activityNowTick,
+      now: activityNowTick + serverClockOffsetMs,
     });
-  }, [siteActivityConfig, isAdmin, isIframe, deviceType, clientIp, activityNowTick]);
+  }, [siteActivityConfig, isAdmin, isIframe, deviceType, clientIp, activityNowTick, serverClockOffsetMs]);
 
   useEffect(() => {
     if (siteActivityEvaluation.autoResumedExpired) {
-      refreshSiteActivity();
+      refreshSiteActivity(true);
     }
   }, [siteActivityEvaluation.autoResumedExpired, refreshSiteActivity]);
 
@@ -972,7 +1030,7 @@ export default function App() {
           clientIp={clientIp}
           deviceType={deviceType}
           onOpenAdminUnlock={() => handleOpenSecurityModal('Déverrouillage Administrateur (Site en pause)')}
-          onRefreshStatus={refreshSiteActivity}
+          onRefreshStatus={() => refreshSiteActivity(true)}
         />
         <NotificationToast toasts={toasts} onDismiss={dismissToast} />
         {securityModalOpen && (

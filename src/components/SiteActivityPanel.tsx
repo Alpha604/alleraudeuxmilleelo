@@ -30,6 +30,7 @@ import {
 import { getClientIp, getTrustedIps } from '../utils/security';
 import { formatJsonBinTimestamp } from '../utils/cloudSync';
 import {
+  detectDeviceCategory,
   formatRemainingDuration,
   getLocalSiteActivityConfig,
   IframePolicy,
@@ -72,9 +73,15 @@ export const SiteActivityPanel: React.FC<SiteActivityPanelProps> = ({
   const [newIpInput, setNewIpInput] = useState('');
   const [isDetectingIp, setIsDetectingIp] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [lastCloudSyncOk, setLastCloudSyncOk] = useState<boolean | null>(null);
+  const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
   const [nowTick, setNowTick] = useState(Date.now());
 
   const trustedIps = getTrustedIps();
+  const detectedDevice = detectDeviceCategory();
+  const isCurrentIpTrusted = Boolean(
+    currentClientIp && trustedIps.some((t) => t.trim() === currentClientIp.trim())
+  );
 
   useEffect(() => {
     setDraft(currentConfig);
@@ -84,7 +91,7 @@ export const SiteActivityPanel: React.FC<SiteActivityPanelProps> = ({
     if (currentConfig.resumeAtTimestamp) {
       setExactResumeInput(toLocalDatetimeInputValue(currentConfig.resumeAtTimestamp));
     }
-  }, [currentConfig.updatedAt, currentConfig.enabled]);
+  }, [currentConfig.revision, currentConfig.updatedAt, currentConfig.enabled]);
 
   useEffect(() => {
     const t = setInterval(() => setNowTick(Date.now()), 1000);
@@ -149,24 +156,36 @@ export const SiteActivityPanel: React.FC<SiteActivityPanelProps> = ({
       const res = await saveSiteActivity(prepared);
       setDraft(res.config);
       onConfigUpdated(res.config);
+      setLastCloudSyncOk(res.cloudSynced);
+      setCloudSyncError(res.cloudSynced ? null : res.error || 'Synchronisation Cloud JSONBin non confirmée.');
 
-      if (!res.config.enabled) {
-        onShowMessage('Le site est désormais EN LIGNE normalement.', 'success', 'Activité du Site');
+      if (!res.cloudSynced) {
+        onShowMessage(
+          `Enregistré localement, mais la propagation Cloud multi-appareils a échoué (${res.error || 'JSONBin inaccessible'}).`,
+          'warning',
+          'Propagation Cloud Partielle'
+        );
+      } else if (!res.config.enabled) {
+        onShowMessage(
+          'Site remis EN LIGNE et propagé sur le Cloud JSONBin pour tous les appareils.',
+          'success',
+          'Activité du Site'
+        );
       } else if (
         res.config.scheduleType !== 'immediate' &&
         res.config.pauseAtTimestamp &&
         res.config.pauseAtTimestamp > Date.now()
       ) {
         onShowMessage(
-          `Pause (${SITE_PAUSE_MODE_META[res.config.mode].label}) programmée pour le ${formatJsonBinTimestamp(res.config.pauseAtTimestamp)}.`,
+          `Pause (${SITE_PAUSE_MODE_META[res.config.mode].label}) programmée pour le ${formatJsonBinTimestamp(res.config.pauseAtTimestamp)} · Propagée tous appareils.`,
           'warning',
           'Arrêt Programmé'
         );
       } else {
         onShowMessage(
-          `Site mis en pause (${SITE_PAUSE_MODE_META[res.config.mode].label}).`,
+          `Site mis en pause (${SITE_PAUSE_MODE_META[res.config.mode].label}) et propagé sur tous les appareils ciblés.`,
           'warning',
-          'Site en Pause'
+          'Site en Pause Multi-Appareils'
         );
       }
     } finally {
@@ -299,6 +318,27 @@ export const SiteActivityPanel: React.FC<SiteActivityPanelProps> = ({
                 )}.`
               : 'La plateforme est pleinement accessible pour tous les appareils, IPs et Iframes.'}
           </p>
+
+          {lastCloudSyncOk !== null && (
+            <div
+              className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${
+                lastCloudSyncOk
+                  ? 'border-[#10b981]/35 bg-[#10b981]/10 text-[#10b981]'
+                  : 'border-[#ef4444]/40 bg-[#ef4444]/10 text-[#ef4444]'
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  lastCloudSyncOk ? 'bg-[#10b981]' : 'bg-[#ef4444]'
+                }`}
+              />
+              <span>
+                {lastCloudSyncOk
+                  ? `Propagé sur le Cloud JSONBin (rév. #${currentConfig.revision || 1} · tous appareils synchronisés)`
+                  : `Erreur Cloud : ${cloudSyncError || 'non propagé aux autres appareils'}`}
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -785,11 +825,38 @@ export const SiteActivityPanel: React.FC<SiteActivityPanelProps> = ({
               </div>
             )}
 
+            {/* Live Diagnostic Card for Device / Wi-Fi IP Exemption */}
+            <div className="p-3 rounded-xl border border-neutral-800/90 bg-neutral-950/90 space-y-1.5 text-[11px]">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-neutral-400">
+                  Appareil détecté :{' '}
+                  <strong className="text-white uppercase font-mono">{detectedDevice}</strong>
+                </span>
+                <span className="text-neutral-400">
+                  IP publique :{' '}
+                  <strong className="text-white font-mono">
+                    {currentClientIp || 'En cours de détection'}
+                  </strong>
+                </span>
+              </div>
+              {isCurrentIpTrusted && (
+                <div className="flex items-start gap-1.5 text-amber-300 pt-1">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span>
+                    Votre IP actuelle figure dans vos <strong>IPs de confiance Admin</strong>.{' '}
+                    {draft.ipPolicy.exemptTrustedAdminIps
+                      ? 'Tout autre appareil (ex: smartphone) sur le même Wi-Fi sera aussi exempté tant que l’option ci-dessous est cochée.'
+                      : 'L’exemption IP Admin est désactivée : même ce réseau Wi-Fi sera bloqué selon vos règles.'}
+                  </span>
+                </div>
+              )}
+            </div>
+
             <label className="flex items-center justify-between p-3 rounded-xl border border-neutral-800 bg-neutral-950 cursor-pointer">
               <div>
                 <span className="font-semibold text-neutral-200 block">Exempter les IP de confiance Admin</span>
                 <span className="text-[11px] text-neutral-400">
-                  {trustedIps.length} IP(s) de confiance enregistrée(s)
+                  {trustedIps.length} IP(s) de confiance enregistrée(s) — Attention au Wi-Fi partagé !
                 </span>
               </div>
               <input

@@ -34,7 +34,7 @@ interface SidebarProps {
   isAdmin: boolean;
   isIframe: boolean;
   isSpectator?: boolean;
-  onOpenSecurityModal: (title?: string) => void;
+  onOpenSecurityModal: (title?: string, onGranted?: () => void) => void;
   onLockAdmin: () => void;
   onOpenNetworkModal?: () => void;
   jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
@@ -89,7 +89,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ? 'Paramètres du projet'
           : tab === 'admin'
           ? 'Panel Administrateur'
-          : 'Suite de tests'
+          : 'Suite de tests',
+        () => onSelectTab(tab)
       );
       return;
     }
