@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Clock, ExternalLink, Shield, Trophy, Zap } from 'lucide-react';
+import { Clock, ExternalLink, Shield, Zap } from 'lucide-react';
 import { ChessComStatsResponse, GameMode } from '../types/chess';
 
 interface GameModesBreakdownProps {
@@ -219,39 +219,6 @@ export const GameModesBreakdown: React.FC<GameModesBreakdownProps> = ({ stats, b
           );
         })}
       </div>
-
-      {/* Chess.com Auxiliary Achievements */}
-      {(stats?.fide || stats?.tactics?.highest?.rating || stats?.puzzle_rush?.best?.score) && (
-        <div className="rounded-3xl border border-neutral-800 bg-[#0c0f14] p-4.5 flex flex-wrap items-center justify-between gap-4 text-xs shadow-lg">
-          <div className="flex items-center gap-2.5 text-neutral-400">
-            <Trophy className="h-4 w-4 text-[#facc15]" />
-            <span className="font-bold text-white">
-              Indicateurs Tactiques Chess.com :
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-6 font-mono text-xs">
-            {stats.fide && (
-              <div>
-                <span className="text-neutral-400 mr-1.5">FIDE Estimé :</span>
-                <span className="font-bold text-white">{stats.fide}</span>
-              </div>
-            )}
-            {stats.tactics?.highest?.rating && (
-              <div>
-                <span className="text-neutral-400 mr-1.5">Record Problèmes :</span>
-                <span className="font-bold text-[#facc15]">{stats.tactics.highest.rating}</span>
-              </div>
-            )}
-            {stats.puzzle_rush?.best?.score && (
-              <div>
-                <span className="text-neutral-400 mr-1.5">Puzzle Rush Max :</span>
-                <span className="font-bold text-[#facc15]">{stats.puzzle_rush.best.score}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

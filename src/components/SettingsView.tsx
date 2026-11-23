@@ -5,7 +5,6 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  AlertTriangle,
   Bell,
   Check,
   CheckCircle2,
@@ -20,6 +19,7 @@ import {
   Lock,
   Monitor,
   Moon,
+  Palette,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -31,13 +31,13 @@ import {
   Smartphone,
   Sun,
   Trash2,
-  Unlock,
   User,
+  Waves,
   Wifi,
   X,
   Zap,
 } from 'lucide-react';
-import { AppSettings, GameMode, SyncRecord, TrajectoryModel } from '../types/chess';
+import { AppSettings, AppTheme, GameMode, SyncRecord, TrajectoryModel } from '../types/chess';
 import { DEFAULT_SETTINGS, getStoredSyncHistory, OFFICIAL_DAILY_RECORDS } from '../utils/storage';
 import { SecurePurgeModal } from './SecurePurgeModal';
 import {
@@ -56,9 +56,12 @@ import {
   syncNowToJsonBin,
 } from '../utils/cloudSync';
 
+type SettingsSection = 'preferences' | 'project' | 'security' | 'cloud';
+
 interface SettingsViewProps {
   settings: AppSettings;
   onSettingsUpdate: (updated: AppSettings) => void;
+  onPreviewTheme?: (theme: AppTheme) => void;
   onShowMessage: (msg: string, type?: 'info' | 'success' | 'warning') => void;
   onPurgeAccountData?: () => void;
   onHistoryUpdate?: (history: SyncRecord[]) => void;
@@ -71,6 +74,7 @@ interface SettingsViewProps {
 export const SettingsView: React.FC<SettingsViewProps> = ({
   settings,
   onSettingsUpdate,
+  onPreviewTheme,
   onShowMessage,
   onPurgeAccountData,
   onHistoryUpdate,
@@ -79,6 +83,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onOpenSecurityModal,
   onLockAdmin,
 }) => {
+  const [activeSection, setActiveSection] = useState<SettingsSection>('preferences');
   const [form, setForm] = useState<AppSettings>(settings);
   const [isSaved, setIsSaved] = useState(false);
   const [secureModalOpen, setSecureModalOpen] = useState(false);
@@ -350,21 +355,83 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     );
   }
 
+  const themeOptions: {
+    id: AppTheme;
+    label: string;
+    subtitle: string;
+    icon: React.ReactNode;
+    swatchStyle: React.CSSProperties;
+    accentColor: string;
+  }[] = [
+    {
+      id: 'dark',
+      label: 'Base',
+      subtitle: 'Carbone & Or classique',
+      icon: <Moon className="h-4 w-4 text-[#facc15]" />,
+      swatchStyle: { background: 'linear-gradient(135deg, #07090e 55%, #facc15 100%)' },
+      accentColor: '#facc15',
+    },
+    {
+      id: 'light',
+      label: 'Clair',
+      subtitle: 'Jour haute lisibilité',
+      icon: <Sun className="h-4 w-4 text-amber-500" />,
+      swatchStyle: { background: 'linear-gradient(135deg, #f8fafc 55%, #f59e0b 100%)' },
+      accentColor: '#f59e0b',
+    },
+    {
+      id: 'ocean',
+      label: 'Océan',
+      subtitle: 'Abyssal & Cyan pur',
+      icon: <Waves className="h-4 w-4 text-sky-400" />,
+      swatchStyle: { background: 'linear-gradient(135deg, #030d1a 50%, #38bdf8 100%)' },
+      accentColor: '#38bdf8',
+    },
+    {
+      id: 'colors',
+      label: 'Couleurs',
+      subtitle: 'Aurore indigo & rose',
+      icon: <Palette className="h-4 w-4 text-pink-400" />,
+      swatchStyle: { background: 'linear-gradient(135deg, #2e1065 25%, #ec4899 70%, #22d3ee 100%)' },
+      accentColor: '#f472b6',
+    },
+    {
+      id: 'system',
+      label: 'Desktop (Auto)',
+      subtitle: 'Clair ou Classique selon l’appareil',
+      icon: <Monitor className="h-4 w-4 text-neutral-300" />,
+      swatchStyle: { background: 'linear-gradient(135deg, #f8fafc 48%, #07090e 52%)' },
+      accentColor: '#94a3b8',
+    },
+  ];
+
+  const handleSelectTheme = (themeId: AppTheme) => {
+    setForm((prev) => ({ ...prev, theme: themeId }));
+    onPreviewTheme?.(themeId);
+  };
+
+  const sectionTabs: { id: SettingsSection; label: string; icon: React.ReactNode }[] = [
+    { id: 'preferences', label: 'Préférences', icon: <Palette className="h-3.5 w-3.5" /> },
+    { id: 'project', label: 'Projet & Calcul', icon: <Sliders className="h-3.5 w-3.5" /> },
+    { id: 'security', label: 'Sécurité & IPs', icon: <ShieldCheck className="h-3.5 w-3.5" /> },
+    { id: 'cloud', label: 'Cloud & Purge', icon: <Cloud className="h-3.5 w-3.5" /> },
+  ];
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-200">
+    <div className="max-w-4xl mx-auto space-y-5 animate-in fade-in duration-200">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-neutral-100 dark:text-neutral-100 light:text-neutral-900 flex items-center gap-2">
+          <h2 className="text-lg font-bold text-neutral-100 flex items-center gap-2 flex-wrap">
             <SettingsIcon className="h-5 w-5 text-[#facc15]" />
-            <span>Paramètres Personnalisables Du Projet</span>
+            <span>Paramètres Du Projet</span>
             <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
               <ShieldCheck className="h-3 w-3" />
-              <span>Session Admin 2FA Active</span>
+              <span>Admin 2FA</span>
             </span>
           </h2>
-          <p className="text-xs text-neutral-400">
-            Ajustez votre profil, vos cibles et les préférences du moteur de performance.
+          <p className="text-xs text-neutral-400 hidden sm:block">
+            Sélectionnez une catégorie ci-dessous pour configurer vos thèmes, objectifs, sécurité ou cloud.
           </p>
         </div>
 
@@ -385,325 +452,331 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-white transition-colors"
           >
             <RotateCcw className="h-3.5 w-3.5" />
-            <span>Réinitialiser par défaut</span>
+            <span>Réinitialiser</span>
           </button>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Section 1: Profil & Objectifs Principaux */}
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/90 light:border-neutral-200 light:bg-white space-y-4">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15] border-b border-neutral-800 pb-3">
-            <User className="h-4 w-4" />
-            <span>Identité & Objectifs Du Projet</span>
-          </div>
+      {/* Selectable Multi-Section Tab Strip */}
+      <div className="flex flex-nowrap items-center gap-1.5 p-1.5 rounded-2xl border border-neutral-800 bg-[#0c0f14] overflow-x-auto scrollbar-none">
+        {sectionTabs.map((sec) => {
+          const isActive = activeSection === sec.id;
+          return (
+            <button
+              key={sec.id}
+              type="button"
+              onClick={() => setActiveSection(sec.id)}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
+                isActive
+                  ? 'bg-[#facc15] text-black shadow-md'
+                  : 'text-neutral-300 hover:text-white hover:bg-white/[0.04]'
+              }`}
+            >
+              {sec.icon}
+              <span>{sec.label}</span>
+            </button>
+          );
+        })}
+      </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                Pseudo Chess.com
-              </label>
-              <input
-                type="text"
-                value={form.username}
-                onChange={(e) => setForm({ ...form, username: e.target.value })}
-                required
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
-              />
-              <span className="text-[11px] text-neutral-400 mt-1 block">
-                Par défaut : <strong className="text-neutral-200">alpharomeo1500</strong>. Changer de pseudo isole et purge automatiquement les données de l'ancien compte pour éviter toute valeur faussée.
-              </span>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                Mode de sélection du classement principal
-              </label>
-              <select
-                value={form.selectedMode}
-                onChange={(e) => setForm({ ...form, selectedMode: e.target.value as 'auto' | GameMode })}
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
-              >
-                <option value="auto">Automatique (Meilleur parmi Blitz, Rapid, Bullet)</option>
-                <option value="bullet">Fixer sur Bullet uniquement</option>
-                <option value="blitz">Fixer sur Blitz uniquement</option>
-                <option value="rapid">Fixer sur Rapide uniquement</option>
-              </select>
-              <span className="text-[11px] text-neutral-500 mt-1 block">
-                Par défaut : Sélection automatique du classement le plus élevé.
-              </span>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                Classement de départ (Base immuable)
-              </label>
-              <input
-                type="number"
-                min="500"
-                max="2800"
-                value={form.startElo}
-                onChange={(e) => setForm({ ...form, startElo: Number(e.target.value) })}
-                required
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none font-mono"
-              />
-              <span className="text-[11px] text-neutral-500 mt-1 block">
-                Fixé à 1500 Elo pour le projet "Road to 2000".
-              </span>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                Objectif Final (Elo cible)
-              </label>
-              <input
-                type="number"
-                min="1600"
-                max="3000"
-                value={form.targetElo}
-                onChange={(e) => setForm({ ...form, targetElo: Number(e.target.value) })}
-                required
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none font-mono"
-              />
-              <span className="text-[11px] text-neutral-500 mt-1 block">
-                Fixé à 2000 Elo pour l'accomplissement final.
-              </span>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                Date de début du projet
-              </label>
-              <input
-                type="date"
-                value={form.startDate}
-                onChange={(e) => setForm({ ...form, startDate: e.target.value })}
-                required
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
-              />
-              <span className="text-[11px] text-neutral-500 mt-1 block">
-                Date de référence : 31 octobre 2026.
-              </span>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                Date d'échéance finale
-              </label>
-              <input
-                type="datetime-local"
-                value={form.targetDate.substring(0, 16)}
-                onChange={(e) => setForm({ ...form, targetDate: `${e.target.value}:59` })}
-                required
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
-              />
-              <span className="text-[11px] text-neutral-500 mt-1 block">
-                Date limite : 31 décembre 2027 à 23h59 (Europe/Paris).
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Section 2: Algorithme de trajectoire & Synchronisation */}
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/90 light:border-neutral-200 light:bg-white space-y-4">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15] border-b border-neutral-800 pb-3">
-            <Sliders className="h-4 w-4" />
-            <span>Moteur De Calcul & Synchronisation</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                Algorithme de progression théorique
-              </label>
-              <select
-                value={form.trajectoryModel}
-                onChange={(e) => setForm({ ...form, trajectoryModel: e.target.value as TrajectoryModel })}
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
-              >
-                <option value="linear">1. Progression Linéaire (Recommandé - Simple et transparent)</option>
-                <option value="milestones">2. Paliers Mensuels Step Trajectory</option>
-                <option value="custom">3. Objectifs Personnalisés Manuels</option>
-              </select>
-              <span className="text-[11px] text-neutral-500 mt-1 block">
-                La trajectoire linéaire est le modèle officiel garantissant une cible journalière rigoureuse.
-              </span>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                Intervalle d'actualisation automatique
-              </label>
-              <select
-                value={form.autoSyncMinutes}
-                onChange={(e) => setForm({ ...form, autoSyncMinutes: Number(e.target.value) })}
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
-              >
-                <option value="0">Manuel uniquement (Aucun appel périodique)</option>
-                <option value="5">Toutes les 5 minutes</option>
-                <option value="15">Toutes les 15 minutes (Recommandé)</option>
-                <option value="30">Toutes les 30 minutes</option>
-                <option value="60">Toutes les heures</option>
-              </select>
-              <span className="text-[11px] text-neutral-500 mt-1 block">
-                Respecte les limites d'appels de l'API publique Chess.com.
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Section 3: Thème & Notifications */}
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/90 light:border-neutral-200 light:bg-white space-y-4">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15] border-b border-neutral-800 pb-3">
-            <Bell className="h-4 w-4" />
-            <span>Thème Visuel & Notifications De Performance</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-center">
-            <div>
-              <label className="block text-xs font-medium text-neutral-300 mb-2">
-                Thème d'affichage
-              </label>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, theme: 'dark' })}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
-                    form.theme === 'dark'
-                      ? 'border-[#facc15] bg-[#facc15]/15 text-[#facc15] shadow-sm'
-                      : 'border-neutral-800 bg-neutral-950 text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  <Moon className="h-4 w-4" />
-                  <span>Sombre</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, theme: 'light' })}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
-                    form.theme === 'light'
-                      ? 'border-[#facc15] bg-[#facc15]/15 text-[#facc15] shadow-sm'
-                      : 'border-neutral-800 bg-neutral-950 text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  <Sun className="h-4 w-4" />
-                  <span>Clair</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, theme: 'system' })}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
-                    form.theme === 'system'
-                      ? 'border-[#facc15] bg-[#facc15]/15 text-[#facc15] shadow-sm'
-                      : 'border-neutral-800 bg-neutral-950 text-neutral-400 hover:text-white'
-                  }`}
-                >
-                  <Monitor className="h-4 w-4" />
-                  <span>Système</span>
-                </button>
+      {/* SECTION: PRÉFÉRENCES (Thèmes + Notifications) */}
+      {activeSection === 'preferences' && (
+        <form onSubmit={handleSubmit} className="space-y-5 animate-in fade-in duration-150">
+          {/* Themes Picker */}
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-4 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+            <div className="flex items-center justify-between gap-2 border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
+                <Palette className="h-4 w-4" />
+                <span>Thème Visuel De L&apos;Application</span>
               </div>
+              <span className="text-[11px] font-mono text-neutral-400">
+                Aperçu immédiat
+              </span>
             </div>
 
-            <div className="space-y-2">
-              <label className="block text-xs font-medium text-neutral-300">
-                Alertes et notifications sportives
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {themeOptions.map((opt) => {
+                const selected = form.theme === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => handleSelectTheme(opt.id)}
+                    className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all active:scale-[0.99] ${
+                      selected
+                        ? 'border-[#facc15] bg-[#facc15]/10 ring-1 ring-[#facc15]/40 shadow-md'
+                        : 'border-neutral-800 bg-neutral-950/70 hover:border-neutral-600'
+                    }`}
+                  >
+                    <div
+                      className="h-10 w-10 rounded-xl border border-white/15 shrink-0 shadow-inner"
+                      style={opt.swatchStyle}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        {opt.icon}
+                        <span className="text-xs font-extrabold text-white truncate">
+                          {opt.label}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 truncate mt-0.5">
+                        {opt.subtitle}
+                      </p>
+                    </div>
+                    {selected && (
+                      <CheckCircle2 className="h-4 w-4 text-[#facc15] shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Performance Notifications */}
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-4 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15] border-b border-neutral-800 pb-3">
+              <Bell className="h-4 w-4" />
+              <span>Alertes & Notifications De Performance</span>
+            </div>
+
+            <div className="space-y-2.5 text-xs text-neutral-300">
+              <label className="flex items-center justify-between gap-3 p-3 rounded-xl border border-neutral-800/80 bg-neutral-950/60 cursor-pointer">
+                <span>Alerter lors d&apos;un nouveau record Elo personnel</span>
+                <input
+                  type="checkbox"
+                  checked={form.notifications.newPeak}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      notifications: { ...form.notifications, newPeak: e.target.checked },
+                    })
+                  }
+                  className="h-4 w-4 accent-[#facc15]"
+                />
               </label>
-              <div className="space-y-1.5 text-xs text-neutral-300">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.notifications.newPeak}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        notifications: { ...form.notifications, newPeak: e.target.checked },
-                      })
-                    }
-                    className="rounded border-neutral-700 bg-neutral-950 text-[#facc15]"
-                  />
-                  <span>Alerter lors d'un nouveau record Elo personnel</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.notifications.milestoneReached}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        notifications: { ...form.notifications, milestoneReached: e.target.checked },
-                      })
-                    }
-                    className="rounded border-neutral-700 bg-neutral-950 text-[#facc15]"
-                  />
-                  <span>Notifier lors du franchissement d'un palier mensuel</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.notifications.significantDelay}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        notifications: { ...form.notifications, significantDelay: e.target.checked },
-                      })
-                    }
-                    className="rounded border-neutral-700 bg-neutral-950 text-[#facc15]"
-                  />
-                  <span>Signaler un écart important sur la trajectoire théorique</span>
-                </label>
-              </div>
+              <label className="flex items-center justify-between gap-3 p-3 rounded-xl border border-neutral-800/80 bg-neutral-950/60 cursor-pointer">
+                <span>Notifier lors du franchissement d&apos;un palier mensuel</span>
+                <input
+                  type="checkbox"
+                  checked={form.notifications.milestoneReached}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      notifications: { ...form.notifications, milestoneReached: e.target.checked },
+                    })
+                  }
+                  className="h-4 w-4 accent-[#facc15]"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 p-3 rounded-xl border border-neutral-800/80 bg-neutral-950/60 cursor-pointer">
+                <span>Signaler un écart important sur la trajectoire théorique</span>
+                <input
+                  type="checkbox"
+                  checked={form.notifications.significantDelay}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      notifications: { ...form.notifications, significantDelay: e.target.checked },
+                    })
+                  }
+                  className="h-4 w-4 accent-[#facc15]"
+                />
+              </label>
             </div>
           </div>
-        </div>
 
-        {/* Section 4: Zone de purge & sécurité des données */}
-        <div className="rounded-2xl border border-rose-900/40 bg-rose-950/15 p-6 shadow-xl backdrop-blur-sm space-y-4">
-          <div className="flex items-center justify-between border-b border-rose-900/30 pb-3">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-400">
-              <Trash2 className="h-4 w-4" />
-              <span>Purge Du Cache & Réinitialisation Du Joueur</span>
-            </div>
-            <span className="text-[11px] font-mono text-rose-300/80">Joueur actuel : @{form.username}</span>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <p className="text-xs text-neutral-300 leading-relaxed max-w-xl">
-              Si vous constatez des données résiduelles d'un ancien compte (ou d'un test précédent), ce bouton supprime immédiatement tous les relevés en mémoire cache locale et relance une synchronisation neuve et certifiée avec Chess.com pour <strong>@{form.username}</strong>.
-            </p>
+          <div className="flex items-center justify-between pt-2">
+            {isSaved ? (
+              <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold">
+                <CheckCircle2 className="h-4 w-4" />
+                <span>Préférences enregistrées !</span>
+              </span>
+            ) : (
+              <span className="text-[11px] text-neutral-500">
+                Pensez à enregistrer pour synchroniser votre thème dans le cloud.
+              </span>
+            )}
 
             <button
-              type="button"
-              onClick={handleInitiatePurge}
-              className="flex items-center gap-2 rounded-lg border border-rose-800 bg-rose-950/60 hover:bg-rose-900 text-rose-200 px-4 py-2 text-xs font-bold transition-all shrink-0 active:scale-95"
+              type="submit"
+              className="flex items-center gap-2 rounded-xl bg-[#facc15] hover:bg-[#eab308] active:scale-[0.98] text-black px-5 py-2.5 text-xs font-bold transition-all shadow-[0_0_15px_rgba(250,204,21,0.3)]"
             >
-              <RefreshCw className="h-3.5 w-3.5" />
-              <span>Purger & Re-synchroniser @{form.username}</span>
+              <Save className="h-4 w-4" />
+              <span>Enregistrer</span>
             </button>
           </div>
-        </div>
+        </form>
+      )}
 
-        {/* Save Bar */}
-        <div className="flex items-center justify-between pt-4">
-          {isSaved ? (
-            <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold">
-              <CheckCircle2 className="h-4 w-4" />
-              <span>Modifications appliquées et enregistrées localement !</span>
-            </span>
-          ) : (
-            <span className="text-[11px] text-neutral-500">
-              Toutes les modifications sont immédiatement prises en compte dans les calculs.
-            </span>
-          )}
+      {/* SECTION: PROJET & CALCUL */}
+      {activeSection === 'project' && (
+        <form onSubmit={handleSubmit} className="space-y-6 animate-in fade-in duration-150">
+          {/* Section 1: Profil & Objectifs Principaux */}
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15] border-b border-neutral-800 pb-3">
+              <User className="h-4 w-4" />
+              <span>Identité & Objectifs Du Projet</span>
+            </div>
 
-          <button
-            type="submit"
-            className="flex items-center gap-2 rounded-lg bg-[#facc15] hover:bg-[#eab308] active:scale-[0.98] text-black px-5 py-2 text-xs font-bold transition-all shadow-[0_0_15px_rgba(250,204,21,0.3)]"
-          >
-            <Save className="h-4 w-4" />
-            <span>Enregistrer Les Modifications</span>
-          </button>
-        </div>
-      </form>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                  Pseudo Chess.com
+                </label>
+                <input
+                  type="text"
+                  value={form.username}
+                  onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  required
+                  className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
+                />
+                <span className="text-[11px] text-neutral-400 mt-1 block">
+                  Par défaut : <strong className="text-neutral-200">alpharomeo1500</strong>.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                  Mode de sélection du classement principal
+                </label>
+                <select
+                  value={form.selectedMode}
+                  onChange={(e) => setForm({ ...form, selectedMode: e.target.value as 'auto' | GameMode })}
+                  className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
+                >
+                  <option value="auto">Automatique (Meilleur parmi Blitz, Rapid, Bullet)</option>
+                  <option value="bullet">Fixer sur Bullet uniquement</option>
+                  <option value="blitz">Fixer sur Blitz uniquement</option>
+                  <option value="rapid">Fixer sur Rapide uniquement</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                  Classement de départ (Base immuable)
+                </label>
+                <input
+                  type="number"
+                  min="500"
+                  max="2800"
+                  value={form.startElo}
+                  onChange={(e) => setForm({ ...form, startElo: Number(e.target.value) })}
+                  required
+                  className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                  Objectif Final (Elo cible)
+                </label>
+                <input
+                  type="number"
+                  min="1600"
+                  max="3000"
+                  value={form.targetElo}
+                  onChange={(e) => setForm({ ...form, targetElo: Number(e.target.value) })}
+                  required
+                  className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                  Date de début du projet
+                </label>
+                <input
+                  type="date"
+                  value={form.startDate}
+                  onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+                  required
+                  className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                  Date d&apos;échéance finale
+                </label>
+                <input
+                  type="datetime-local"
+                  value={form.targetDate.substring(0, 16)}
+                  onChange={(e) => setForm({ ...form, targetDate: `${e.target.value}:59` })}
+                  required
+                  className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: Algorithme de trajectoire & Synchronisation */}
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15] border-b border-neutral-800 pb-3">
+              <Sliders className="h-4 w-4" />
+              <span>Moteur De Calcul & Synchronisation</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                  Algorithme de progression théorique
+                </label>
+                <select
+                  value={form.trajectoryModel}
+                  onChange={(e) => setForm({ ...form, trajectoryModel: e.target.value as TrajectoryModel })}
+                  className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
+                >
+                  <option value="linear">1. Progression Linéaire (Recommandé - Simple et transparent)</option>
+                  <option value="milestones">2. Paliers Mensuels Step Trajectory</option>
+                  <option value="custom">3. Objectifs Personnalisés Manuels</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                  Intervalle d&apos;actualisation automatique
+                </label>
+                <select
+                  value={form.autoSyncMinutes}
+                  onChange={(e) => setForm({ ...form, autoSyncMinutes: Number(e.target.value) })}
+                  className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white focus:border-[#facc15] focus:outline-none"
+                >
+                  <option value="0">Manuel uniquement (Aucun appel périodique)</option>
+                  <option value="5">Toutes les 5 minutes</option>
+                  <option value="15">Toutes les 15 minutes (Recommandé)</option>
+                  <option value="30">Toutes les 30 minutes</option>
+                  <option value="60">Toutes les heures</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-2">
+            {isSaved ? (
+              <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold">
+                <CheckCircle2 className="h-4 w-4" />
+                <span>Modifications appliquées !</span>
+              </span>
+            ) : (
+              <span className="text-[11px] text-neutral-500">
+                Toutes les modifications sont prises en compte dans les calculs.
+              </span>
+            )}
+
+            <button
+              type="submit"
+              className="flex items-center gap-2 rounded-xl bg-[#facc15] hover:bg-[#eab308] active:scale-[0.98] text-black px-5 py-2.5 text-xs font-bold transition-all shadow-[0_0_15px_rgba(250,204,21,0.3)]"
+            >
+              <Save className="h-4 w-4" />
+              <span>Enregistrer</span>
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* SECTION: SÉCURITÉ & IPS */}
+      {activeSection === 'security' && (
+        <div className="space-y-6 animate-in fade-in duration-150">
 
       {/* Section 5: Sécurité A2F Principale Unique */}
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm space-y-4">
@@ -853,9 +926,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
       </div>
+      </div>
+      )}
+
+      {/* SECTION: CLOUD & PURGE */}
+      {activeSection === 'cloud' && (
+      <div className="space-y-6 animate-in fade-in duration-150">
+      {/* Zone de purge & sécurité des données */}
+      <div className="rounded-2xl border border-rose-900/40 bg-rose-950/15 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-rose-900/30 pb-3">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-400">
+            <Trash2 className="h-4 w-4" />
+            <span>Purge Du Cache & Réinitialisation Du Joueur</span>
+          </div>
+          <span className="text-[11px] font-mono text-rose-300/80">@{form.username}</span>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <p className="text-xs text-neutral-300 leading-relaxed max-w-xl">
+            Supprime immédiatement tous les relevés en cache local et relance une synchronisation neuve avec Chess.com pour <strong>@{form.username}</strong>.
+          </p>
+
+          <button
+            type="button"
+            onClick={handleInitiatePurge}
+            className="flex items-center gap-2 rounded-lg border border-rose-800 bg-rose-950/60 hover:bg-rose-900 text-rose-200 px-4 py-2 text-xs font-bold transition-all shrink-0 active:scale-95"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span>Purger & Re-synchroniser @{form.username}</span>
+          </button>
+        </div>
+      </div>
 
       {/* Section 7: Cache Cloud & Synchronisation JSONBin.io (Protégé par 2FA) */}
-      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm space-y-5">
+      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-neutral-800 pb-3">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
             <Cloud className="h-4 w-4 text-[#facc15]" />
@@ -1086,6 +1190,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </pre>
         </div>
       </div>
+      </div>
+      )}
 
       {/* Secure Purge / Reset Modal with Mandatory Backup & Double 2FA */}
       <SecurePurgeModal

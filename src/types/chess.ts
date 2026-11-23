@@ -76,6 +76,8 @@ export interface MonthlyMilestone {
   reached?: boolean;
 }
 
+export type AppTheme = 'dark' | 'light' | 'ocean' | 'colors' | 'system';
+
 export interface AppSettings {
   username: string;
   startElo: number;
@@ -86,7 +88,7 @@ export interface AppSettings {
   selectedMode: 'auto' | GameMode;
   trajectoryModel: TrajectoryModel;
   autoSyncMinutes: number; // 0 for manual only
-  theme: 'dark' | 'light' | 'system';
+  theme: AppTheme;
   notifications: {
     newPeak: boolean;
     milestoneReached: boolean;

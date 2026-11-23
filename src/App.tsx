@@ -15,6 +15,7 @@ import { MilestoneCalendar } from './components/MilestoneCalendar';
 import { MobileLiquidGlassDock } from './components/MobileLiquidGlassDock';
 import { MobileMoreSheet } from './components/MobileMoreSheet';
 import { MobileNotificationCenter } from './components/MobileNotificationCenter';
+import { MobileProfileSheet } from './components/MobileProfileSheet';
 import { Navbar, NavTab } from './components/Navbar';
 import { NotificationToast, ToastMessage } from './components/NotificationToast';
 import { MonthlyObjectiveCard } from './components/MonthlyObjectiveCard';
@@ -26,6 +27,7 @@ import { SyncLog } from './components/SyncLog';
 import { TestRunner } from './components/TestRunner';
 import {
   AppSettings,
+  AppTheme,
   ChessComProfileResponse,
   ChessComStatsResponse,
   GameMode,
@@ -157,6 +159,7 @@ export default function App() {
   const [notifPrefs, setNotifPrefs] = useState<MobileNotificationPrefs>(() => getNotificationPrefs());
   const [notificationCenterOpen, setNotificationCenterOpen] = useState<boolean>(false);
   const [moreSheetOpen, setMoreSheetOpen] = useState<boolean>(false);
+  const [profileSheetOpen, setProfileSheetOpen] = useState<boolean>(false);
 
   // Network & JSONBin online status states
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
@@ -202,21 +205,26 @@ export default function App() {
     });
   }, []);
 
-  // Apply theme to document element (supporting dark, light, and system auto-detection)
+  // Apply theme to document element (base=dark, light, ocean, colors, and system Desktop auto-detection)
   useEffect(() => {
     const root = document.documentElement;
-    const applyTheme = (theme: 'dark' | 'light' | 'system') => {
+    const applyResolvedTheme = (resolved: 'dark' | 'light' | 'ocean' | 'colors') => {
+      root.setAttribute('data-theme', resolved);
+      if (resolved === 'light') {
+        root.classList.remove('dark');
+      } else {
+        root.classList.add('dark');
+      }
+    };
+
+    const applyTheme = (theme: AppTheme) => {
       if (theme === 'system') {
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (prefersDark) {
-          root.classList.add('dark');
-        } else {
-          root.classList.remove('dark');
-        }
-      } else if (theme === 'dark') {
-        root.classList.add('dark');
+        applyResolvedTheme(prefersDark ? 'dark' : 'light');
+      } else if (theme === 'light' || theme === 'ocean' || theme === 'colors') {
+        applyResolvedTheme(theme);
       } else {
-        root.classList.remove('dark');
+        applyResolvedTheme('dark');
       }
     };
 
@@ -225,11 +233,7 @@ export default function App() {
     if (settings.theme === 'system') {
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
       const handler = (e: MediaQueryListEvent) => {
-        if (e.matches) {
-          root.classList.add('dark');
-        } else {
-          root.classList.remove('dark');
-        }
+        applyResolvedTheme(e.matches ? 'dark' : 'light');
       };
       mediaQuery.addEventListener('change', handler);
       return () => mediaQuery.removeEventListener('change', handler);
@@ -1008,17 +1012,26 @@ export default function App() {
     );
   }, [showToast]);
 
-  // Toggle Theme cycling (dark -> light -> system)
+  // Instant theme update helper (preview + local persistence)
+  const handlePreviewTheme = useCallback((nextTheme: AppTheme) => {
+    setSettings((prev) => {
+      const updated: AppSettings = { ...prev, theme: nextTheme };
+      saveStoredSettings(updated);
+      return updated;
+    });
+  }, []);
+
+  // Toggle Theme cycling (dark -> light -> ocean -> colors -> system)
   const handleToggleTheme = () => {
-    const cycleMap: Record<'dark' | 'light' | 'system', 'dark' | 'light' | 'system'> = {
+    const cycleMap: Record<AppTheme, AppTheme> = {
       dark: 'light',
-      light: 'system',
+      light: 'ocean',
+      ocean: 'colors',
+      colors: 'system',
       system: 'dark',
     };
     const nextTheme = cycleMap[settings.theme] || 'dark';
-    const updated: AppSettings = { ...settings, theme: nextTheme };
-    setSettings(updated);
-    saveStoredSettings(updated);
+    handlePreviewTheme(nextTheme);
   };
 
   // Compute active ratings and best mode
@@ -1237,6 +1250,7 @@ export default function App() {
         onQuickSwitchAccount={handleQuickSwitchAccount}
         unreadNotificationsCount={notificationHistory.filter((n) => !n.read).length}
         onOpenNotificationCenter={() => setNotificationCenterOpen(true)}
+        onOpenProfileSheet={() => setProfileSheetOpen(true)}
       />
 
       {/* Main Content Viewport - Fully responsive for Mobile, Tablet & PC */}
@@ -1399,6 +1413,7 @@ export default function App() {
           <SettingsView
             settings={settings}
             onSettingsUpdate={handleSettingsUpdate}
+            onPreviewTheme={handlePreviewTheme}
             onShowMessage={showToast}
             onPurgeAccountData={handlePurgeAccountData}
             onHistoryUpdate={(updated) => {
@@ -1484,12 +1499,11 @@ export default function App() {
           }
           setCurrentTab(tab);
         }}
-        onSendTestNotification={() => {
+        onSavePreferences={() => {
           showToast(
-            'Glissez horizontalement pour fermer cette bannière, ou touchez-la pour ouvrir les graphiques.',
+            'Préférences de notifications enregistrées.',
             'success',
-            'Aperçu Notification Mobile',
-            { targetTab: 'charts', bypassDnd: true }
+            'Notifications'
           );
         }}
       />
@@ -1556,6 +1570,23 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Mobile Profile Bottom Sheet (< sm) */}
+      <MobileProfileSheet
+        isOpen={profileSheetOpen}
+        onClose={() => setProfileSheetOpen(false)}
+        profile={profile}
+        stats={stats}
+        username={settings.username}
+        isAdmin={isAdmin}
+        isIframe={isIframe}
+        isSpectator={isSpectator}
+        sessionExpiresAt={userSession.expiresAt}
+        onSelectTab={setCurrentTab}
+        onOpenSecurityModal={handleOpenSecurityModal}
+        onLockAdmin={handleLockAdmin}
+        onLogout={handleLogout}
+      />
 
       {/* Mobile "Plus" Drawer Sheet (Paramètres, Panel Admin, Profil, Tests, Iframe) */}
       <MobileMoreSheet

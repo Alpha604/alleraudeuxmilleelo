@@ -50,3 +50,241 @@
     animation-duration: 0.01ms !important;
   }
 }
+
+/* Recharts Brush touch ergonomics & anti-truncation styling */
+.recharts-brush {
+  overflow: visible !important;
+}
+.recharts-brush > rect {
+  rx: 8px;
+  ry: 8px;
+}
+.recharts-brush-slide {
+  fill: #facc15 !important;
+  fill-opacity: 0.22 !important;
+  stroke: rgba(250, 204, 21, 0.55) !important;
+  stroke-width: 1px !important;
+  rx: 6px;
+  cursor: grab;
+  touch-action: none;
+}
+.recharts-brush-slide:active {
+  cursor: grabbing;
+}
+.recharts-brush-traveller {
+  cursor: ew-resize;
+  touch-action: none;
+}
+.recharts-brush-traveller rect {
+  fill: #facc15 !important;
+  stroke: #090d14 !important;
+  stroke-width: 1.5px !important;
+  rx: 5px;
+  ry: 5px;
+}
+.recharts-brush-traveller line {
+  stroke: #090d14 !important;
+  stroke-width: 1.5px !important;
+}
+.recharts-brush-texts text {
+  fill: #cbd5e1 !important;
+  font-size: 10px !important;
+  font-family: var(--font-mono) !important;
+}
+
+/* =========================================================
+   MULTI-THEME SYSTEM (base=dark, light, ocean, colors)
+   ========================================================= */
+
+/* 1. THÈME CLAIR (LIGHT) */
+html[data-theme="light"] {
+  color-scheme: light;
+}
+html[data-theme="light"] body,
+html[data-theme="light"] #root > div {
+  background-color: #f4f6fb !important;
+  color: #0f172a !important;
+}
+html[data-theme="light"] header,
+html[data-theme="light"] aside,
+html[data-theme="light"] footer {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  color: #0f172a !important;
+}
+html[data-theme="light"] .bg-\[\#07090e\],
+html[data-theme="light"] .bg-\[\#070a10\]\/90,
+html[data-theme="light"] .bg-\[\#090b10\],
+html[data-theme="light"] .bg-\[\#0c0f14\],
+html[data-theme="light"] .bg-\[\#0d1117\],
+html[data-theme="light"] .bg-\[\#0c1019\]\/90,
+html[data-theme="light"] .bg-\[\#0c1019\]\/95,
+html[data-theme="light"] .bg-\[\#0a0e16\]\/95,
+html[data-theme="light"] .bg-neutral-900,
+html[data-theme="light"] .bg-neutral-900\/90,
+html[data-theme="light"] .bg-neutral-900\/80,
+html[data-theme="light"] .bg-neutral-900\/60,
+html[data-theme="light"] .bg-neutral-950,
+html[data-theme="light"] .bg-neutral-950\/90,
+html[data-theme="light"] .bg-neutral-950\/80,
+html[data-theme="light"] .bg-neutral-950\/60,
+html[data-theme="light"] .bg-black\/40 {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+html[data-theme="light"] .bg-\[\#0c0f14\]\/95,
+html[data-theme="light"] .bg-\[\#0c0f14\]\/98 {
+  background-color: rgba(255, 255, 255, 0.96) !important;
+}
+html[data-theme="light"] .border-neutral-800,
+html[data-theme="light"] .border-neutral-800\/80,
+html[data-theme="light"] .border-neutral-800\/60,
+html[data-theme="light"] .border-neutral-700,
+html[data-theme="light"] .border-white\/\[0\.08\],
+html[data-theme="light"] .border-white\/\[0\.12\],
+html[data-theme="light"] .border-white\/\[0\.15\],
+html[data-theme="light"] .border-white\/10 {
+  border-color: rgba(15, 23, 42, 0.14) !important;
+}
+html[data-theme="light"] .text-white,
+html[data-theme="light"] .text-neutral-100,
+html[data-theme="light"] .text-neutral-200 {
+  color: #0f172a !important;
+}
+html[data-theme="light"] .text-neutral-300 {
+  color: #334155 !important;
+}
+html[data-theme="light"] .text-neutral-400,
+html[data-theme="light"] .text-neutral-500 {
+  color: #64748b !important;
+}
+/* Preserve readable gold accent on light surfaces */
+html[data-theme="light"] .text-\[\#facc15\] {
+  color: #b45309 !important;
+}
+/* Keep crisp contrast on solid colored pills & primary CTA buttons */
+html[data-theme="light"] .bg-\[\#facc15\],
+html[data-theme="light"] .bg-\[\#facc15\] * {
+  color: #09090b !important;
+}
+html[data-theme="light"] .bg-\[\#ef4444\],
+html[data-theme="light"] .bg-\[\#ef4444\] * {
+  color: #ffffff !important;
+}
+html[data-theme="light"] .bg-\[\#10b981\] {
+  color: #052e16 !important;
+}
+html[data-theme="light"] input,
+html[data-theme="light"] select,
+html[data-theme="light"] textarea {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+  border-color: rgba(15, 23, 42, 0.18) !important;
+}
+html[data-theme="light"] nav[aria-label="Navigation principale mobile"] > div {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  border-color: rgba(15, 23, 42, 0.14) !important;
+}
+html[data-theme="light"] .recharts-brush-texts text {
+  fill: #475569 !important;
+}
+
+/* 2. THÈME OCÉAN (ABYSSAL CYAN) */
+html[data-theme="ocean"] {
+  color-scheme: dark;
+}
+html[data-theme="ocean"] body,
+html[data-theme="ocean"] #root > div {
+  background-color: #030d1a !important;
+  background-image: radial-gradient(circle at 20% 0%, rgba(14, 165, 233, 0.16), transparent 55%),
+    radial-gradient(circle at 85% 30%, rgba(6, 182, 212, 0.11), transparent 50%) !important;
+}
+html[data-theme="ocean"] header,
+html[data-theme="ocean"] aside,
+html[data-theme="ocean"] footer {
+  background-color: rgba(4, 18, 35, 0.92) !important;
+  border-color: rgba(56, 189, 248, 0.2) !important;
+}
+html[data-theme="ocean"] .bg-\[\#07090e\],
+html[data-theme="ocean"] .bg-\[\#090b10\],
+html[data-theme="ocean"] .bg-\[\#0c0f14\],
+html[data-theme="ocean"] .bg-\[\#0d1117\],
+html[data-theme="ocean"] .bg-\[\#0c1019\]\/90,
+html[data-theme="ocean"] .bg-\[\#0c1019\]\/95,
+html[data-theme="ocean"] .bg-\[\#0a0e16\]\/95,
+html[data-theme="ocean"] .bg-neutral-900,
+html[data-theme="ocean"] .bg-neutral-900\/90,
+html[data-theme="ocean"] .bg-neutral-950 {
+  background-color: #07182b !important;
+}
+html[data-theme="ocean"] .border-neutral-800,
+html[data-theme="ocean"] .border-neutral-800\/80,
+html[data-theme="ocean"] .border-neutral-700 {
+  border-color: rgba(56, 189, 248, 0.22) !important;
+}
+html[data-theme="ocean"] .text-\[\#facc15\] {
+  color: #38bdf8 !important;
+}
+html[data-theme="ocean"] .bg-\[\#facc15\] {
+  background-color: #38bdf8 !important;
+  color: #041322 !important;
+}
+html[data-theme="ocean"] .border-\[\#facc15\],
+html[data-theme="ocean"] .border-\[\#facc15\]\/40 {
+  border-color: rgba(56, 189, 248, 0.45) !important;
+}
+html[data-theme="ocean"] .bg-\[\#facc15\]\/10,
+html[data-theme="ocean"] .bg-\[\#facc15\]\/15 {
+  background-color: rgba(56, 189, 248, 0.14) !important;
+}
+
+/* 3. THÈME COULEURS (AURORE VIBRANT INDIGO / MAGENTA / CYAN) */
+html[data-theme="colors"] {
+  color-scheme: dark;
+}
+html[data-theme="colors"] body,
+html[data-theme="colors"] #root > div {
+  background-color: #100821 !important;
+  background-image: radial-gradient(circle at 15% 5%, rgba(236, 72, 153, 0.18), transparent 45%),
+    radial-gradient(circle at 85% 18%, rgba(139, 92, 246, 0.22), transparent 50%),
+    radial-gradient(circle at 50% 90%, rgba(34, 211, 238, 0.14), transparent 50%) !important;
+}
+html[data-theme="colors"] header,
+html[data-theme="colors"] aside,
+html[data-theme="colors"] footer {
+  background-color: rgba(20, 11, 42, 0.9) !important;
+  border-color: rgba(168, 85, 247, 0.28) !important;
+}
+html[data-theme="colors"] .bg-\[\#07090e\],
+html[data-theme="colors"] .bg-\[\#090b10\],
+html[data-theme="colors"] .bg-\[\#0c0f14\],
+html[data-theme="colors"] .bg-\[\#0d1117\],
+html[data-theme="colors"] .bg-\[\#0c1019\]\/90,
+html[data-theme="colors"] .bg-\[\#0c1019\]\/95,
+html[data-theme="colors"] .bg-\[\#0a0e16\]\/95,
+html[data-theme="colors"] .bg-neutral-900,
+html[data-theme="colors"] .bg-neutral-900\/90,
+html[data-theme="colors"] .bg-neutral-950 {
+  background-color: rgba(27, 15, 56, 0.88) !important;
+}
+html[data-theme="colors"] .border-neutral-800,
+html[data-theme="colors"] .border-neutral-800\/80,
+html[data-theme="colors"] .border-neutral-700 {
+  border-color: rgba(192, 132, 252, 0.26) !important;
+}
+html[data-theme="colors"] .text-\[\#facc15\] {
+  color: #f472b6 !important;
+}
+html[data-theme="colors"] .bg-\[\#facc15\] {
+  background: linear-gradient(135deg, #ec4899, #a855f7) !important;
+  color: #ffffff !important;
+}
+html[data-theme="colors"] .border-\[\#facc15\],
+html[data-theme="colors"] .border-\[\#facc15\]\/40 {
+  border-color: rgba(244, 114, 182, 0.5) !important;
+}
+html[data-theme="colors"] .bg-\[\#facc15\]\/10,
+html[data-theme="colors"] .bg-\[\#facc15\]\/15 {
+  background-color: rgba(236, 72, 153, 0.16) !important;
+}
+

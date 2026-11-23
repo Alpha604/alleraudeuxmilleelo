@@ -52,6 +52,7 @@ interface NavbarProps {
   onQuickSwitchAccount?: (targetUsername: string) => void;
   unreadNotificationsCount?: number;
   onOpenNotificationCenter?: () => void;
+  onOpenProfileSheet?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -76,6 +77,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   hasAdminAccess = false,
   unreadNotificationsCount = 0,
   onOpenNotificationCenter,
+  onOpenProfileSheet,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -247,13 +249,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           )}
 
-          {/* Player Avatar Button with Dropdown Menu */}
+          {/* Player Avatar Button: Mobile opens swipeable Profile Sheet, Desktop opens UserDropdown */}
           <div className="relative">
             <button
               type="button"
-              onClick={() => setDropdownOpen(!dropdownOpen)}
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.innerWidth < 640 && onOpenProfileSheet) {
+                  onOpenProfileSheet();
+                  return;
+                }
+                setDropdownOpen(!dropdownOpen);
+              }}
               className="flex items-center pl-1 border-l border-neutral-800 hover:opacity-80 transition-opacity active:scale-95"
-              title={`Menu déroulant du compte : @${username}`}
+              title={`Menu du compte : @${username}`}
             >
               {profile?.avatar ? (
                 <img
@@ -271,21 +279,23 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
 
-            <UserDropdown
-              isOpen={dropdownOpen}
-              onClose={() => setDropdownOpen(false)}
-              profile={profile}
-              stats={stats}
-              username={username}
-              isAdmin={isAdmin}
-              isSpectator={isSpectator}
-              onSelectTab={handleTabClick}
-              onLogout={onLogout}
-              onOpenSecurityModal={onOpenSecurityModal}
-              onLockAdmin={onLockAdmin}
-              sessionExpiresAt={sessionExpiresAt}
-              placement="bottom-right"
-            />
+            <div className="hidden sm:block">
+              <UserDropdown
+                isOpen={dropdownOpen}
+                onClose={() => setDropdownOpen(false)}
+                profile={profile}
+                stats={stats}
+                username={username}
+                isAdmin={isAdmin}
+                isSpectator={isSpectator}
+                onSelectTab={handleTabClick}
+                onLogout={onLogout}
+                onOpenSecurityModal={onOpenSecurityModal}
+                onLockAdmin={onLockAdmin}
+                sessionExpiresAt={sessionExpiresAt}
+                placement="bottom-right"
+              />
+            </div>
           </div>
         </div>
       </div>

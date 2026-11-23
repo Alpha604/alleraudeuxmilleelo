@@ -63,7 +63,7 @@ interface HistoryChartProps {
 }
 
 type ModeFilter = 'auto' | 'blitz' | 'rapid' | 'bullet';
-type QuickPreset = 'progress' | 'full' | '30days' | '3months' | '6months' | '1year' | '14days' | '7days';
+type QuickPreset = 'progress' | 'since_start' | 'full' | 'custom' | '30days' | '3months' | '6months' | '1year' | '14days' | '7days';
 type TableStatusFilter = 'all' | 'played' | 'carryover' | 'ahead' | 'behind';
 
 interface ChartPoint {
@@ -495,10 +495,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   React.useEffect(() => {
     if (activePreset === 'progress') {
       setZoomRange(computeProgressWindow());
+    } else if (activePreset === 'since_start') {
+      setZoomRange({ startIndex: 0, endIndex: Math.max(0, todayIndex) });
     } else if (activePreset === 'full') {
       setZoomRange({ startIndex: 0, endIndex: Math.max(0, allChartData.length - 1) });
     }
-  }, [selectedMode, activePreset, computeProgressWindow, allChartData.length]);
+  }, [selectedMode, activePreset, computeProgressWindow, allChartData.length, todayIndex]);
 
   // Apply quick presets
   const applyPreset = (preset: QuickPreset) => {
@@ -506,6 +508,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     const total = allChartData.length;
     if (preset === 'full') {
       setZoomRange({ startIndex: 0, endIndex: Math.max(0, total - 1) });
+    } else if (preset === 'since_start') {
+      setZoomRange({ startIndex: 0, endIndex: Math.max(0, todayIndex) });
     } else if (preset === 'progress') {
       setZoomRange(computeProgressWindow());
     } else if (preset === '1year') {
@@ -537,6 +541,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     const span = endIndex - startIndex;
     if (span <= 5) return;
     const delta = Math.max(1, Math.floor(span * 0.15));
+    setActivePreset('custom');
     setZoomRange({
       startIndex: Math.min(endIndex - 4, startIndex + delta),
       endIndex: Math.max(startIndex + 4, endIndex - delta),
@@ -548,6 +553,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     const total = allChartData.length;
     const span = endIndex - startIndex;
     const delta = Math.max(1, Math.floor(span * 0.2));
+    setActivePreset('custom');
     setZoomRange({
       startIndex: Math.max(0, startIndex - delta),
       endIndex: Math.min(total - 1, endIndex + delta),
@@ -559,6 +565,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     const total = allChartData.length;
     const span = endIndex - startIndex;
     const shift = Math.max(1, Math.floor(span * 0.25));
+    setActivePreset('custom');
 
     if (direction === 'left') {
       const newStart = Math.max(0, startIndex - shift);
@@ -770,18 +777,18 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     });
 
     return (
-      <div className="rounded-2xl border border-neutral-800 bg-[#0c0f14]/95 p-4 text-xs shadow-2xl space-y-3 backdrop-blur-md min-w-[260px]">
+      <div className="rounded-xl sm:rounded-2xl border border-neutral-800 bg-[#0c0f14]/95 p-2.5 sm:p-4 text-[11px] sm:text-xs shadow-2xl space-y-1.5 sm:space-y-3 backdrop-blur-md min-w-[180px] max-w-[230px] sm:min-w-[260px] sm:max-w-none pointer-events-none">
         {/* Header with date and status badge */}
-        <div className="font-bold text-white capitalize border-b border-neutral-800/80 pb-2 flex items-center justify-between gap-3">
-          <span>{fullDate}</span>
+        <div className="font-bold text-white capitalize border-b border-neutral-800/80 pb-1.5 sm:pb-2 flex items-center justify-between gap-2">
+          <span className="truncate">{fullDate}</span>
           <span
-            className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+            className={`text-[9px] sm:text-[10px] font-mono font-bold px-1.5 sm:px-2 py-0.5 rounded border shrink-0 ${
               pt.isDirectSync
                 ? 'bg-[#facc15]/15 text-[#facc15] border-[#facc15]/30'
                 : 'bg-neutral-800 text-neutral-400 border-neutral-700'
             }`}
           >
-            {pt.isDirectSync ? `🎯 Partie ${pt.mode || ''}` : '⏸️ Elo Maintenu'}
+            {pt.isDirectSync ? `${pt.mode || ''}` : 'Maintien'}
           </span>
         </div>
 
@@ -879,8 +886,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   return (
     <div className="space-y-6">
       {/* 1. TOP HEADER & MAIN STATUS ROW */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4 bg-[#0d1117] border border-neutral-800 p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl shadow-xl">
-        <div>
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 sm:gap-4 bg-[#0d1117] border border-neutral-800 p-3 sm:p-5 rounded-2xl sm:rounded-3xl shadow-xl">
+        <div className="hidden sm:block">
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <h2 className="text-sm sm:text-lg font-black text-white flex items-center gap-1.5 sm:gap-2">
               <Compass className="h-4 w-4 sm:h-5 sm:w-5 text-[#facc15]" />
@@ -1057,9 +1064,9 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
         </div>
       </div>
 
-      {/* Advance / Retard Calendar Alert Banner - Responsive */}
+      {/* Advance / Retard Calendar Alert Banner - Hidden on mobile phone (< sm), visible on Tablet & Desktop */}
       {advanceMetric.isAhead && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#10b981]/10 border border-[#10b981]/30 p-3 sm:p-4 rounded-2xl sm:rounded-3xl shadow-lg">
+        <div className="hidden sm:flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#10b981]/10 border border-[#10b981]/30 p-3 sm:p-4 rounded-2xl sm:rounded-3xl shadow-lg">
           <div className="flex items-center gap-2.5 sm:gap-3">
             <div className="p-2 sm:p-2.5 rounded-xl bg-[#10b981]/20 text-[#10b981] flex-shrink-0">
               <Zap className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -1090,7 +1097,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
       )}
 
       {advanceMetric.isBehind && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#ef4444]/10 border border-[#ef4444]/30 p-3 sm:p-4 rounded-2xl sm:rounded-3xl shadow-lg">
+        <div className="hidden sm:flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#ef4444]/10 border border-[#ef4444]/30 p-3 sm:p-4 rounded-2xl sm:rounded-3xl shadow-lg">
           <div className="flex items-center gap-2.5 sm:gap-3">
             <div className="p-2 sm:p-2.5 rounded-xl bg-[#ef4444]/20 text-[#ef4444] flex-shrink-0">
               <TrendingDown className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -1175,6 +1182,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             </span>
             {[
               { id: 'progress', label: 'Progression', fullLabel: 'Progression Active', always: true },
+              { id: 'since_start', label: 'Depuis le début', fullLabel: 'Depuis le début', always: true },
               { id: 'full', label: 'Tout', fullLabel: 'Tout le Projet', always: true },
               { id: '1year', label: '1 An', fullLabel: '1 An', always: false },
               { id: '6months', label: '6 Mois', fullLabel: '6 Mois', always: false },
@@ -1413,12 +1421,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
           </div>
         </div>
 
-        {/* Recharts Canvas - Fully responsive height and margins */}
-        <div className="h-[280px] sm:h-[420px] lg:h-[480px] w-full">
+        {/* Recharts Canvas - Touch optimized height, safe Brush margins & zero clipping */}
+        <div className="h-[295px] sm:h-[430px] lg:h-[480px] w-full touch-pan-y select-none">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={visiblePoints}
-              margin={{ top: 15, right: 15, left: -14, bottom: showBrush ? 10 : 25 }}
+              margin={{ top: 15, right: 16, left: 2, bottom: showBrush ? 20 : 16 }}
             >
               <defs>
                 {/* Yellow glow gradient under real Elo */}
@@ -1456,7 +1464,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               <YAxis
                 domain={[yMin, yMax]}
                 ticks={yTicks}
-                width={38}
+                width={36}
                 stroke="#64748b"
                 tick={{ fill: '#94a3b8', fontSize: 10, fontFamily: 'monospace' }}
                 tickLine={{ stroke: '#334155' }}
@@ -1559,7 +1567,11 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                   />
                 ))}
 
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip
+                content={<CustomTooltip />}
+                allowEscapeViewBox={{ x: false, y: false }}
+                wrapperStyle={{ zIndex: 30, pointerEvents: 'none' }}
+              />
 
               {/* Subtle Gradient Glow under the real line */}
               {showAreaGlow && (
@@ -1699,13 +1711,16 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 />
               )}
 
-              {/* Recharts Brush component for fluid sliding and zooming */}
+              {/* Recharts Brush component with wide handles and safe bounds (never truncated) */}
               {showBrush && (
                 <Brush
                   dataKey="dayKey"
-                  height={34}
+                  x={40}
+                  height={40}
+                  travellerWidth={18}
+                  padding={{ top: 4, bottom: 4, left: 4, right: 4 }}
                   stroke="#facc15"
-                  fill="#0c0f14"
+                  fill="#090d14"
                   tickFormatter={(key: string) => {
                     const [y, m, d] = key.split('-').map(Number);
                     const dt = new Date(y, m - 1, d);
@@ -1716,6 +1731,69 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             </ComposedChart>
           </ResponsiveContainer>
         </div>
+
+        {/* Finger-Friendly Timeline Range Scrubber (Controls full timeline smoothly on mobile & PC) */}
+        {allChartData.length > 2 && (
+          <div className="rounded-2xl border border-neutral-800/90 bg-neutral-950/70 p-3 space-y-2.5">
+            <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+              <span className="text-neutral-400 flex items-center gap-1.5">
+                <SlidersHorizontal className="h-3.5 w-3.5 text-[#facc15]" />
+                <span>Fenêtre :</span>
+                <strong className="text-white">
+                  {visiblePoints[0]?.dateLabel} → {visiblePoints[visiblePoints.length - 1]?.dateLabel}
+                </strong>
+              </span>
+              <span className="text-[#facc15] font-bold shrink-0">
+                {visiblePoints.length} j.
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="flex items-center gap-2.5 text-[11px] text-neutral-400">
+                <span className="w-12 shrink-0 font-bold text-neutral-300">Début</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0, zoomRange.endIndex - 3)}
+                  value={Math.min(zoomRange.startIndex, Math.max(0, zoomRange.endIndex - 3))}
+                  onChange={(e) => {
+                    const nextStart = Number(e.target.value);
+                    setActivePreset('custom');
+                    setZoomRange((prev) => ({
+                      startIndex: Math.min(nextStart, Math.max(0, prev.endIndex - 3)),
+                      endIndex: prev.endIndex,
+                    }));
+                  }}
+                  aria-label="Date de début du graphique"
+                  className="flex-1 h-2.5 accent-[#facc15] cursor-pointer touch-pan-x"
+                />
+              </label>
+
+              <label className="flex items-center gap-2.5 text-[11px] text-neutral-400">
+                <span className="w-12 shrink-0 font-bold text-neutral-300">Fin</span>
+                <input
+                  type="range"
+                  min={Math.min(allChartData.length - 1, zoomRange.startIndex + 3)}
+                  max={allChartData.length - 1}
+                  value={Math.max(
+                    zoomRange.endIndex,
+                    Math.min(allChartData.length - 1, zoomRange.startIndex + 3)
+                  )}
+                  onChange={(e) => {
+                    const nextEnd = Number(e.target.value);
+                    setActivePreset('custom');
+                    setZoomRange((prev) => ({
+                      startIndex: prev.startIndex,
+                      endIndex: Math.max(nextEnd, Math.min(allChartData.length - 1, prev.startIndex + 3)),
+                    }));
+                  }}
+                  aria-label="Date de fin du graphique"
+                  className="flex-1 h-2.5 accent-[#facc15] cursor-pointer touch-pan-x"
+                />
+              </label>
+            </div>
+          </div>
+        )}
 
         {/* 5. STEPPER PALIERS (1600 to 2000 Elo) */}
         <div className="pt-5 border-t border-neutral-800">

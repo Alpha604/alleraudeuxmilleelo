@@ -498,13 +498,13 @@ export const SyncLog: React.FC<SyncLogProps> = ({
           </div>
         </div>
 
-        {/* Action buttons */}
-        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+        {/* Action buttons — single line on mobile */}
+        <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none pb-0.5">
           {!isIframe && onPurgeAccountData && (
             <button
               onClick={handleTriggerPurge}
               title={isAdmin ? "Purger le cache et forcer un relevé neuf" : "Action protégée par 2FA"}
-              className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-white hover:bg-neutral-800 transition-colors"
+              className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-white hover:bg-neutral-800 transition-colors shrink-0 whitespace-nowrap"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               <span>Purger</span>
@@ -514,7 +514,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
 
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-1.5 rounded-xl border border-[#10b981]/40 bg-[#10b981]/15 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-[#10b981] hover:bg-[#10b981]/25 transition-colors"
+            className="flex items-center gap-1.5 rounded-xl border border-[#10b981]/40 bg-[#10b981]/15 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-[#10b981] hover:bg-[#10b981]/25 transition-colors shrink-0 whitespace-nowrap"
           >
             <FileSpreadsheet className="h-3.5 w-3.5" />
             <span>CSV</span>
@@ -522,7 +522,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
 
           <button
             onClick={handleExportJSON}
-            className="flex items-center gap-1.5 rounded-xl border border-[#facc15]/40 bg-[#facc15]/10 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-[#facc15] hover:bg-[#facc15]/20 transition-colors"
+            className="flex items-center gap-1.5 rounded-xl border border-[#facc15]/40 bg-[#facc15]/10 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-[#facc15] hover:bg-[#facc15]/20 transition-colors shrink-0 whitespace-nowrap"
           >
             <FileJson className="h-3.5 w-3.5" />
             <span>JSON</span>
@@ -532,7 +532,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
             <button
               onClick={handleTriggerImport}
               title={isAdmin ? "Importer un fichier d'historique" : "Import protégé par 2FA"}
-              className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-white hover:bg-neutral-800 transition-colors"
+              className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-white hover:bg-neutral-800 transition-colors shrink-0 whitespace-nowrap"
             >
               <Upload className="h-3.5 w-3.5" />
               <span>Import</span>
@@ -544,7 +544,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
             <button
               onClick={handleTriggerClear}
               title={isAdmin ? "Vider l'historique" : "Action protégée par 2FA"}
-              className="flex items-center gap-1.5 rounded-xl border border-[#ef4444]/40 bg-[#ef4444]/15 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-[#ef4444] hover:bg-[#ef4444]/25 transition-colors"
+              className="flex items-center gap-1.5 rounded-xl border border-[#ef4444]/40 bg-[#ef4444]/15 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold text-[#ef4444] hover:bg-[#ef4444]/25 transition-colors shrink-0 whitespace-nowrap"
             >
               <Trash2 className="h-3.5 w-3.5" />
               <span>Vider</span>
@@ -555,96 +555,154 @@ export const SyncLog: React.FC<SyncLogProps> = ({
       </div>
 
       {/* KPI & Filter / Sort Toolbar */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 items-center rounded-2xl border border-neutral-800 bg-[#0c0f14] p-3 sm:p-4">
-        {/* KPI stats */}
-        <div className="md:col-span-6 flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs">
-            <Calendar className="h-4 w-4 text-neutral-400" />
-            <span className="text-neutral-400">Total :</span>
-            <span className="font-mono font-bold text-white">{totalDaysCount} jours</span>
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 sm:gap-4 items-center rounded-2xl border border-neutral-800 bg-[#0c0f14] p-2.5 sm:p-4">
+        {/* KPI stats (compact dot pills on mobile, full text on sm+) */}
+        <div className="md:col-span-6 flex flex-nowrap sm:flex-wrap items-center gap-1.5 sm:gap-2.5 overflow-x-auto scrollbar-none">
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full sm:rounded-xl bg-neutral-900 border border-neutral-800 text-[11px] sm:text-xs shrink-0"
+            title={`Total : ${totalDaysCount} jours`}
+          >
+            <Calendar className="h-3.5 w-3.5 text-neutral-400" />
+            <span className="hidden sm:inline text-neutral-400">Total :</span>
+            <span className="font-mono font-bold text-white">{totalDaysCount}<span className="hidden sm:inline"> jours</span></span>
           </div>
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#10b981]/10 border border-[#10b981]/30 text-xs">
-            <span className="h-2 w-2 rounded-full bg-[#10b981]" />
-            <span className="text-[#10b981] font-bold">{verifiedCloudCount} synchronisés</span>
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full sm:rounded-xl bg-[#10b981]/10 border border-[#10b981]/30 text-[11px] sm:text-xs shrink-0"
+            title={`${verifiedCloudCount} synchronisés`}
+          >
+            <span className="h-2.5 w-2.5 sm:h-2 sm:w-2 rounded-full bg-[#10b981] shrink-0" />
+            <span className="text-[#10b981] font-mono sm:font-sans font-bold">
+              {verifiedCloudCount}<span className="hidden sm:inline"> synchronisés</span>
+            </span>
           </div>
 
           {pendingCloudCount > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs">
-              <span className="h-2 w-2 rounded-full bg-amber-400" />
-              <span className="text-amber-400 font-bold">{pendingCloudCount} en attente</span>
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full sm:rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] sm:text-xs shrink-0"
+              title={`${pendingCloudCount} en attente`}
+            >
+              <span className="h-2.5 w-2.5 sm:h-2 sm:w-2 rounded-full bg-amber-400 shrink-0" />
+              <span className="text-amber-400 font-mono sm:font-sans font-bold">
+                {pendingCloudCount}<span className="hidden sm:inline"> en attente</span>
+              </span>
             </div>
           )}
 
           {puzzlesPendingCount > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-500/15 border border-orange-500/40 text-xs">
-              <span className="h-2 w-2 rounded-full bg-orange-400" />
-              <span className="text-orange-400 font-bold">{puzzlesPendingCount} problèmes à compléter</span>
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full sm:rounded-xl bg-orange-500/15 border border-orange-500/40 text-[11px] sm:text-xs shrink-0"
+              title={`${puzzlesPendingCount} problèmes à compléter`}
+            >
+              <span className="h-2.5 w-2.5 sm:h-2 sm:w-2 rounded-full bg-orange-400 shrink-0" />
+              <span className="text-orange-400 font-mono sm:font-sans font-bold">
+                {puzzlesPendingCount}<span className="hidden sm:inline"> problèmes à compléter</span>
+              </span>
             </div>
           )}
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#ef4444]/10 border border-[#ef4444]/30 text-xs">
-            <span className="h-2 w-2 rounded-full bg-[#ef4444]" />
-            <span className="text-[#ef4444] font-bold">{missingDaysCount} manqués</span>
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full sm:rounded-xl bg-[#ef4444]/10 border border-[#ef4444]/30 text-[11px] sm:text-xs shrink-0"
+            title={`${missingDaysCount} manqués`}
+          >
+            <span className="h-2.5 w-2.5 sm:h-2 sm:w-2 rounded-full bg-[#ef4444] shrink-0" />
+            <span className="text-[#ef4444] font-mono sm:font-sans font-bold">
+              {missingDaysCount}<span className="hidden sm:inline"> manqués</span>
+            </span>
           </div>
         </div>
 
-        {/* Filter buttons & sort dropdown */}
-        <div className="md:col-span-6 flex flex-wrap items-center justify-start md:justify-end gap-2">
-          {/* Filter segment */}
-          <div className="flex flex-wrap items-center p-1 rounded-xl bg-neutral-900 border border-neutral-800 text-xs gap-1">
+        {/* Filter buttons & sort toggle — strictly one single horizontal line */}
+        <div className="md:col-span-6 flex flex-nowrap items-center justify-between md:justify-end gap-1.5 sm:gap-2 overflow-x-auto scrollbar-none">
+          {/* Filter segment: Dots on mobile, full text on sm+ */}
+          <div className="flex flex-nowrap items-center p-1 rounded-full sm:rounded-xl bg-neutral-900 border border-neutral-800 text-xs gap-1 shrink-0">
             <button
               onClick={() => setFilterMode('all')}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+              title={`Tous (${totalDaysCount})`}
+              aria-label={`Tous (${totalDaysCount})`}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full sm:rounded-lg font-bold transition-all whitespace-nowrap shrink-0 ${
                 filterMode === 'all'
                   ? 'bg-[#facc15] text-black shadow-sm'
-                  : 'text-neutral-400 hover:text-white'
+                  : 'text-neutral-300 hover:text-white'
               }`}
             >
-              Tous ({totalDaysCount})
+              <span
+                className={`h-2.5 w-2.5 rounded-full sm:hidden ${
+                  filterMode === 'all' ? 'bg-black' : 'bg-white'
+                }`}
+              />
+              <span className="sm:hidden font-mono text-[11px]">{totalDaysCount}</span>
+              <span className="hidden sm:inline">Tous ({totalDaysCount})</span>
             </button>
-            <button
-              onClick={() => setFilterMode('missing')}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
-                filterMode === 'missing'
-                  ? 'bg-[#ef4444] text-white shadow-sm'
-                  : 'text-neutral-400 hover:text-[#ef4444]'
-              }`}
-            >
-              Manqués ({missingDaysCount})
-            </button>
+
             <button
               onClick={() => setFilterMode('synced')}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+              title={`Synchronisés / Faits (${syncedDaysCount})`}
+              aria-label={`Synchronisés (${syncedDaysCount})`}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full sm:rounded-lg font-bold transition-all whitespace-nowrap shrink-0 ${
                 filterMode === 'synced'
                   ? 'bg-[#10b981] text-black shadow-sm'
-                  : 'text-neutral-400 hover:text-[#10b981]'
+                  : 'text-neutral-300 hover:text-[#10b981]'
               }`}
             >
-              Faits ({syncedDaysCount})
+              <span
+                className={`h-2.5 w-2.5 rounded-full sm:hidden ${
+                  filterMode === 'synced' ? 'bg-black' : 'bg-[#10b981]'
+                }`}
+              />
+              <span className="sm:hidden font-mono text-[11px]">{syncedDaysCount}</span>
+              <span className="hidden sm:inline">Faits ({syncedDaysCount})</span>
             </button>
+
             {puzzlesPendingCount > 0 && (
               <button
                 onClick={() => setFilterMode('puzzles_pending')}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
+                title={`À compléter (${puzzlesPendingCount})`}
+                aria-label={`À compléter (${puzzlesPendingCount})`}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full sm:rounded-lg font-bold transition-all whitespace-nowrap shrink-0 ${
                   filterMode === 'puzzles_pending'
                     ? 'bg-orange-500 text-black shadow-sm'
                     : 'text-orange-400 hover:bg-orange-500/15'
                 }`}
               >
-                À compléter ({puzzlesPendingCount})
+                <span
+                  className={`h-2.5 w-2.5 rounded-full sm:hidden ${
+                    filterMode === 'puzzles_pending' ? 'bg-black' : 'bg-orange-400'
+                  }`}
+                />
+                <span className="sm:hidden font-mono text-[11px]">{puzzlesPendingCount}</span>
+                <span className="hidden sm:inline">À compléter ({puzzlesPendingCount})</span>
               </button>
             )}
+
+            <button
+              onClick={() => setFilterMode('missing')}
+              title={`Manqués (${missingDaysCount})`}
+              aria-label={`Manqués (${missingDaysCount})`}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full sm:rounded-lg font-bold transition-all whitespace-nowrap shrink-0 ${
+                filterMode === 'missing'
+                  ? 'bg-[#ef4444] text-white shadow-sm'
+                  : 'text-neutral-300 hover:text-[#ef4444]'
+              }`}
+            >
+              <span
+                className={`h-2.5 w-2.5 rounded-full sm:hidden ${
+                  filterMode === 'missing' ? 'bg-white' : 'bg-[#ef4444]'
+                }`}
+              />
+              <span className="sm:hidden font-mono text-[11px]">{missingDaysCount}</span>
+              <span className="hidden sm:inline">Manqués ({missingDaysCount})</span>
+            </button>
           </div>
 
           {/* Sort toggle */}
           <button
             onClick={() => setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
-            className="flex items-center gap-1.5 h-8 px-2.5 rounded-xl border border-neutral-800 bg-neutral-900 text-xs font-bold text-neutral-300 hover:text-white transition-all"
-            title="Inverser l'ordre chronologique"
+            className="flex items-center gap-1.5 h-8 px-2.5 rounded-full sm:rounded-xl border border-neutral-800 bg-neutral-900 text-xs font-bold text-neutral-300 hover:text-white transition-all shrink-0 whitespace-nowrap"
+            title={sortOrder === 'desc' ? 'Ordre : Plus récents (cliquez pour inverser)' : 'Ordre : Plus anciens (cliquez pour inverser)'}
           >
             <ArrowUpDown className="h-3.5 w-3.5 text-[#facc15]" />
-            <span>{sortOrder === 'desc' ? 'Plus récents' : 'Plus anciens'}</span>
+            <span className="hidden sm:inline">{sortOrder === 'desc' ? 'Plus récents' : 'Plus anciens'}</span>
           </button>
         </div>
       </div>
@@ -701,33 +759,39 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                         <div className="text-[10px] text-neutral-400 font-mono">{day.dateKey}</div>
                       </td>
 
-                      {/* Status */}
-                      <td className="py-3 px-4 text-center whitespace-nowrap">
+                      {/* Status — compact pastille dot on mobile, text badge on sm+ */}
+                      <td className="py-3 px-2.5 sm:px-4 text-center whitespace-nowrap">
                         {day.syncState === 'missing' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#ef4444]/20 border border-[#ef4444]/40 text-[#ef4444] text-[10px] font-bold uppercase tracking-wider">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#ef4444] shrink-0" />
-                            Manqué
+                          <span
+                            className="inline-flex items-center justify-center gap-1 p-1.5 sm:px-2.5 sm:py-0.5 rounded-full bg-[#ef4444]/20 border border-[#ef4444]/40 text-[#ef4444] text-[10px] font-bold uppercase tracking-wider"
+                            title="Manqué"
+                          >
+                            <span className="h-2.5 w-2.5 sm:h-1.5 sm:w-1.5 rounded-full bg-[#ef4444] shrink-0" />
+                            <span className="hidden sm:inline">Manqué</span>
                           </span>
                         ) : day.syncState === 'verifying' ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#facc15]/15 border border-[#facc15]/40 text-[#facc15] text-[10px] font-bold uppercase tracking-wider">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#facc15] animate-ping shrink-0" />
-                            Vérification
+                          <span
+                            className="inline-flex items-center justify-center gap-1.5 p-1.5 sm:px-2.5 sm:py-0.5 rounded-full bg-[#facc15]/15 border border-[#facc15]/40 text-[#facc15] text-[10px] font-bold uppercase tracking-wider"
+                            title="Vérification JSONBin en cours"
+                          >
+                            <span className="h-2.5 w-2.5 sm:h-1.5 sm:w-1.5 rounded-full bg-[#facc15] animate-ping shrink-0" />
+                            <span className="hidden sm:inline">Vérification</span>
                           </span>
                         ) : day.syncState === 'verified' ? (
                           <span
-                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#10b981]/20 border border-[#10b981]/40 text-[#10b981] text-[10px] font-bold uppercase tracking-wider"
-                            title="Empreinte confirmée identique sur JSONBin"
+                            className="inline-flex items-center justify-center gap-1 p-1.5 sm:px-2.5 sm:py-0.5 rounded-full bg-[#10b981]/20 border border-[#10b981]/40 text-[#10b981] text-[10px] font-bold uppercase tracking-wider"
+                            title="Synchronisé — Empreinte confirmée identique sur JSONBin"
                           >
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#10b981] shrink-0" />
-                            Synchronisé
+                            <span className="h-2.5 w-2.5 sm:h-1.5 sm:w-1.5 rounded-full bg-[#10b981] shrink-0" />
+                            <span className="hidden sm:inline">Synchronisé</span>
                           </span>
                         ) : (
                           <span
-                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-400 text-[10px] font-bold uppercase tracking-wider"
-                            title="Relevé enregistré localement, en attente de confirmation distante JSONBin"
+                            className="inline-flex items-center justify-center gap-1 p-1.5 sm:px-2.5 sm:py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-400 text-[10px] font-bold uppercase tracking-wider"
+                            title="En attente — Relevé enregistré localement, en attente de confirmation distante JSONBin"
                           >
-                            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
-                            En attente
+                            <span className="h-2.5 w-2.5 sm:h-1.5 sm:w-1.5 rounded-full bg-amber-400 shrink-0" />
+                            <span className="hidden sm:inline">En attente</span>
                           </span>
                         )}
                       </td>
@@ -784,13 +848,13 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                             onClick={() => !isIframe && handleOpenEditModal(day, true)}
                             title={
                               isAdmin
-                                ? 'Saisir manuellement le ELO Problèmes du lendemain'
-                                : 'Cliquez pour saisir le ELO Problèmes (2FA requis)'
+                                ? 'À compléter — Saisir manuellement le ELO Problèmes du lendemain'
+                                : 'À compléter — Cliquez pour saisir le ELO Problèmes (2FA requis)'
                             }
-                            className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-orange-500/20 border border-orange-500/50 text-orange-400 hover:bg-orange-500/30 text-[10px] font-sans font-bold uppercase tracking-wider transition-all active:scale-95"
+                            className="inline-flex items-center justify-center gap-1.5 p-1.5 sm:px-2.5 sm:py-0.5 rounded-full bg-orange-500/20 border border-orange-500/50 text-orange-400 hover:bg-orange-500/30 text-[10px] font-sans font-bold uppercase tracking-wider transition-all active:scale-95"
                           >
-                            <span className="h-1.5 w-1.5 rounded-full bg-orange-400 shrink-0" />
-                            <span>À compléter</span>
+                            <span className="h-2.5 w-2.5 sm:h-1.5 sm:w-1.5 rounded-full bg-orange-400 shrink-0" />
+                            <span className="hidden sm:inline">À compléter</span>
                           </button>
                         )}
                       </td>

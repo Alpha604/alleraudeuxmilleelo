@@ -9,11 +9,12 @@ import {
   ArrowRight,
   Bell,
   BellOff,
+  Check,
   CheckCheck,
   CheckCircle2,
   Info,
+  Save,
   SlidersHorizontal,
-  Sparkles,
   Trash2,
   Vibrate,
   X,
@@ -39,7 +40,8 @@ interface MobileNotificationCenterProps {
   onDeleteOne: (id: string) => void;
   onClearAll: () => void;
   onNavigateTab: (tab: NavTab) => void;
-  onSendTestNotification: () => void;
+  onSendTestNotification?: () => void;
+  onSavePreferences?: () => void;
 }
 
 export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> = ({
@@ -53,9 +55,10 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
   onDeleteOne,
   onClearAll,
   onNavigateTab,
-  onSendTestNotification,
+  onSavePreferences,
 }) => {
   const [filter, setFilter] = useState<'all' | 'unread' | 'alerts' | 'settings'>('all');
+  const [prefsSavedFlash, setPrefsSavedFlash] = useState(false);
   const [rendered, setRendered] = useState(isOpen);
   const [entered, setEntered] = useState(false);
   const [dragY, setDragY] = useState(0);
@@ -285,11 +288,27 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
     [notifications]
   );
 
+  const alertsCount = useMemo(
+    () => notifications.filter((n) => n.type === 'warning').length,
+    [notifications]
+  );
+
   const filteredList = useMemo(() => {
     if (filter === 'unread') return notifications.filter((n) => !n.read);
     if (filter === 'alerts') return notifications.filter((n) => n.type === 'warning');
     return notifications;
   }, [notifications, filter]);
+
+  const handleSavePrefsClick = () => {
+    onUpdatePrefs(prefs);
+    triggerNotificationHaptic('success');
+    setPrefsSavedFlash(true);
+    onSavePreferences?.();
+    window.setTimeout(() => {
+      setPrefsSavedFlash(false);
+      setFilter('all');
+    }, 650);
+  };
 
   if (!rendered) return null;
 
@@ -373,27 +392,45 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
           </div>
         </div>
 
-        {/* Filter & Settings Bar */}
+        {/* Filter & Settings Bar (Pastilles compactes) */}
         <div className="px-4 py-2.5 border-b border-white/[0.06] flex items-center justify-between gap-2 overflow-x-auto scrollbar-none">
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/[0.08]">
+          <div className="flex items-center gap-1.5 p-1 rounded-full bg-white/[0.04] border border-white/[0.08]">
             {(
               [
-                { id: 'all', label: `Toutes (${notifications.length})` },
-                { id: 'unread', label: `Non lues (${unreadCount})` },
-                { id: 'alerts', label: 'Alertes' },
+                {
+                  id: 'all',
+                  title: 'Toutes',
+                  count: notifications.length,
+                  dotClass: 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.65)]',
+                },
+                {
+                  id: 'unread',
+                  title: 'Non lues',
+                  count: unreadCount,
+                  dotClass: 'bg-[#facc15] shadow-[0_0_8px_rgba(250,204,21,0.75)]',
+                },
+                {
+                  id: 'alerts',
+                  title: 'Alertes',
+                  count: alertsCount,
+                  dotClass: 'bg-[#ef4444] shadow-[0_0_8px_rgba(239,68,68,0.75)]',
+                },
               ] as const
             ).map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setFilter(tab.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+                title={`${tab.title} (${tab.count})`}
+                aria-label={`${tab.title} (${tab.count})`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono font-bold whitespace-nowrap transition-all ${
                   filter === tab.id
-                    ? 'bg-[#facc15] text-black font-bold'
-                    : 'text-neutral-300 hover:text-white'
+                    ? 'bg-white/15 text-white ring-1 ring-[#facc15]/60 shadow-sm'
+                    : 'text-neutral-300 hover:bg-white/[0.06]'
                 }`}
               >
-                {tab.label}
+                <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${tab.dotClass}`} />
+                <span className="tabular-nums text-[11px]">{tab.count}</span>
               </button>
             ))}
           </div>
@@ -401,14 +438,15 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
           <button
             type="button"
             onClick={() => setFilter((f) => (f === 'settings' ? 'all' : 'settings'))}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
               filter === 'settings'
                 ? 'border-[#facc15] bg-[#facc15]/15 text-[#facc15]'
                 : 'border-white/10 bg-white/[0.04] text-neutral-300 hover:text-white'
             }`}
+            aria-label="Réglages des notifications"
           >
             <SlidersHorizontal className="h-3.5 w-3.5" />
-            <span>Réglages</span>
+            <span className="hidden sm:inline">Réglages</span>
           </button>
         </div>
 
@@ -507,11 +545,20 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
 
                 <button
                   type="button"
-                  onClick={onSendTestNotification}
-                  className="w-full py-3 px-4 rounded-2xl bg-[#facc15] hover:bg-[#eab308] text-black text-xs font-extrabold flex items-center justify-center gap-2 transition-colors"
+                  onClick={handleSavePrefsClick}
+                  className="w-full py-3 px-4 rounded-2xl bg-[#facc15] hover:bg-[#eab308] text-black text-xs font-extrabold flex items-center justify-center gap-2 transition-colors active:scale-[0.99]"
                 >
-                  <Sparkles className="h-4 w-4" />
-                  <span>Tester une notification mobile maintenant</span>
+                  {prefsSavedFlash ? (
+                    <>
+                      <Check className="h-4 w-4" />
+                      <span>Enregistré !</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4" />
+                      <span>Enregistrer</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
