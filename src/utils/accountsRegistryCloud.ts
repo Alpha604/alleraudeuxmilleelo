@@ -9,6 +9,8 @@
  * isolated JSONBin Bin IDs, and project settings across devices.
  */
 
+import { safeApiFetch } from './backendApi';
+
 const REGISTRY_CONFIG_KEYS = {
   binId: 'roadto2000_accounts_registry_binid',
   apiKey: 'roadto2000_accounts_registry_apikey',
@@ -192,13 +194,11 @@ export async function saveAccountsRegistryConfig(config: {
 
   // Notify Express backend if active
   try {
-    if (typeof fetch !== 'undefined') {
-      fetch('/api/accounts-registry/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      }).catch(() => {});
-    }
+    safeApiFetch('/api/accounts-registry/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    }).catch(() => {});
   } catch {}
 
   const current = getAccountsRegistryConfig();
@@ -250,13 +250,11 @@ export async function pushAccountsRegistryToJsonBin(): Promise<{
 
   // Also notify Express backend if running
   try {
-    if (typeof fetch !== 'undefined') {
-      fetch('/api/accounts-registry/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }).catch(() => {});
-    }
+    safeApiFetch('/api/accounts-registry/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
   } catch {}
 
   try {

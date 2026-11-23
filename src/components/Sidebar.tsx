@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Code2,
   Database,
+  Flame,
   Lock,
   PanelLeftClose,
   PanelLeftOpen,
@@ -21,6 +22,7 @@ import {
 } from 'lucide-react';
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
 import { formatJsonBinShortTime, formatJsonBinTimestamp } from '../utils/cloudSync';
+import { FirebaseIndicatorStatus } from '../utils/syncDiagnostics';
 import { NavTab } from './Navbar';
 import { UserDropdown } from './UserDropdown';
 
@@ -38,6 +40,10 @@ interface SidebarProps {
   onLockAdmin: () => void;
   onOpenNetworkModal?: () => void;
   jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  onOpenFirebaseModal?: () => void;
+  firebaseStatus?: FirebaseIndicatorStatus;
+  lastFirebaseSyncTime?: number | null;
+  firebaseIssuesCount?: number;
   isNetworkOnline?: boolean;
   profile?: ChessComProfileResponse;
   stats?: ChessComStatsResponse | null;
@@ -64,6 +70,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLockAdmin,
   onOpenNetworkModal,
   jsonBinStatus = 'pending_keys',
+  onOpenFirebaseModal,
+  firebaseStatus = 'auth_required',
+  lastFirebaseSyncTime,
+  firebaseIssuesCount = 0,
   isNetworkOnline = true,
   profile,
   stats,
@@ -307,6 +317,94 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {jsonBinStatus === 'error' ? 'Err' : jsonBinStatus === 'synced' ? 'OK' : 'Sync'}
                 </span>
               </div>
+            )}
+          </button>
+        )}
+
+        {/* 2b. Firebase Cloud & Diagnostics Status (Hidden in spectator mode) */}
+        {!isSpectator && onOpenFirebaseModal && (
+          <button
+            type="button"
+            onClick={onOpenFirebaseModal}
+            title={`Firebase : ${
+              firebaseStatus === 'synced'
+                ? 'Principal actif'
+                : firebaseStatus === 'blocked'
+                ? 'Bloqué par client (Repli JSONBin)'
+                : firebaseStatus === 'offline'
+                ? 'Hors ligne'
+                : firebaseStatus === 'error'
+                ? 'Erreur détectée'
+                : firebaseStatus === 'fallback'
+                ? 'Repli JSONBin'
+                : 'Auth Google requise'
+            } · Dernière MàJ : ${formatJsonBinTimestamp(lastFirebaseSyncTime)}${
+              firebaseIssuesCount > 0 ? ` · ${firebaseIssuesCount} problème(s)` : ''
+            }`}
+            className={`relative w-full flex items-center rounded-xl font-bold text-xs transition-all border ${
+              isExpanded
+                ? 'gap-2.5 px-3 py-2 bg-black/40 hover:bg-neutral-900/90'
+                : 'justify-center p-2.5 bg-black/40 hover:bg-neutral-900/90'
+            } ${
+              firebaseStatus === 'error' || firebaseStatus === 'offline'
+                ? 'border-[#ef4444]/40 text-[#ef4444]'
+                : firebaseStatus === 'synced'
+                ? 'border-[#10b981]/40 text-[#10b981]'
+                : 'border-amber-500/40 text-amber-300'
+            }`}
+          >
+            <Flame className="h-4 w-4 shrink-0" />
+            {isExpanded ? (
+              <div className="flex-1 flex items-center justify-between text-left leading-tight min-w-0">
+                <div className="flex flex-col min-w-0">
+                  <span className="text-neutral-200">Firebase Cloud</span>
+                  <span className="text-[10px] font-mono text-neutral-400 truncate">
+                    {lastFirebaseSyncTime
+                      ? `MàJ : ${formatJsonBinShortTime(lastFirebaseSyncTime)}`
+                      : firebaseStatus === 'blocked'
+                      ? 'Canal bloqué'
+                      : 'Repli prêt'}
+                  </span>
+                </div>
+                <span
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono shrink-0 ${
+                    firebaseStatus === 'error' || firebaseStatus === 'offline'
+                      ? 'bg-[#ef4444]/20 text-[#ef4444]'
+                      : firebaseStatus === 'synced' && firebaseIssuesCount === 0
+                      ? 'bg-[#10b981]/20 text-[#10b981]'
+                      : 'bg-amber-500/20 text-amber-300'
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      firebaseStatus === 'error' || firebaseStatus === 'offline'
+                        ? 'bg-[#ef4444]'
+                        : firebaseStatus === 'synced' && firebaseIssuesCount === 0
+                        ? 'bg-[#10b981]'
+                        : 'bg-amber-400'
+                    }`}
+                  />
+                  {firebaseIssuesCount > 0
+                    ? `${firebaseIssuesCount}!`
+                    : firebaseStatus === 'synced'
+                    ? 'OK'
+                    : firebaseStatus === 'blocked'
+                    ? 'Bloq'
+                    : firebaseStatus === 'offline'
+                    ? 'Off'
+                    : firebaseStatus === 'error'
+                    ? 'Err'
+                    : firebaseStatus === 'fallback'
+                    ? 'Repli'
+                    : 'Auth'}
+                </span>
+              </div>
+            ) : (
+              firebaseIssuesCount > 0 && (
+                <span className="absolute top-1 right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-amber-500 text-black text-[9px] font-black flex items-center justify-center tabular-nums">
+                  {firebaseIssuesCount > 9 ? '9+' : firebaseIssuesCount}
+                </span>
+              )
             )}
           </button>
         )}

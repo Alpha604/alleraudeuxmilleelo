@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { GameMode } from '../types/chess';
 import { calculateProgressPercentage } from '../utils/eloEngine';
+import heroKnightImg from '../assets/images/grandmaster_chess_hero_1793877218857.jpg';
 
 interface HeroEloCardProps {
   currentElo: number;
@@ -112,7 +113,7 @@ export const HeroEloCard: React.FC<HeroEloCardProps> = ({
       {/* Cinematic Knight Visual Backdrop with high-end ambient mask */}
       <div className="absolute inset-0 z-0 pointer-events-none select-none overflow-hidden">
         <img
-          src="/src/assets/images/grandmaster_chess_hero_1793877218857.jpg"
+          src={heroKnightImg}
           alt="Grandmaster Chess Knight"
           referrerPolicy="no-referrer"
           className="h-full w-full object-cover object-right-top opacity-25 transform scale-105"

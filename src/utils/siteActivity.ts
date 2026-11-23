@@ -8,6 +8,8 @@ import {
   saveSiteActivityToFirestore,
   subscribeSiteActivityFirestore,
 } from './firebaseMirror';
+import { safeApiFetch } from './backendApi';
+import { resolveSyncIssuesByKeyPrefix } from './syncDiagnostics';
 
 export { subscribeSiteActivityFirestore };
 
@@ -565,11 +567,11 @@ export async function fetchSiteActivity(forceCloud = false): Promise<{
   // 2. Also query Express backend for clientIp / serverTime and JSONBin fallback reconciliation
   try {
     const query = forceCloud ? '?force=1' : '';
-    const res = await fetch(`/api/site-activity${query}`, {
+    const res = await safeApiFetch(`/api/site-activity${query}`, {
       headers: { Accept: 'application/json' },
       cache: 'no-store',
     });
-    if (res.ok) {
+    if (res && res.ok) {
       const ct = res.headers.get('content-type') || '';
       if (ct.includes('application/json')) {
         const data = await res.json();
@@ -600,6 +602,7 @@ export async function fetchSiteActivity(forceCloud = false): Promise<{
   } catch {}
 
   if (firestoreCfg) {
+    resolveSyncIssuesByKeyPrefix('firebase_offline');
     return {
       config: firestoreCfg,
       clientIp: '',
@@ -643,7 +646,7 @@ export async function saveSiteActivity(
 
   // 2. Save via Express backend + JSONBin fallback in parallel
   try {
-    const res = await fetch('/api/site-activity', {
+    const res = await safeApiFetch('/api/site-activity', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -651,7 +654,7 @@ export async function saveSiteActivity(
       },
       body: JSON.stringify(normalized),
     });
-    if (res.ok) {
+    if (res && res.ok) {
       const ct = res.headers.get('content-type') || '';
       if (ct.includes('application/json')) {
         const data = await res.json();

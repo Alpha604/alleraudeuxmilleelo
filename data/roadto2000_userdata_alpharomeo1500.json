@@ -2,18 +2,91 @@
   "username": "alpharomeo1500",
   "history": [
     {
-      "timestamp": "2026-11-10T17:55:25.114Z",
+      "timestamp": "2026-11-23T17:49:27.786Z",
       "username": "alpharomeo1500",
       "bullet": 1605,
       "blitz": 1504,
       "rapid": 1300,
+      "puzzles": null,
       "bestRating": 1605,
       "bestMode": "bullet",
       "source": "API Chess.com directe",
-      "id": "sync_1794333325578_g45va"
+      "id": "sync_1795456168135_lp271"
     },
     {
-      "timestamp": "2026-11-09T20:36:53.114Z",
+      "timestamp": "2026-11-22T19:45:58.389Z",
+      "username": "alpharomeo1500",
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "puzzles": 1745,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "API Chess.com directe",
+      "id": "sync_1795376760211_3pj06"
+    },
+    {
+      "timestamp": "2026-11-21T11:45:09.891Z",
+      "username": "alpharomeo1500",
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "puzzles": 1745,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "API Chess.com directe",
+      "id": "sync_1795261511688_lz3q8"
+    },
+    {
+      "timestamp": "2026-11-20T20:22:56.620Z",
+      "username": "alpharomeo1500",
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "puzzles": 1718,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "API Chess.com directe",
+      "id": "sync_1795206176924_ag80h"
+    },
+    {
+      "id": "sync_manual_1795198257851_c7yd",
+      "timestamp": "2026-11-19T12:00:00.000Z",
+      "username": "alpharomeo1500",
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "puzzles": 1674,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "Saisie manuelle"
+    },
+    {
+      "id": "sync_manual_1795205286706_pg92",
+      "timestamp": "2026-11-18T12:00:00.000Z",
+      "username": "alpharomeo1500",
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "puzzles": 1683,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "Saisie manuelle"
+    },
+    {
+      "id": "sync_manual_1795205288321_3c1b",
+      "timestamp": "2026-11-17T12:00:00.000Z",
+      "username": "alpharomeo1500",
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "puzzles": 1700,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "Saisie manuelle"
+    },
+    {
+      "timestamp": "2026-11-16T12:12:21.936Z",
       "username": "alpharomeo1500",
       "bullet": 1605,
       "blitz": 1504,
@@ -21,7 +94,92 @@
       "bestRating": 1605,
       "bestMode": "bullet",
       "source": "API Chess.com directe",
-      "id": "sync_1794256614068_1kufe"
+      "id": "sync_1794831142187_x66e0",
+      "puzzles": 1737
+    },
+    {
+      "id": "sync_1794772917343_6scxy",
+      "timestamp": "2026-11-15T20:01:57.080Z",
+      "username": "alpharomeo1500",
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "API Chess.com directe",
+      "puzzles": 1762
+    },
+    {
+      "id": "sync_manual_1794772918833_h3v5",
+      "timestamp": "2026-11-14T12:00:00.000Z",
+      "username": "alpharomeo1500",
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "Saisie manuelle",
+      "puzzles": 1762
+    },
+    {
+      "id": "sync_manual_1794772920324_umuc",
+      "timestamp": "2026-11-13T12:00:00.000Z",
+      "username": "alpharomeo1500",
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "Saisie manuelle",
+      "puzzles": 1762
+    },
+    {
+      "timestamp": "2026-11-12T17:54:53.623Z",
+      "username": "alpharomeo1500",
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "API Chess.com directe",
+      "id": "sync_1794506094056_f10bc",
+      "puzzles": 1762
+    },
+    {
+      "timestamp": "2026-11-11T19:28:07.058Z",
+      "username": "alpharomeo1500",
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "API Chess.com directe",
+      "id": "sync_1794425287592_ulbqg",
+      "puzzles": 1826
+    },
+    {
+      "timestamp": "2026-11-10T17:24:45.922Z",
+      "username": "alpharomeo1500",
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "API Chess.com directe",
+      "id": "sync_1794331486338_pfphq",
+      "puzzles": 1753
+    },
+    {
+      "timestamp": "2026-11-09T19:40:08.913Z",
+      "username": "alpharomeo1500",
+      "bullet": 1605,
+      "blitz": 1504,
+      "rapid": 1300,
+      "bestRating": 1605,
+      "bestMode": "bullet",
+      "source": "API Chess.com directe",
+      "id": "sync_1794253209385_972kv",
+      "puzzles": 1746
     },
     {
       "timestamp": "2026-11-08T18:51:41.620Z",
@@ -32,10 +190,11 @@
       "bestRating": 1533,
       "bestMode": "bullet",
       "source": "API Chess.com directe",
-      "id": "sync_1794163902789_s8f9x"
+      "id": "sync_1794163902789_s8f9x",
+      "puzzles": 1773
     },
     {
-      "timestamp": "2026-11-07T11:59:59.966Z",
+      "timestamp": "2026-11-07T11:52:48.268Z",
       "username": "alpharomeo1500",
       "bullet": 1533,
       "blitz": 1504,
@@ -43,7 +202,8 @@
       "bestRating": 1533,
       "bestMode": "bullet",
       "source": "API Chess.com directe",
-      "id": "sync_1794052800242_1zf96"
+      "id": "sync_1794052368563_6nb0h",
+      "puzzles": 1773
     },
     {
       "timestamp": "2026-11-06T14:53:53.491Z",
@@ -54,7 +214,8 @@
       "bestRating": 1533,
       "bestMode": "bullet",
       "source": "API Chess.com directe",
-      "id": "sync_1793976833877_wqwqy"
+      "id": "sync_1793976833877_wqwqy",
+      "puzzles": 1759
     },
     {
       "timestamp": "2026-11-05T17:37:23.531Z",
@@ -65,7 +226,8 @@
       "bestRating": 1533,
       "bestMode": "bullet",
       "source": "API Chess.com directe",
-      "id": "sync_1793900244303_1mipg"
+      "id": "sync_1793900244303_1mipg",
+      "puzzles": 1753
     },
     {
       "id": "sync_1793819905222_fjot6",
@@ -76,7 +238,8 @@
       "rapid": 1277,
       "bestRating": 1517,
       "bestMode": "bullet",
-      "source": "Import fichier"
+      "source": "Import fichier",
+      "puzzles": 1753
     },
     {
       "id": "sync_1793738071765_ne021",
@@ -87,18 +250,44 @@
       "rapid": 1289,
       "bestRating": 1509,
       "bestMode": "bullet",
-      "source": "Import fichier"
+      "source": "Import fichier",
+      "puzzles": 1743
     },
     {
-      "timestamp": "2026-11-02T20:48:02.224Z",
+      "timestamp": "2026-11-02T20:47:24.663Z",
       "username": "alpharomeo1500",
       "bullet": 1509,
       "blitz": 1458,
       "rapid": 1289,
       "bestRating": 1509,
       "bestMode": "bullet",
-      "source": "API Chess.com directe",
-      "id": "sync_1793652482585_fg0vr"
+      "source": "Import fichier",
+      "id": "sync_1793652444978_gh17m",
+      "puzzles": 1726
+    },
+    {
+      "id": "sync_manual_1794395010897_1iq2",
+      "timestamp": "2026-11-01T12:00:00.000Z",
+      "username": "alpharomeo1500",
+      "bullet": 1509,
+      "blitz": 1458,
+      "rapid": 1289,
+      "bestRating": 1509,
+      "bestMode": "bullet",
+      "source": "Saisie manuelle",
+      "puzzles": 1726
+    },
+    {
+      "id": "sync_manual_1794395013108_15i6",
+      "timestamp": "2026-10-31T12:00:00.000Z",
+      "username": "alpharomeo1500",
+      "bullet": 1509,
+      "blitz": 1458,
+      "rapid": 1289,
+      "bestRating": 1509,
+      "bestMode": "bullet",
+      "source": "Saisie manuelle",
+      "puzzles": 1726
     }
   ],
   "settings": {
@@ -197,5 +386,5 @@
       }
     ]
   },
-  "lastUpdated": 1794333529024
+  "lastUpdated": 1795456784226
 }

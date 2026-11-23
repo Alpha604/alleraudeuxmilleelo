@@ -5,6 +5,7 @@
 
 import QRCode from 'qrcode';
 import { scheduleAccountsRegistryPush } from './accountsRegistryCloud';
+import { safeApiFetch } from './backendApi';
 
 const ADMIN_AUTH_KEY = 'roadto2000_admin_session_v2';
 const ADMIN_PASSWORD_HASH_KEY = 'roadto2000_admin_pwd_hash_v3';
@@ -132,13 +133,11 @@ export function setTrustedIps(ips: string[]): void {
 
   // Sync to backend server
   try {
-    if (typeof fetch !== 'undefined') {
-      fetch('/api/auth/trusted-ips', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ips: clean }),
-      }).catch(() => {});
-    }
+    safeApiFetch('/api/auth/trusted-ips', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ips: clean }),
+    }).catch(() => {});
   } catch {}
 }
 
@@ -218,11 +217,8 @@ export function setTrustedIp(ip: string): void {
 export async function getClientIp(): Promise<string> {
   // 1. Fast local server endpoint
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 1200);
-    const internalRes = await fetch('/api/auth/client-ip', { signal: controller.signal });
-    clearTimeout(timer);
-    if (internalRes.ok) {
+    const internalRes = await safeApiFetch('/api/auth/client-ip', { timeoutMs: 1200 });
+    if (internalRes && internalRes.ok) {
       const data = await internalRes.json();
       if (data.ip && typeof data.ip === 'string' && data.ip.trim().length >= 7) {
         return data.ip.trim();
@@ -259,8 +255,8 @@ export async function getClientIp(): Promise<string> {
  */
 export async function getServerInfo(): Promise<{ lanIp: string; port: number } | null> {
   try {
-    const res = await fetch('/api/auth/server-info');
-    if (res.ok) {
+    const res = await safeApiFetch('/api/auth/server-info', { timeoutMs: 2500 });
+    if (res && res.ok) {
       return await res.json();
     }
   } catch {}
@@ -703,18 +699,16 @@ export async function syncTotpSecretToServer(secret: string, enrolled = true): P
   safeSet(ADMIN_TOTP_UPDATED_AT_KEY, String(Date.now()));
 
   try {
-    if (typeof fetch !== 'undefined') {
-      const res = await fetch('/api/auth/totp/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ secret: clean, enrolled, rotationVersion: TOTP_ROTATION_VERSION }),
-      });
-      if (res.ok) {
-        const ct = res.headers.get('content-type') || '';
-        if (ct.includes('application/json')) {
-          const data = await res.json();
-          if (data?.cloudSynced) return true;
-        }
+    const res = await safeApiFetch('/api/auth/totp/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: clean, enrolled, rotationVersion: TOTP_ROTATION_VERSION }),
+    });
+    if (res && res.ok) {
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        const data = await res.json();
+        if (data?.cloudSynced) return true;
       }
     }
   } catch {}
@@ -724,24 +718,22 @@ export async function syncTotpSecretToServer(secret: string, enrolled = true): P
 
 export async function fetchTotpConfigFromServer(): Promise<{ secret: string; enrolled: boolean } | null> {
   try {
-    if (typeof fetch !== 'undefined') {
-      const res = await fetch('/api/auth/totp/config', { cache: 'no-store' });
-      if (res.ok) {
-        const ct = res.headers.get('content-type') || '';
-        if (ct.includes('application/json')) {
-          const data = await res.json();
-          if (
-            data?.secret &&
-            typeof data.secret === 'string' &&
-            data.secret.length >= 16 &&
-            data.rotationVersion === TOTP_ROTATION_VERSION
-          ) {
-            setTotpSecret(data.secret);
-            if (typeof data.enrolled === 'boolean') {
-              setTotpEnrolled(data.enrolled);
-            }
-            return { secret: data.secret, enrolled: Boolean(data.enrolled) };
+    const res = await safeApiFetch('/api/auth/totp/config', { cache: 'no-store' });
+    if (res && res.ok) {
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        const data = await res.json();
+        if (
+          data?.secret &&
+          typeof data.secret === 'string' &&
+          data.secret.length >= 16 &&
+          data.rotationVersion === TOTP_ROTATION_VERSION
+        ) {
+          setTotpSecret(data.secret);
+          if (typeof data.enrolled === 'boolean') {
+            setTotpEnrolled(data.enrolled);
           }
+          return { secret: data.secret, enrolled: Boolean(data.enrolled) };
         }
       }
     }
@@ -811,24 +803,19 @@ export async function verifyTotpCode(candidate: string, secret?: string): Promis
 
   // 2. Fallback: verify via backend server UTC clock & synced secret (handles browser clock drift or cross-device secret sync)
   try {
-    if (typeof fetch !== 'undefined') {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 3000);
-      const res = await fetch('/api/auth/totp/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: clean, secret: activeSecret }),
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.valid) {
-          if (typeof data.activeSecret === 'string' && data.activeSecret.length >= 16) {
-            setTotpSecret(data.activeSecret);
-          }
-          return true;
+    const res = await safeApiFetch('/api/auth/totp/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: clean, secret: activeSecret }),
+      timeoutMs: 3000,
+    });
+    if (res && res.ok) {
+      const data = await res.json();
+      if (data?.valid) {
+        if (typeof data.activeSecret === 'string' && data.activeSecret.length >= 16) {
+          setTotpSecret(data.activeSecret);
         }
+        return true;
       }
     }
   } catch {}
@@ -1023,20 +1010,18 @@ export async function createManagedAccount(params: CreateAccountParams): Promise
 
     // Persist per-account JSONBin credentials on Express server if running
     try {
-      if (typeof fetch !== 'undefined') {
-        fetch('/api/jsonbin/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: cleanUser,
-            binId: params.jsonBinId.trim(),
-            ...(params.jsonBinApiKey && params.jsonBinApiKey.trim()
-              ? { apiKey: params.jsonBinApiKey.trim() }
-              : {}),
-            enabled: true,
-          }),
-        }).catch(() => {});
-      }
+      safeApiFetch('/api/jsonbin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: cleanUser,
+          binId: params.jsonBinId.trim(),
+          ...(params.jsonBinApiKey && params.jsonBinApiKey.trim()
+            ? { apiKey: params.jsonBinApiKey.trim() }
+            : {}),
+          enabled: true,
+        }),
+      }).catch(() => {});
     } catch {}
 
     // Save custom user objectives

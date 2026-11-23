@@ -14,6 +14,7 @@ import {
   Crown,
   Database,
   Eye,
+  Flame,
   Lock,
   RefreshCw,
   Settings,
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react';
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
 import { formatJsonBinShortTime, formatJsonBinTimestamp } from '../utils/cloudSync';
+import { FirebaseIndicatorStatus } from '../utils/syncDiagnostics';
 import { UserDropdown } from './UserDropdown';
 
 export type NavTab = 'dashboard' | 'charts' | 'calendar' | 'history' | 'tests' | 'iframe' | 'settings' | 'profile' | 'admin';
@@ -45,6 +47,10 @@ interface NavbarProps {
   onLockAdmin: () => void;
   onOpenNetworkModal?: () => void;
   jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  onOpenFirebaseModal?: () => void;
+  firebaseStatus?: FirebaseIndicatorStatus;
+  lastFirebaseSyncTime?: number | null;
+  firebaseIssuesCount?: number;
   isNetworkOnline?: boolean;
   onLogout?: () => void;
   sessionExpiresAt?: number;
@@ -71,6 +77,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLockAdmin,
   onOpenNetworkModal,
   jsonBinStatus = 'pending_keys',
+  onOpenFirebaseModal,
+  firebaseStatus = 'auth_required',
+  lastFirebaseSyncTime,
+  firebaseIssuesCount = 0,
   isNetworkOnline = true,
   onLogout = () => {},
   sessionExpiresAt,
@@ -221,6 +231,57 @@ export const Navbar: React.FC<NavbarProps> = ({
                     : 'bg-[#facc15] shadow-[0_0_8px_rgba(250,204,21,0.7)]'
                 }`}
               />
+            </button>
+          )}
+
+          {/* Live Firebase Sync & Diagnostics Indicator Button (Same style as JSONBin) */}
+          {!isSpectator && onOpenFirebaseModal && (
+            <button
+              type="button"
+              onClick={onOpenFirebaseModal}
+              className={`relative flex h-8 sm:h-9 items-center justify-center gap-1 sm:gap-1.5 rounded-xl border px-1.5 sm:px-2.5 py-1.5 text-xs font-bold transition-all ${
+                firebaseStatus === 'error' || firebaseStatus === 'offline'
+                  ? 'border-[#ef4444]/40 bg-[#ef4444]/15 text-[#ef4444] hover:bg-[#ef4444]/25'
+                  : firebaseStatus === 'synced'
+                  ? 'border-[#10b981]/40 bg-[#10b981]/15 text-[#10b981] hover:bg-[#10b981]/25'
+                  : 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+              }`}
+              title={`Firebase : ${
+                firebaseStatus === 'synced'
+                  ? 'Principal actif'
+                  : firebaseStatus === 'syncing'
+                  ? 'Synchro...'
+                  : firebaseStatus === 'blocked'
+                  ? 'Canal bloqué par client (Repli JSONBin)'
+                  : firebaseStatus === 'offline'
+                  ? 'Hors ligne'
+                  : firebaseStatus === 'error'
+                  ? 'Erreur détectée'
+                  : firebaseStatus === 'fallback'
+                  ? 'Repli JSONBin actif'
+                  : 'Connexion Google requise'
+              } · Dernière synchro : ${formatJsonBinTimestamp(lastFirebaseSyncTime)}${
+                firebaseIssuesCount > 0 ? ` · ${firebaseIssuesCount} problème(s)` : ''
+              }`}
+            >
+              <Flame className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden md:inline">
+                {lastFirebaseSyncTime ? `Firebase · ${formatJsonBinShortTime(lastFirebaseSyncTime)}` : 'Firebase'}
+              </span>
+              <span
+                className={`h-2 w-2 rounded-full shrink-0 ${
+                  firebaseStatus === 'error' || firebaseStatus === 'offline'
+                    ? 'bg-[#ef4444]'
+                    : firebaseStatus === 'synced'
+                    ? 'bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.7)]'
+                    : 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.7)]'
+                }`}
+              />
+              {firebaseIssuesCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-amber-500 text-black text-[9px] font-black leading-none flex items-center justify-center tabular-nums shadow">
+                  {firebaseIssuesCount > 9 ? '9+' : firebaseIssuesCount}
+                </span>
+              )}
             </button>
           )}
 

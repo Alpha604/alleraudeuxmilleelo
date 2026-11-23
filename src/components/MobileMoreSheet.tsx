@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Code2,
   Database,
+  Flame,
   Lock,
   RefreshCw,
   Settings,
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 import { NavTab } from './Navbar';
 import { triggerNotificationHaptic } from '../utils/notifications';
+import { FirebaseIndicatorStatus } from '../utils/syncDiagnostics';
 
 interface MobileMoreSheetProps {
   isOpen: boolean;
@@ -34,11 +36,14 @@ interface MobileMoreSheetProps {
   isSyncing: boolean;
   unreadNotificationsCount: number;
   jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  firebaseStatus?: FirebaseIndicatorStatus;
+  firebaseIssuesCount?: number;
   onOpenSecurityModal: (title?: string, onGranted?: () => void) => void;
   onLockAdmin: () => void;
   onSync: () => void;
   onOpenNotificationCenter: () => void;
   onOpenNetworkModal: () => void;
+  onOpenFirebaseModal?: () => void;
 }
 
 export const MobileMoreSheet: React.FC<MobileMoreSheetProps> = ({
@@ -54,11 +59,14 @@ export const MobileMoreSheet: React.FC<MobileMoreSheetProps> = ({
   isSyncing,
   unreadNotificationsCount,
   jsonBinStatus = 'pending_keys',
+  firebaseStatus = 'auth_required',
+  firebaseIssuesCount = 0,
   onOpenSecurityModal,
   onLockAdmin,
   onSync,
   onOpenNotificationCenter,
   onOpenNetworkModal,
+  onOpenFirebaseModal,
 }) => {
   const [rendered, setRendered] = useState(isOpen);
   const [entered, setEntered] = useState(false);
@@ -502,6 +510,46 @@ export const MobileMoreSheet: React.FC<MobileMoreSheetProps> = ({
                       : jsonBinStatus === 'error'
                       ? 'Erreur'
                       : 'Statut & clés'}
+                  </div>
+                </div>
+              </button>
+            )}
+
+            {!isSpectator && onOpenFirebaseModal && (
+              <button
+                type="button"
+                onClick={() => {
+                  requestAnimatedClose();
+                  window.setTimeout(() => onOpenFirebaseModal(), 100);
+                }}
+                className="flex items-center gap-2.5 p-3 rounded-2xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] text-left transition-all active:scale-[0.98]"
+              >
+                <div
+                  className={`relative h-9 w-9 rounded-xl border flex items-center justify-center shrink-0 ${
+                    firebaseStatus === 'synced'
+                      ? 'bg-[#10b981]/15 border-[#10b981]/35 text-[#10b981]'
+                      : firebaseStatus === 'error' || firebaseStatus === 'offline'
+                      ? 'bg-[#ef4444]/15 border-[#ef4444]/35 text-[#ef4444]'
+                      : 'bg-amber-500/15 border-amber-500/35 text-amber-300'
+                  }`}
+                >
+                  <Flame className="h-4 w-4" />
+                  {firebaseIssuesCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-black text-[9px] font-black flex items-center justify-center tabular-nums">
+                      {firebaseIssuesCount > 9 ? '9+' : firebaseIssuesCount}
+                    </span>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white truncate">Firebase</div>
+                  <div className="text-[10px] text-neutral-400 truncate">
+                    {firebaseIssuesCount > 0
+                      ? `${firebaseIssuesCount} alerte(s)`
+                      : firebaseStatus === 'synced'
+                      ? 'Principal actif'
+                      : firebaseStatus === 'blocked'
+                      ? 'Canal bloqué'
+                      : 'Synchro & suivi'}
                   </div>
                 </div>
               </button>

@@ -21,6 +21,7 @@ import { Navbar, NavTab } from './components/Navbar';
 import { NotificationToast, ToastMessage } from './components/NotificationToast';
 import { MonthlyObjectiveCard } from './components/MonthlyObjectiveCard';
 import { NetworkAndJsonBinModal } from './components/NetworkAndJsonBinModal';
+import { FirebaseSyncModal } from './components/FirebaseSyncModal';
 import { Sidebar } from './components/Sidebar';
 import { SecurityModal } from './components/SecurityModal';
 import { SettingsView } from './components/SettingsView';
@@ -36,7 +37,13 @@ import {
 } from './types/chess';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
-import { mirrorDataToFirestore } from './utils/firebaseMirror';
+import { FirebaseMirrorStatus, getFirebaseMirrorStatus, mirrorDataToFirestore } from './utils/firebaseMirror';
+import {
+  deriveFirebaseIndicatorStatus,
+  getSyncDiagnosticsSnapshot,
+  installGlobalSyncDiagnosticsCapture,
+  SyncDiagnosticsSnapshot,
+} from './utils/syncDiagnostics';
 import {
   fetchJsonBinStatus,
   formatJsonBinTimestamp,
@@ -167,8 +174,15 @@ export default function App() {
   const [moreSheetOpen, setMoreSheetOpen] = useState<boolean>(false);
   const [profileSheetOpen, setProfileSheetOpen] = useState<boolean>(false);
 
-  // Network & JSONBin online status states
+  // Network, JSONBin & Firebase online status states
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
+  const [firebaseModalOpen, setFirebaseModalOpen] = useState(false);
+  const [syncDiagnostics, setSyncDiagnostics] = useState<SyncDiagnosticsSnapshot>(() =>
+    getSyncDiagnosticsSnapshot()
+  );
+  const [isFirebaseMirrorSyncing, setIsFirebaseMirrorSyncing] = useState<boolean>(
+    () => getFirebaseMirrorStatus().status === 'syncing'
+  );
   const [jsonBinStatus, setJsonBinStatus] = useState<'synced' | 'pending_keys' | 'error' | 'syncing'>('pending_keys');
   const [lastJsonBinSyncTime, setLastJsonBinSyncTime] = useState<number | null>(() => {
     return getLocalMetrics('alpharomeo1500').lastSyncTime;
@@ -283,6 +297,18 @@ export default function App() {
       }
     };
 
+    const handleDiagUpdated = (e: Event) => {
+      const detail = (e as CustomEvent<SyncDiagnosticsSnapshot>).detail;
+      setSyncDiagnostics(detail || getSyncDiagnosticsSnapshot());
+    };
+    const handleMirrorUpdated = (e: Event) => {
+      const detail = (e as CustomEvent<FirebaseMirrorStatus>).detail;
+      setIsFirebaseMirrorSyncing(detail?.status === 'syncing');
+    };
+
+    installGlobalSyncDiagnosticsCapture();
+    window.addEventListener('roadto2000:sync-diagnostics-updated', handleDiagUpdated);
+    window.addEventListener('roadto2000:firebase-mirror-updated', handleMirrorUpdated);
     window.addEventListener('roadto2000:jsonbin-updated', handleJsonBinUpdated);
     checkJsonBin();
     const interval = setInterval(checkJsonBin, 30000);
@@ -290,6 +316,8 @@ export default function App() {
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('roadto2000:sync-diagnostics-updated', handleDiagUpdated);
+      window.removeEventListener('roadto2000:firebase-mirror-updated', handleMirrorUpdated);
       window.removeEventListener('roadto2000:jsonbin-updated', handleJsonBinUpdated);
       clearInterval(interval);
     };
@@ -1234,6 +1262,16 @@ export default function App() {
   const effectiveIsIframe = isIframe;
   const hasAdminAccess = true;
 
+  const firebaseIndicatorStatus = deriveFirebaseIndicatorStatus(
+    syncDiagnostics,
+    isFirebaseMirrorSyncing
+  );
+  const firebaseIssuesCount = syncDiagnostics.issues.filter(
+    (i) => !i.resolved && i.severity !== 'info'
+  ).length;
+  const lastFirebaseSyncTime =
+    syncDiagnostics.firebase.lastWriteAt || syncDiagnostics.firebase.lastReadAt;
+
   return (
     <div
       className={`min-h-screen bg-[#07090e] text-neutral-100 flex flex-col font-sans transition-all duration-300 relative selection:bg-[#facc15]/30 selection:text-white ${
@@ -1261,6 +1299,10 @@ export default function App() {
         onLockAdmin={handleLockAdmin}
         onOpenNetworkModal={() => setNetworkModalOpen(true)}
         jsonBinStatus={jsonBinStatus}
+        onOpenFirebaseModal={() => setFirebaseModalOpen(true)}
+        firebaseStatus={firebaseIndicatorStatus}
+        lastFirebaseSyncTime={lastFirebaseSyncTime}
+        firebaseIssuesCount={firebaseIssuesCount}
         isNetworkOnline={isNetworkOnline}
         profile={profile}
         stats={stats}
@@ -1291,6 +1333,10 @@ export default function App() {
         onLockAdmin={handleLockAdmin}
         onOpenNetworkModal={() => setNetworkModalOpen(true)}
         jsonBinStatus={jsonBinStatus}
+        onOpenFirebaseModal={() => setFirebaseModalOpen(true)}
+        firebaseStatus={firebaseIndicatorStatus}
+        lastFirebaseSyncTime={lastFirebaseSyncTime}
+        firebaseIssuesCount={firebaseIssuesCount}
         isNetworkOnline={isNetworkOnline}
         onLogout={handleLogout}
         sessionExpiresAt={userSession.expiresAt}
@@ -1592,6 +1638,65 @@ export default function App() {
         />
       )}
 
+      {/* Firebase Live Sync & Reported Issues Diagnostics Modal */}
+      {firebaseModalOpen && (
+        <FirebaseSyncModal
+          isOpen={firebaseModalOpen}
+          onClose={() => setFirebaseModalOpen(false)}
+          username={settings.username}
+          onPushToFirebase={async () => {
+            const res = await mirrorDataToFirestore({
+              username: settings.username,
+              history: syncHistory,
+              settings,
+              jsonBinSyncedAt: lastSyncTime,
+            });
+            if (!res.ok) {
+              showToast(
+                res.error || 'Connexion Google Firebase requise pour envoyer vers Firestore.',
+                'warning',
+                'Firebase'
+              );
+            }
+            return res.ok;
+          }}
+          onReconcileNow={async () => {
+            const activeUser = settings.username.trim().toLowerCase();
+            const res = await reconcileCloudSync(
+              activeUser,
+              getStoredSyncHistory(activeUser),
+              settings,
+              { isSpectator: Boolean(userSession?.isSpectator), forcePull: true }
+            );
+            if (res.didUpdate) {
+              setSyncHistory(res.history);
+              if (res.history.length > 0) setLastSyncTime(res.history[0].timestamp);
+              if (res.settings) setSettings({ ...res.settings, username: 'alpharomeo1500' });
+            }
+            if (res.confirmedDayHashes) setConfirmedDayHashes(res.confirmedDayHashes);
+            if (res.lastJsonBinSyncTime) setLastJsonBinSyncTime(res.lastJsonBinSyncTime);
+            showToast(
+              res.sourceUsed === 'firebase'
+                ? `${res.history.length} relevé(s) rechargés depuis Firebase Firestore.`
+                : res.sourceUsed === 'jsonbin'
+                ? `${res.history.length} relevé(s) chargés via le repli JSONBin.`
+                : 'Cache local conservé (aucune mise à jour distante).',
+              res.sourceUsed === 'firebase' ? 'success' : 'info',
+              'Rechargement Cloud'
+            );
+          }}
+          onOpenNetworkModal={() => setNetworkModalOpen(true)}
+          onOpenFirebaseSettings={() => {
+            if (!isAdmin) {
+              handleOpenSecurityModal('Paramètres Firebase (2FA)', () => setCurrentTab('settings'));
+            } else {
+              setCurrentTab('settings');
+            }
+          }}
+          onShowMessage={showToast}
+        />
+      )}
+
       {/* Editorial Clean Footer - Responsive for Mobile & Tablet */}
       <footer className="relative z-10 border-t border-white/[0.06] bg-[#070a10]/90 py-4 sm:py-6 text-center text-xs text-neutral-400 transition-colors backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3 text-center sm:text-left">
@@ -1651,11 +1756,14 @@ export default function App() {
         isSyncing={isSyncing}
         unreadNotificationsCount={notificationHistory.filter((n) => !n.read).length}
         jsonBinStatus={jsonBinStatus}
+        firebaseStatus={firebaseIndicatorStatus}
+        firebaseIssuesCount={firebaseIssuesCount}
         onOpenSecurityModal={handleOpenSecurityModal}
         onLockAdmin={handleLockAdmin}
         onSync={() => performSync(true)}
         onOpenNotificationCenter={() => setNotificationCenterOpen(true)}
         onOpenNetworkModal={() => setNetworkModalOpen(true)}
+        onOpenFirebaseModal={() => setFirebaseModalOpen(true)}
       />
 
       {/* Mobile Liquid Glass Sliding Dock (< sm) */}

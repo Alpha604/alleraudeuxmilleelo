@@ -4,6 +4,8 @@
  */
 
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
+import { safeApiFetch } from './backendApi';
+import { reportSyncIssue, resolveSyncIssuesByKeyPrefix } from './syncDiagnostics';
 
 export interface FetchStatsResult {
   success: boolean;
@@ -35,7 +37,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout 
 }
 
 /**
- * Attempts direct fetch first, then fallback to Vite /api/chess-proxy.
+ * Attempts direct fetch first, then fallback to Vite /api/chess-proxy when Express backend is present.
  */
 export async function fetchChessComData(username: string): Promise<FetchStatsResult> {
   const sanitized = username.trim().toLowerCase();
@@ -75,6 +77,14 @@ export async function fetchChessComData(username: string): Promise<FetchStatsRes
     }
 
     if (statsRes.status === 429) {
+      reportSyncIssue({
+        key: 'chess_rate_limit',
+        source: 'chess',
+        severity: 'warning',
+        title: 'Limite de requêtes Chess.com (429)',
+        message: 'L’API publique Chess.com a temporairement limité les appels.',
+        suggestion: 'Patientez quelques secondes avant de relancer une synchronisation.',
+      });
       return {
         success: false,
         source: 'API Chess.com directe',
@@ -90,17 +100,15 @@ export async function fetchChessComData(username: string): Promise<FetchStatsRes
 
     const statsData: ChessComStatsResponse = await statsRes.json();
 
-    // Optionally fetch profile for avatar & name
     let profileData: ChessComProfileResponse | undefined;
     try {
       const profRes = await fetchWithTimeout(directProfileUrl, { headers: { Accept: 'application/json' } }, 4000);
       if (profRes.ok) {
         profileData = await profRes.json();
       }
-    } catch (e) {
-      // Profile fetch is optional, non-blocking
-      console.warn('Profile fetch warning (non-fatal):', e);
-    }
+    } catch {}
+
+    resolveSyncIssuesByKeyPrefix('chess_');
 
     return {
       success: true,
@@ -114,13 +122,18 @@ export async function fetchChessComData(username: string): Promise<FetchStatsRes
     console.warn('Direct Chess.com API attempt failed, trying proxy fallback:', directErr);
   }
 
-  // 2. Fallback to Proxy API
+  // 2. Fallback to Proxy API ONLY if Express backend is available
   try {
-    const proxyRes = await fetchWithTimeout(proxyStatsUrl, {
+    const proxyRes = await safeApiFetch(proxyStatsUrl, {
       headers: {
         Accept: 'application/json',
       },
+      timeoutMs: TIMEOUT_MS,
     });
+
+    if (!proxyRes) {
+      throw new Error('Express proxy unavailable');
+    }
 
     if (proxyRes.status === 404) {
       return {
@@ -150,13 +163,16 @@ export async function fetchChessComData(username: string): Promise<FetchStatsRes
 
     let profileData: ChessComProfileResponse | undefined;
     try {
-      const profRes = await fetchWithTimeout(proxyProfileUrl, { headers: { Accept: 'application/json' } }, 4000);
-      if (profRes.ok) {
+      const profRes = await safeApiFetch(proxyProfileUrl, {
+        headers: { Accept: 'application/json' },
+        timeoutMs: 4000,
+      });
+      if (profRes && profRes.ok) {
         profileData = await profRes.json();
       }
-    } catch {
-      // Non-fatal
-    }
+    } catch {}
+
+    resolveSyncIssuesByKeyPrefix('chess_');
 
     return {
       success: true,
@@ -166,8 +182,16 @@ export async function fetchChessComData(username: string): Promise<FetchStatsRes
       statusCode: 200,
       timestamp: now,
     };
-  } catch (proxyErr) {
-    console.error('All fetch attempts failed:', proxyErr);
+  } catch (proxyErr: any) {
+    reportSyncIssue({
+      key: 'chess_network_unreachable',
+      source: 'chess',
+      severity: 'warning',
+      title: 'API Chess.com temporairement inaccessible',
+      message: 'Impossible de joindre api.chess.com pour récupérer les parties récentes.',
+      technicalDetail: proxyErr?.message || 'Network timeout',
+      suggestion: 'Vos relevés existants sur Firebase et JSONBin restent consultables sans interruption.',
+    });
     return {
       success: false,
       source: 'API Chess.com directe',

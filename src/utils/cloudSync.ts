@@ -14,6 +14,12 @@ import {
   saveStoredSyncHistory,
 } from './storage';
 import { fetchPlayerDataFromFirestore, mirrorDataToFirestore } from './firebaseMirror';
+import { safeApiFetch } from './backendApi';
+import {
+  reportSyncIssue,
+  resolveSyncIssuesByKeyPrefix,
+  updateFirebaseDiagnostics,
+} from './syncDiagnostics';
 
 /**
  * Cloud Sync Utility (Dual-Mode: Express Server + Vercel Direct Client-Side JSONBin):
@@ -296,11 +302,11 @@ export async function fetchServerData(username: string): Promise<{
 
   // 1. Try local Express server endpoint
   try {
-    const res = await fetch(`/api/user-data/${clean}`, {
+    const res = await safeApiFetch(`/api/user-data/${clean}`, {
       headers: { Accept: 'application/json' },
       cache: 'no-store',
     });
-    if (res.ok) {
+    if (res && res.ok) {
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
@@ -389,7 +395,7 @@ export async function saveServerData(
 
   // 1. Try Express backend (which awaits JSONBin push + merge-before-PUT protection)
   try {
-    const res = await fetch(`/api/user-data/${clean}`, {
+    const res = await safeApiFetch(`/api/user-data/${clean}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -405,7 +411,7 @@ export async function saveServerData(
       }),
     });
 
-    if (res.ok) {
+    if (res && res.ok) {
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
@@ -536,6 +542,8 @@ export async function reconcileCloudSync(
   let lastJsonBinSyncTime: number | null = initialMetrics.lastSyncTime;
   let confirmedDayHashes: Record<string, string> | undefined = initialMetrics.confirmedDayHashes;
 
+  let fallbackReason: string | null = null;
+
   // 1. PRIMARY SOURCE: Try Firebase Firestore first
   try {
     const fbRes = await fetchPlayerDataFromFirestore(clean);
@@ -574,6 +582,14 @@ export async function reconcileCloudSync(
         saveServerData(clean, mergedFromFb, nextSettings, { force: false }).catch(() => {});
       }
 
+      updateFirebaseDiagnostics({
+        activeReadSource: 'firebase',
+        lastFallbackReason: null,
+        lastReadAt: Date.now(),
+        recordsCount: mergedFromFb.length,
+      });
+      resolveSyncIssuesByKeyPrefix('sync_fallback');
+
       return {
         history: mergedFromFb,
         settings: nextSettings,
@@ -583,8 +599,16 @@ export async function reconcileCloudSync(
         sourceUsed: 'firebase',
       };
     }
+
+    fallbackReason =
+      fbRes.reason === 'auth_required'
+        ? 'Session Google Firebase non connectée sur cet appareil'
+        : fbRes.reason === 'empty'
+        ? 'Base Firestore vide : récupération depuis JSONBin'
+        : 'Firestore temporairement indisponible';
   } catch {
     // Firebase unavailable -> seamless fallback to JSONBin below
+    fallbackReason = 'Erreur réseau ou blocage Firestore : repli JSONBin actif';
   }
 
   // 2. FALLBACK SOURCE: JSONBin + Express Server if Firebase is unavailable/empty
@@ -635,6 +659,10 @@ export async function reconcileCloudSync(
   }
 
   if (remoteHistory.length === 0 && !remoteSettings) {
+    updateFirebaseDiagnostics({
+      activeReadSource: 'local',
+      lastFallbackReason: fallbackReason,
+    });
     return {
       history: localHistory,
       settings: localSettings,
@@ -684,6 +712,13 @@ export async function reconcileCloudSync(
     saveServerData(clean, mergedHistory, nextSettings, { force: false }).catch(() => {});
   }
 
+  updateFirebaseDiagnostics({
+    activeReadSource: 'jsonbin',
+    lastFallbackReason: fallbackReason,
+    lastReadAt: Date.now(),
+    recordsCount: mergedHistory.length,
+  });
+
   return {
     history: mergedHistory,
     settings: nextSettings,
@@ -699,10 +734,10 @@ export async function fetchJsonBinStatus(username = 'alpharomeo1500'): Promise<J
 
   // 1. Try local Express server endpoint
   try {
-    const res = await fetch(`/api/jsonbin/status?username=${encodeURIComponent(cleanUser)}`, {
+    const res = await safeApiFetch(`/api/jsonbin/status?username=${encodeURIComponent(cleanUser)}`, {
       cache: 'no-store',
     });
-    if (res.ok) {
+    if (res && res.ok) {
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
@@ -788,12 +823,12 @@ export async function saveJsonBinConfig(config: {
 
   // Also persist on Express server if running
   try {
-    const serverRes = await fetch('/api/jsonbin/config', {
+    const serverRes = await safeApiFetch('/api/jsonbin/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...config, username: cleanUser }),
     });
-    if (serverRes.ok) {
+    if (serverRes && serverRes.ok) {
       const serverData = await serverRes.json();
       if (typeof serverData.configured === 'boolean') {
         saveLocalMetrics(cleanUser, {
@@ -871,7 +906,7 @@ export async function syncNowToJsonBin(
 
   // 1. Try Express server first (sending current client history, settings & credentials!)
   try {
-    const res = await fetch('/api/jsonbin/sync', {
+    const res = await safeApiFetch('/api/jsonbin/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -884,7 +919,7 @@ export async function syncNowToJsonBin(
         apiKey: creds.apiKey || undefined,
       }),
     });
-    if (res.ok) {
+    if (res && res.ok) {
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
@@ -940,7 +975,7 @@ export async function syncNowToJsonBin(
           confirmedDayHashes,
         };
       }
-    } else if (res.status >= 500) {
+    } else if (res && res.status >= 500) {
       const errData = await res.json().catch(() => null);
       if (errData?.error) {
         saveLocalMetrics(cleanUser, { lastStatus: 'error', lastError: errData.error });
@@ -949,6 +984,13 @@ export async function syncNowToJsonBin(
           lastSyncTime: getLocalMetrics(cleanUser).lastSyncTime,
           lastStatus: 'error',
           lastError: errData.error,
+        });
+        reportSyncIssue({
+          key: 'jsonbin_sync_server_error',
+          source: 'jsonbin',
+          severity: 'error',
+          title: 'Erreur JSONBin (sauvegarde)',
+          message: errData.error,
         });
         return { success: false, error: errData.error };
       }
@@ -1089,6 +1131,14 @@ export async function syncNowToJsonBin(
         lastStatus: 'error',
         lastError: errMsg,
       });
+      reportSyncIssue({
+        key: 'jsonbin_put_error',
+        source: 'jsonbin',
+        severity: 'error',
+        title: `Rejet JSONBin (${res.status})`,
+        message: errMsg,
+        suggestion: 'Vérifiez le Bin ID, la clé API et le quota journalier JSONBin.',
+      });
       return { success: false, error: `Erreur ${res.status} JSONBin` };
     }
 
@@ -1131,6 +1181,7 @@ export async function syncNowToJsonBin(
       jsonBinSyncedAt: exportedAt,
       replaceExact,
     }).catch(() => {});
+    resolveSyncIssuesByKeyPrefix('jsonbin_');
 
     return {
       success: true,
@@ -1147,6 +1198,13 @@ export async function syncNowToJsonBin(
       lastSyncTime: metrics.lastSyncTime,
       lastStatus: 'error',
       lastError: errMsg,
+    });
+    reportSyncIssue({
+      key: 'jsonbin_network_error',
+      source: 'jsonbin',
+      severity: 'error',
+      title: 'Réseau JSONBin inaccessible',
+      message: errMsg,
     });
     return { success: false, error: errMsg };
   }
@@ -1166,7 +1224,7 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
 
   // 1. Try server first (passing user's binId/apiKey if configured in client)
   try {
-    const res = await fetch('/api/jsonbin/pull', {
+    const res = await safeApiFetch('/api/jsonbin/pull', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1175,7 +1233,7 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
         apiKey: creds.apiKey || undefined,
       }),
     });
-    if (res.ok) {
+    if (res && res.ok) {
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
@@ -1257,6 +1315,14 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
         lastStatus: 'error',
         lastError: errMsg,
       });
+      reportSyncIssue({
+        key: 'jsonbin_pull_error',
+        source: 'jsonbin',
+        severity: 'error',
+        title: `Lecture JSONBin refusée (${res.status})`,
+        message: errMsg,
+        suggestion: 'Vérifiez le Bin ID et la clé d’accès JSONBin.',
+      });
       return { success: false, error: `Erreur ${res.status} JSONBin: ${errText.substring(0, 80)}` };
     }
 
@@ -1315,6 +1381,7 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
       settings: restoredSettings || getStoredSettings(username),
       jsonBinSyncedAt: remoteUpdatedAt,
     }).catch(() => {});
+    resolveSyncIssuesByKeyPrefix('jsonbin_');
 
     return {
       success: true,
@@ -1332,6 +1399,13 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
       lastSyncTime: getLocalMetrics(cleanUser).lastSyncTime,
       lastStatus: 'error',
       lastError: errMsg,
+    });
+    reportSyncIssue({
+      key: 'jsonbin_pull_network_error',
+      source: 'jsonbin',
+      severity: 'error',
+      title: 'Lecture JSONBin impossible',
+      message: errMsg,
     });
     return { success: false, error: errMsg };
   }

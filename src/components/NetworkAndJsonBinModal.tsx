@@ -24,6 +24,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { safeApiFetch } from '../utils/backendApi';
 import {
   fetchJsonBinStatus,
   formatJsonBinTimestamp,
@@ -71,11 +72,17 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
     setIsOnline(typeof navigator !== 'undefined' ? navigator.onLine : true);
     const start = performance.now();
     try {
-      const res = await fetch('/api/auth/client-ip', { cache: 'no-store' });
-      if (res.ok) {
+      const res = await safeApiFetch('/api/auth/client-ip', { cache: 'no-store', timeoutMs: 2500 });
+      if (res && res.ok) {
         setLatency(Math.round(performance.now() - start));
       } else {
-        setLatency(null);
+        // Measure direct public endpoint latency on static hosting (Vercel)
+        const pubRes = await fetch('https://api.ipify.org?format=json', { cache: 'no-store' });
+        if (pubRes.ok) {
+          setLatency(Math.round(performance.now() - start));
+        } else {
+          setLatency(null);
+        }
       }
     } catch {
       setLatency(null);

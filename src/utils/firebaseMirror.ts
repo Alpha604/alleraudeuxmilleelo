@@ -29,6 +29,12 @@ import {
 import { AppSettings, AppTheme, GameMode, SyncRecord, TrajectoryModel } from '../types/chess';
 import type { SiteActivityConfig } from './siteActivity';
 import { normalizeParisDayKey } from './storage';
+import {
+  interpretFirebaseError,
+  reportSyncIssue,
+  resolveSyncIssuesByKeyPrefix,
+  updateFirebaseDiagnostics,
+} from './syncDiagnostics';
 
 export interface FirebaseMirrorStatus {
   status: 'idle' | 'syncing' | 'synced' | 'auth_required' | 'error';
@@ -183,10 +189,18 @@ export async function mirrorDataToFirestore(params: {
   const playerId = sanitizePlayerId(params.username);
 
   if (!user || !user.emailVerified) {
+    const authErr = user
+      ? 'Adresse email Google non vérifiée'
+      : 'Connexion Google Firebase requise pour synchroniser Firestore';
+    updateFirebaseDiagnostics({
+      authState: !user ? 'unauthenticated' : 'unverified',
+      authEmail: user?.email ?? null,
+      lastError: authErr,
+    });
     const next = updateMirrorStatus({
       status: 'auth_required',
       lastPlayerId: playerId,
-      lastError: user ? 'Adresse email Google non vérifiée' : 'Connexion Google Firebase requise pour activer le miroir',
+      lastError: authErr,
     });
     return {
       ok: false,
@@ -404,6 +418,14 @@ export async function mirrorDataToFirestore(params: {
       lastPlayerId: playerId,
     });
 
+    updateFirebaseDiagnostics({
+      connection: 'online',
+      lastWriteAt: next.lastMirroredAt || Date.now(),
+      recordsCount: dailyEntries.size,
+      lastError: null,
+    });
+    resolveSyncIssuesByKeyPrefix('firebase_');
+
     return {
       ok: true,
       status: next.status,
@@ -415,6 +437,9 @@ export async function mirrorDataToFirestore(params: {
       status: 'error',
       lastError: errMsg,
       lastPlayerId: playerId,
+    });
+    updateFirebaseDiagnostics({
+      lastError: errMsg.slice(0, 140),
     });
     if (params.throwOnError) {
       throw err;
@@ -557,6 +582,10 @@ export async function fetchPlayerDataFromFirestore(username: string): Promise<{
   const user = await waitForFirebaseAuthReady(1500);
 
   if (!user || !user.emailVerified) {
+    updateFirebaseDiagnostics({
+      authState: !user ? 'unauthenticated' : 'unverified',
+      authEmail: user?.email ?? null,
+    });
     return { available: false, history: [], reason: 'auth_required' };
   }
 
@@ -651,6 +680,16 @@ export async function fetchPlayerDataFromFirestore(username: string): Promise<{
       lastError: null,
       lastPlayerId: playerId,
     });
+
+    updateFirebaseDiagnostics({
+      connection: 'online',
+      activeReadSource: 'firebase',
+      lastReadAt: Date.now(),
+      recordsCount: history.length,
+      lastFallbackReason: null,
+      lastError: null,
+    });
+    resolveSyncIssuesByKeyPrefix('firebase_');
 
     return {
       available: true,
@@ -796,6 +835,12 @@ export async function saveSiteActivityToFirestore(
     }
 
     await setDoc(docRef, payload);
+    updateFirebaseDiagnostics({
+      connection: 'online',
+      lastWriteAt: Date.now(),
+      lastError: null,
+    });
+    resolveSyncIssuesByKeyPrefix('firebase_');
     return { ok: true };
   } catch (err) {
     try {
@@ -816,8 +861,23 @@ export async function fetchSiteActivityFromFirestore(
     const ref = doc(db, 'siteActivity', 'global');
     const snap = forceServer ? await getDocFromServer(ref) : await getDoc(ref);
     if (!snap.exists()) return null;
+    updateFirebaseDiagnostics({ connection: 'online' });
     return mapFirestoreSiteActivityDoc(snap.data());
-  } catch {
+  } catch (err: any) {
+    const raw = err instanceof Error ? err.message : String(err);
+    const parsed = interpretFirebaseError(raw);
+    if (parsed.isBlockedClient) {
+      updateFirebaseDiagnostics({ connection: 'blocked', lastError: parsed.title });
+    }
+    reportSyncIssue({
+      key: `${parsed.key}_site_activity_read`,
+      source: 'firebase',
+      severity: parsed.severity,
+      title: parsed.title,
+      message: parsed.message,
+      technicalDetail: raw.slice(0, 220),
+      suggestion: parsed.suggestion,
+    });
     return null;
   }
 }
@@ -827,13 +887,37 @@ export function subscribeSiteActivityFirestore(
   onError?: (err: Error) => void
 ): Unsubscribe {
   const ref = doc(db, 'siteActivity', 'global');
+  updateFirebaseDiagnostics({ realtimeListener: 'connecting' });
   return onSnapshot(
     ref,
     (snap) => {
+      updateFirebaseDiagnostics({
+        connection: 'online',
+        realtimeListener: 'connected',
+        lastRealtimeEventAt: Date.now(),
+      });
+      resolveSyncIssuesByKeyPrefix('firebase_realtime');
+      resolveSyncIssuesByKeyPrefix('firebase_blocked');
       if (!snap.exists()) return;
       onUpdate(mapFirestoreSiteActivityDoc(snap.data()));
     },
     (error) => {
+      const raw = error instanceof Error ? error.message : String(error);
+      const parsed = interpretFirebaseError(raw);
+      updateFirebaseDiagnostics({
+        realtimeListener: 'error',
+        ...(parsed.isBlockedClient ? { connection: 'blocked' as const } : {}),
+        lastError: parsed.title,
+      });
+      reportSyncIssue({
+        key: `firebase_realtime_${parsed.key}`,
+        source: 'firebase',
+        severity: parsed.severity,
+        title: parsed.title,
+        message: parsed.message,
+        technicalDetail: raw.slice(0, 220),
+        suggestion: parsed.suggestion,
+      });
       if (onError) {
         onError(error instanceof Error ? error : new Error(String(error)));
       }

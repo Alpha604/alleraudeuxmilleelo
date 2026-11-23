@@ -1,11 +1,43 @@
 {
-  "binId": "6af3559affd5d16053b75b82",
-  "apiKey": "$2a$10$nOO6WNU996CcWwBht/K8MuDshQsOPktO28uEy.WTBESmEHAsRjcZy",
-  "enabled": true,
-  "lastSyncTime": 1794333529024,
-  "lastStatus": "synced",
-  "lastPushedSignature": "9b953a2e1a4ec344c4b2f802aa3e8738",
-  "requestsToday": 2,
-  "savedRequests": 4,
-  "lastDayTracked": "2026-11-10"
+  "version": 2,
+  "users": {
+    "alpharomeo1500": {
+      "binId": "6af3559affd5d16053b75b82",
+      "apiKey": "$2a$10$nOO6WNU996CcWwBht/K8MuDshQsOPktO28uEy.WTBESmEHAsRjcZy",
+      "enabled": true,
+      "lastSyncTime": 1795456784226,
+      "remoteUpdatedAt": "2026-11-23T17:49:28.174Z",
+      "lastStatus": "synced",
+      "requestsToday": 1,
+      "savedRequests": 4,
+      "lastDayTracked": "2026-11-23",
+      "lastPushedSignature": "9514775203465a313ac76db9a162ee83",
+      "confirmedDayHashes": {
+        "2026-11-23": "alpharomeo1500|2026-11-23|1605|1504|1300||1605|bullet",
+        "2026-11-22": "alpharomeo1500|2026-11-22|1605|1504|1300|1745|1605|bullet",
+        "2026-11-21": "alpharomeo1500|2026-11-21|1605|1504|1300|1745|1605|bullet",
+        "2026-11-20": "alpharomeo1500|2026-11-20|1605|1504|1300|1718|1605|bullet",
+        "2026-11-19": "alpharomeo1500|2026-11-19|1605|1504|1300|1674|1605|bullet",
+        "2026-11-18": "alpharomeo1500|2026-11-18|1605|1504|1300|1683|1605|bullet",
+        "2026-11-17": "alpharomeo1500|2026-11-17|1605|1504|1300|1700|1605|bullet",
+        "2026-11-16": "alpharomeo1500|2026-11-16|1605|1504|1300|1737|1605|bullet",
+        "2026-11-15": "alpharomeo1500|2026-11-15|1605|1504|1300|1762|1605|bullet",
+        "2026-11-14": "alpharomeo1500|2026-11-14|1605|1504|1300|1762|1605|bullet",
+        "2026-11-13": "alpharomeo1500|2026-11-13|1605|1504|1300|1762|1605|bullet",
+        "2026-11-12": "alpharomeo1500|2026-11-12|1605|1504|1300|1762|1605|bullet",
+        "2026-11-11": "alpharomeo1500|2026-11-11|1605|1504|1300|1826|1605|bullet",
+        "2026-11-10": "alpharomeo1500|2026-11-10|1605|1504|1300|1753|1605|bullet",
+        "2026-11-09": "alpharomeo1500|2026-11-09|1605|1504|1300|1746|1605|bullet",
+        "2026-11-08": "alpharomeo1500|2026-11-08|1533|1504|1300|1773|1533|bullet",
+        "2026-11-07": "alpharomeo1500|2026-11-07|1533|1504|1278|1773|1533|bullet",
+        "2026-11-06": "alpharomeo1500|2026-11-06|1533|1504|1289|1759|1533|bullet",
+        "2026-11-05": "alpharomeo1500|2026-11-05|1533|1504|1289|1753|1533|bullet",
+        "2026-11-04": "alpharomeo1500|2026-11-04|1517|1504|1277|1753|1517|bullet",
+        "2026-11-03": "alpharomeo1500|2026-11-03|1509|1504|1289|1743|1509|bullet",
+        "2026-11-02": "alpharomeo1500|2026-11-02|1509|1458|1289|1726|1509|bullet",
+        "2026-11-01": "alpharomeo1500|2026-11-01|1509|1458|1289|1726|1509|bullet",
+        "2026-10-31": "alpharomeo1500|2026-10-31|1509|1458|1289|1726|1509|bullet"
+      }
+    }
+  }
 }
