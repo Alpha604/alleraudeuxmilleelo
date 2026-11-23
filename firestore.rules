@@ -72,6 +72,7 @@ service cloud.firestore {
           'startElo', 'targetElo', 'startDate', 'targetDate', 'selectedMode',
           'trajectoryModel', 'autoSyncMinutes', 'theme', 'bestRating', 'bestMode',
           'bullet', 'blitz', 'rapid', 'puzzles', 'jsonBinSyncedAt',
+          'siteVersion', 'siteVersionNote', 'siteVersionUpdatedAt',
           'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.ownerUid) &&
@@ -96,6 +97,9 @@ service cloud.firestore {
         (!('rapid' in data) || isValidRatingField(data.rapid)) &&
         (!('puzzles' in data) || isValidRatingField(data.puzzles)) &&
         (!('jsonBinSyncedAt' in data) || (data.jsonBinSyncedAt is string && data.jsonBinSyncedAt.size() <= 64)) &&
+        (!('siteVersion' in data) || (data.siteVersion is string && data.siteVersion.size() >= 1 && data.siteVersion.size() <= 24)) &&
+        (!('siteVersionNote' in data) || (data.siteVersionNote is string && data.siteVersionNote.size() <= 240)) &&
+        (!('siteVersionUpdatedAt' in data) || (data.siteVersionUpdatedAt is string && data.siteVersionUpdatedAt.size() <= 64)) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp &&
         data.updatedAt == request.time;
@@ -222,7 +226,8 @@ service cloud.firestore {
           'recordsCount', 'startElo', 'targetElo', 'startDate', 'targetDate',
           'selectedMode', 'trajectoryModel', 'autoSyncMinutes', 'theme',
           'bestRating', 'bestMode', 'bullet', 'blitz', 'rapid', 'puzzles',
-          'jsonBinSyncedAt', 'updatedAt'
+          'jsonBinSyncedAt', 'siteVersion', 'siteVersionNote', 'siteVersionUpdatedAt',
+          'updatedAt'
         ]);
       allow delete: if isValidPlayerId(playerId) &&
         isVerifiedUser() &&

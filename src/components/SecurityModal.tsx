@@ -6,13 +6,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
   KeyRound,
   Lock,
   QrCode,
   ShieldCheck,
   Smartphone,
-  Unlock,
   X,
 } from 'lucide-react';
 import {
@@ -35,6 +35,158 @@ interface SecurityModalProps {
   actionTitle?: string;
   onShowMessage: (msg: string, type?: 'info' | 'success' | 'warning') => void;
 }
+
+interface TwoFactorUnlockLoaderProps {
+  step: number; // 1 | 2 | 3
+  isUnlocked: boolean;
+  message?: string;
+  subtitle?: string;
+}
+
+const UNLOCK_STEPS = [
+  { id: 1, label: 'Code Authenticator vérifié' },
+  { id: 2, label: 'Activation des droits Admin' },
+  { id: 3, label: 'Session sécurisée ouverte' },
+];
+
+export const TwoFactorUnlockLoader: React.FC<TwoFactorUnlockLoaderProps> = ({
+  step,
+  isUnlocked,
+  message,
+  subtitle,
+}) => {
+  const effectiveStep = isUnlocked ? 3 : Math.max(1, Math.min(3, step));
+  const progress = isUnlocked ? 1 : effectiveStep === 1 ? 0.36 : effectiveStep === 2 ? 0.72 : 1;
+  const circumference = 2 * Math.PI * 34; // ~213.628
+  const dashOffset = circumference * (1 - progress);
+
+  return (
+    <div className="rounded-2xl border border-neutral-800/90 bg-[#0b0f17] p-5 sm:p-6 shadow-inner space-y-5 animate-in fade-in duration-200">
+      <div className="relative mx-auto flex h-24 w-24 items-center justify-center">
+        {/* Ambient precision glow */}
+        <div
+          className={`absolute inset-2 rounded-full blur-xl transition-colors duration-500 ${
+            isUnlocked ? 'bg-emerald-500/20' : 'bg-[#facc15]/15'
+          }`}
+        />
+
+        {/* Orbital SVG reticle */}
+        <svg viewBox="0 0 88 88" className="h-24 w-24 relative z-10">
+          <defs>
+            <linearGradient id="a2fVaultGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#facc15" />
+              <stop offset="100%" stopColor="#10b981" />
+            </linearGradient>
+          </defs>
+
+          {/* Outer subtle rotating compass ring */}
+          <g className={isUnlocked ? '' : 'origin-center animate-[spin_7s_linear_infinite]'}>
+            <circle
+              cx="44"
+              cy="44"
+              r="41"
+              fill="none"
+              stroke={isUnlocked ? 'rgba(16,185,129,0.28)' : 'rgba(250,204,21,0.22)'}
+              strokeWidth="1"
+              strokeDasharray="3 6"
+            />
+          </g>
+
+          {/* Track ring */}
+          <circle
+            cx="44"
+            cy="44"
+            r="34"
+            fill="none"
+            stroke="rgba(255,255,255,0.07)"
+            strokeWidth="3"
+          />
+
+          {/* Smooth progress arc */}
+          <circle
+            cx="44"
+            cy="44"
+            r="34"
+            fill="none"
+            stroke={isUnlocked ? '#10b981' : 'url(#a2fVaultGrad)'}
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            transform="rotate(-90 44 44)"
+            style={{ transition: 'stroke-dashoffset 420ms cubic-bezier(0.22, 1, 0.36, 1)' }}
+          />
+        </svg>
+
+        {/* Center crisp shield badge */}
+        <div
+          className={`absolute z-20 flex h-12 w-12 items-center justify-center rounded-2xl border transition-all duration-300 ${
+            isUnlocked
+              ? 'border-emerald-400/50 bg-emerald-500/15 text-emerald-400 scale-105'
+              : 'border-[#facc15]/40 bg-[#facc15]/10 text-[#facc15]'
+          }`}
+        >
+          {isUnlocked ? (
+            <CheckCircle2 className="h-6 w-6" />
+          ) : (
+            <ShieldCheck className="h-6 w-6" />
+          )}
+        </div>
+      </div>
+
+      {/* Concise Status Title */}
+      <div className="text-center space-y-1">
+        <span
+          className={`inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.2em] ${
+            isUnlocked ? 'text-emerald-400' : 'text-[#facc15]'
+          }`}
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              isUnlocked ? 'bg-emerald-400' : 'bg-[#facc15] animate-pulse'
+            }`}
+          />
+          <span>{isUnlocked ? 'Accès Administrateur Actif' : 'Validation A2F'}</span>
+        </span>
+        <h4 className="text-sm font-bold text-white">
+          {message || (isUnlocked ? 'Déverrouillage terminé' : 'Vérification sécurisée...')}
+        </h4>
+        {subtitle && <p className="text-[11px] text-neutral-400">{subtitle}</p>}
+      </div>
+
+      {/* 3-Step Clean Progression Checklist */}
+      <div className="space-y-2 max-w-[260px] mx-auto pt-1">
+        {UNLOCK_STEPS.map((item) => {
+          const done = isUnlocked || effectiveStep > item.id;
+          const active = !isUnlocked && effectiveStep === item.id;
+          return (
+            <div
+              key={item.id}
+              className={`flex items-center gap-2.5 rounded-xl px-3 py-1.5 text-xs border transition-all duration-300 ${
+                done
+                  ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
+                  : active
+                  ? 'border-[#facc15]/30 bg-[#facc15]/10 text-white'
+                  : 'border-white/[0.04] bg-white/[0.02] text-neutral-500'
+              }`}
+            >
+              <span className="flex h-4 w-4 items-center justify-center shrink-0">
+                {done ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-400" />
+                ) : active ? (
+                  <span className="h-2 w-2 rounded-full bg-[#facc15] animate-pulse" />
+                ) : (
+                  <span className="h-1.5 w-1.5 rounded-full bg-neutral-600" />
+                )}
+              </span>
+              <span className="font-medium truncate">{item.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 export const SecurityModal: React.FC<SecurityModalProps> = ({
   isOpen,
@@ -284,38 +436,22 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
           </div>
         </div>
 
-        {/* STATE 1: Live Unlocking Sequence Animation */}
-        {unlockingState && !isUnlocked ? (
-          <div className="p-6 text-center space-y-4 bg-gradient-to-b from-[#facc15]/15 via-emerald-950/40 to-emerald-900/40 border border-emerald-500/40 rounded-2xl shadow-xl animate-in zoom-in-95 duration-200">
-            <div className="relative mx-auto flex h-16 w-16 items-center justify-center">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400/25 animate-ping" />
-              <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/25 border border-emerald-500/60 text-emerald-300 shadow-[0_0_25px_rgba(16,185,129,0.4)]">
-                <Unlock className="h-7 w-7 animate-pulse text-emerald-400" />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold uppercase tracking-wider border border-emerald-500/30">
-                <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-                <span>Code Microsoft / Google Authenticator Confirmé</span>
-              </div>
-              <h4 className="text-sm font-bold text-white pt-1">{unlockingState.message}</h4>
-            </div>
-
-            <div className="h-2 w-full bg-neutral-950 rounded-full overflow-hidden border border-neutral-800 max-w-xs mx-auto">
-              <div
-                className="h-full bg-gradient-to-r from-[#facc15] via-emerald-400 to-emerald-300 transition-all duration-300 ease-out"
-                style={{ width: `${(unlockingState.step / 3) * 100}%` }}
-              />
-            </div>
-          </div>
-        ) : isUnlocked ? (
-          /* STATE 2: Unlocked Success State */
-          <div className="p-8 text-center space-y-3 bg-emerald-950/30 border border-emerald-600/50 rounded-2xl animate-in zoom-in-95">
-            <CheckCircle2 className="h-12 w-12 text-emerald-400 mx-auto animate-bounce" />
-            <h4 className="text-base font-bold text-emerald-300">Session Administrateur Active !</h4>
-            <p className="text-xs text-neutral-400">Application des droits d&apos;administration en cours...</p>
-          </div>
+        {/* STATE 1 & 2: Sleek Orbital 2FA Unlocking Sequence & Success State */}
+        {(unlockingState || isUnlocked) ? (
+          <TwoFactorUnlockLoader
+            step={unlockingState?.step ?? 3}
+            isUnlocked={isUnlocked}
+            message={
+              isUnlocked
+                ? 'Session Administrateur Active'
+                : unlockingState?.message
+            }
+            subtitle={
+              isUnlocked
+                ? 'Application des privilèges complets en cours...'
+                : 'Authentification Authenticator en cours'
+            }
+          />
         ) : (
           /* STATE 3: Primary 2FA Code Input */
           <div className="space-y-3.5 sm:space-y-5">

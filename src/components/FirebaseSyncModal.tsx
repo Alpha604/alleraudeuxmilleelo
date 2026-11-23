@@ -160,11 +160,11 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
   const handleGoogleSignIn = async () => {
     setAuthBusy(true);
     try {
-      const user = await signInWithGoogleFirebase();
+      await signInWithGoogleFirebase();
       setDiag(getSyncDiagnosticsSnapshot());
       if (onShowMessage) {
         onShowMessage(
-          `Connecté à Firebase avec ${user.email || 'Google'}.`,
+          'Connecté à Firebase avec le compte Google autorisé.',
           'success',
           'Connexion Firebase'
         );
@@ -474,7 +474,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
                   <div className="text-[11px] text-neutral-400 font-medium">Auth Google Firebase</div>
                   <div className="text-xs font-bold text-white truncate">
                     {fb.authState === 'authenticated'
-                      ? fb.authEmail || 'Connecté'
+                      ? 'Compte Google autorisé'
                       : fb.authState === 'unverified'
                       ? 'Email non vérifié'
                       : 'Non connecté'}

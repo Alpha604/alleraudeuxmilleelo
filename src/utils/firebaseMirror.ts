@@ -66,6 +66,9 @@ export interface FirestorePlayerDoc {
   rapid?: number;
   puzzles?: number;
   jsonBinSyncedAt?: string;
+  siteVersion?: string;
+  siteVersionNote?: string;
+  siteVersionUpdatedAt?: string;
   createdAt?: string | null;
   updatedAt?: string | null;
 }
@@ -194,7 +197,7 @@ export async function mirrorDataToFirestore(params: {
       : 'Connexion Google Firebase requise pour synchroniser Firestore';
     updateFirebaseDiagnostics({
       authState: !user ? 'unauthenticated' : 'unverified',
-      authEmail: user?.email ?? null,
+      authEmail: null,
       lastError: authErr,
     });
     const next = updateMirrorStatus({
@@ -325,6 +328,18 @@ export async function mirrorDataToFirestore(params: {
     if (params.jsonBinSyncedAt && typeof params.jsonBinSyncedAt === 'string') {
       playerPayload.jsonBinSyncedAt = params.jsonBinSyncedAt.slice(0, 64);
     }
+    if (typeof params.settings?.siteVersion === 'string' && params.settings.siteVersion.trim().length > 0) {
+      playerPayload.siteVersion = params.settings.siteVersion.trim().slice(0, 24);
+    }
+    if (typeof params.settings?.siteVersionNote === 'string' && params.settings.siteVersionNote.trim().length > 0) {
+      playerPayload.siteVersionNote = params.settings.siteVersionNote.trim().slice(0, 240);
+    }
+    if (
+      typeof params.settings?.siteVersionUpdatedAt === 'string' &&
+      params.settings.siteVersionUpdatedAt.trim().length > 0
+    ) {
+      playerPayload.siteVersionUpdatedAt = params.settings.siteVersionUpdatedAt.trim().slice(0, 64);
+    }
 
     // Build validated DailySyncRecord map keyed by YYYY-MM-DD
     const dailyEntries = new Map<string, Record<string, any>>();
@@ -372,7 +387,7 @@ export async function mirrorDataToFirestore(params: {
       operations.push((batch) =>
         batch.set(userDocRef, {
           uid: user.uid,
-          displayName: (user.displayName || user.email || playerId).slice(0, 80),
+          displayName: (user.displayName || playerId).slice(0, 80),
           linkedPlayer: playerId,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -506,6 +521,9 @@ export function subscribePlayerFirestoreExplorer(
         rapid: d.rapid,
         puzzles: d.puzzles,
         jsonBinSyncedAt: d.jsonBinSyncedAt,
+        siteVersion: d.siteVersion,
+        siteVersionNote: d.siteVersionNote,
+        siteVersionUpdatedAt: d.siteVersionUpdatedAt,
         createdAt: formatFirestoreTimestamp(d.createdAt),
         updatedAt: formatFirestoreTimestamp(d.updatedAt),
       });
@@ -584,7 +602,7 @@ export async function fetchPlayerDataFromFirestore(username: string): Promise<{
   if (!user || !user.emailVerified) {
     updateFirebaseDiagnostics({
       authState: !user ? 'unauthenticated' : 'unverified',
-      authEmail: user?.email ?? null,
+      authEmail: null,
     });
     return { available: false, history: [], reason: 'auth_required' };
   }
@@ -669,6 +687,15 @@ export async function fetchPlayerDataFromFirestore(username: string): Promise<{
         ? { autoSyncMinutes: pData.autoSyncMinutes }
         : {}),
       ...(validThemes.includes(pData.theme) ? { theme: pData.theme } : {}),
+      ...(typeof pData.siteVersion === 'string' && pData.siteVersion.trim()
+        ? { siteVersion: pData.siteVersion.trim() }
+        : {}),
+      ...(typeof pData.siteVersionNote === 'string'
+        ? { siteVersionNote: pData.siteVersionNote }
+        : {}),
+      ...(typeof pData.siteVersionUpdatedAt === 'string'
+        ? { siteVersionUpdatedAt: pData.siteVersionUpdatedAt }
+        : {}),
     };
 
     const updatedAt = formatFirestoreTimestamp(pData.updatedAt);

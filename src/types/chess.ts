@@ -89,6 +89,9 @@ export interface AppSettings {
   trajectoryModel: TrajectoryModel;
   autoSyncMinutes: number; // 0 for manual only
   theme: AppTheme;
+  siteVersion?: string;
+  siteVersionUpdatedAt?: string;
+  siteVersionNote?: string;
   notifications: {
     newPeak: boolean;
     milestoneReached: boolean;

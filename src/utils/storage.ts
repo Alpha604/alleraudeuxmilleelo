@@ -127,6 +127,11 @@ export function purgeAllUserData(username: string): void {
   safeRemoveItem('roadto2000_sync_history');
 }
 
+export function normalizeSiteVersion(version?: string | null): string {
+  const raw = String(version || '').trim().replace(/^v+/i, '').slice(0, 22);
+  return raw || '1.0.0';
+}
+
 export const DEFAULT_SETTINGS: AppSettings = {
   username: 'alpharomeo1500',
   startElo: DEFAULT_START_ELO,
@@ -138,6 +143,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   trajectoryModel: 'linear',
   autoSyncMinutes: 15,
   theme: 'dark',
+  siteVersion: '1.0.0',
+  siteVersionUpdatedAt: '',
+  siteVersionNote: '',
   notifications: {
     newPeak: true,
     milestoneReached: true,

@@ -30,7 +30,9 @@ import {
   ShieldCheck,
   Sliders,
   Smartphone,
+  Sparkles,
   Sun,
+  Tag,
   Trash2,
   User,
   Waves,
@@ -39,7 +41,12 @@ import {
   Zap,
 } from 'lucide-react';
 import { AppSettings, AppTheme, GameMode, SyncRecord, TrajectoryModel } from '../types/chess';
-import { DEFAULT_SETTINGS, getStoredSyncHistory, OFFICIAL_DAILY_RECORDS } from '../utils/storage';
+import {
+  DEFAULT_SETTINGS,
+  getStoredSyncHistory,
+  normalizeSiteVersion,
+  OFFICIAL_DAILY_RECORDS,
+} from '../utils/storage';
 import { FirebaseErrorBoundary } from './FirebaseErrorBoundary';
 import { FirebaseSettingsPanel } from './FirebaseSettingsPanel';
 import { SecurePurgeModal } from './SecurePurgeModal';
@@ -59,7 +66,7 @@ import {
   syncNowToJsonBin,
 } from '../utils/cloudSync';
 
-type SettingsSection = 'preferences' | 'project' | 'security' | 'cloud' | 'firebase';
+type SettingsSection = 'preferences' | 'project' | 'updates' | 'security' | 'cloud' | 'firebase';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -109,9 +116,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [binFeedback, setBinFeedback] = useState<{ message: string; isError?: boolean } | null>(null);
   const [isSyncingBin, setIsSyncingBin] = useState<boolean>(false);
   const [copiedBinJson, setCopiedBinJson] = useState<boolean>(false);
+  const [versionInput, setVersionInput] = useState<string>(() => normalizeSiteVersion(settings.siteVersion));
+  const [versionNoteInput, setVersionNoteInput] = useState<string>(() => settings.siteVersionNote || '');
 
   useEffect(() => {
     setForm(settings);
+    setVersionInput(normalizeSiteVersion(settings.siteVersion));
+    setVersionNoteInput(settings.siteVersionNote || '');
   }, [settings]);
 
   useEffect(() => {
@@ -237,6 +248,53 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     if (!isNewUser) {
       onShowMessage('Paramètres enregistrés avec succès ! Tous les calculs ont été mis à jour.', 'success');
     }
+  };
+
+  const handleBumpSemver = (part: 'patch' | 'minor' | 'major') => {
+    const clean = normalizeSiteVersion(versionInput);
+    const nums = clean.split('.').map((n) => parseInt(n.replace(/\D/g, ''), 10));
+    const major = Number.isFinite(nums[0]) ? nums[0] : 1;
+    const minor = Number.isFinite(nums[1]) ? nums[1] : 0;
+    const patch = Number.isFinite(nums[2]) ? nums[2] : 0;
+
+    if (part === 'major') {
+      setVersionInput(`${major + 1}.0.0`);
+    } else if (part === 'minor') {
+      setVersionInput(`${major}.${minor + 1}.0`);
+    } else {
+      setVersionInput(`${major}.${minor}.${patch + 1}`);
+    }
+  };
+
+  const handlePublishSiteUpdate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isIframe) {
+      onShowMessage('Mode Iframe : modification de la version interdite.', 'warning');
+      return;
+    }
+    if (!isAdmin) {
+      if (onOpenSecurityModal) onOpenSecurityModal('Publication de mise à jour du site');
+      return;
+    }
+
+    const nextVersion = normalizeSiteVersion(versionInput);
+    const nextNote = versionNoteInput.trim().slice(0, 240);
+    const nowIso = new Date().toISOString();
+
+    const updatedSettings: AppSettings = {
+      ...form,
+      siteVersion: nextVersion,
+      siteVersionNote: nextNote,
+      siteVersionUpdatedAt: nowIso,
+    };
+
+    setForm(updatedSettings);
+    setVersionInput(nextVersion);
+    setVersionNoteInput(nextNote);
+    onSettingsUpdate(updatedSettings);
+    setIsSaved(true);
+    setTimeout(() => setIsSaved(false), 3000);
+    onShowMessage(`Version v${nextVersion} publiée et affichée en bas du site !`, 'success');
   };
 
   const handleReset = () => {
@@ -423,6 +481,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   }[] = [
     { id: 'preferences', label: 'Préférences', icon: <Palette className="h-3.5 w-3.5" /> },
     { id: 'project', label: 'Projet & Calcul', icon: <Sliders className="h-3.5 w-3.5" /> },
+    { id: 'updates', label: 'Mise à jour', icon: <Sparkles className="h-3.5 w-3.5" /> },
     { id: 'security', label: 'Sécurité & IPs', icon: <ShieldCheck className="h-3.5 w-3.5" /> },
     { id: 'cloud', label: 'Cloud & Purge', icon: <Cloud className="h-3.5 w-3.5" /> },
     {
@@ -788,6 +847,146 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <Save className="h-4 w-4" />
               <span>Enregistrer</span>
             </button>
+          </div>
+        </form>
+      )}
+
+      {/* SECTION: MISE À JOUR DU SITE */}
+      {activeSection === 'updates' && (
+        <form onSubmit={handlePublishSiteUpdate} className="space-y-5 animate-in fade-in duration-150">
+          {/* Current Version Overview Card */}
+          <div className="rounded-2xl border border-[#facc15]/30 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
+                <Tag className="h-4 w-4" />
+                <span>Version Actuelle En Production</span>
+              </div>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#facc15]/15 border border-[#facc15]/35 font-mono text-xs font-black text-[#facc15]">
+                v{normalizeSiteVersion(settings.siteVersion)}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="rounded-xl border border-neutral-800 bg-black/40 p-3.5 space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 block">
+                  Dernière publication
+                </span>
+                <span className="font-mono text-white font-semibold block">
+                  {settings.siteVersionUpdatedAt
+                    ? formatJsonBinTimestamp(settings.siteVersionUpdatedAt)
+                    : 'Version initiale'}
+                </span>
+              </div>
+
+              <div className="rounded-xl border border-neutral-800 bg-black/40 p-3.5 space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 block">
+                  Note affichée
+                </span>
+                <span className="text-neutral-200 block truncate" title={settings.siteVersionNote || ''}>
+                  {settings.siteVersionNote || 'Aucune note enregistrée'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Publish New Site Version Form */}
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15] border-b border-neutral-800 pb-3">
+              <Sparkles className="h-4 w-4" />
+              <span>Mettre à jour la version du site</span>
+            </div>
+
+            <p className="text-xs text-neutral-300 leading-relaxed">
+              Définissez le numéro de version affiché en bas de chaque page et synchronisez-le automatiquement sur tous vos appareils (Firebase &amp; JSONBin).
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                  <label className="text-xs font-medium text-neutral-300">
+                    Nouveau numéro de version
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleBumpSemver('patch')}
+                      className="px-2.5 py-1 rounded-lg border border-neutral-700 bg-neutral-950 hover:border-[#facc15]/50 text-[11px] font-mono font-bold text-neutral-200 hover:text-[#facc15] transition-colors"
+                    >
+                      +0.0.1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBumpSemver('minor')}
+                      className="px-2.5 py-1 rounded-lg border border-neutral-700 bg-neutral-950 hover:border-[#facc15]/50 text-[11px] font-mono font-bold text-neutral-200 hover:text-[#facc15] transition-colors"
+                    >
+                      +0.1.0
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBumpSemver('major')}
+                      className="px-2.5 py-1 rounded-lg border border-neutral-700 bg-neutral-950 hover:border-[#facc15]/50 text-[11px] font-mono font-bold text-neutral-200 hover:text-[#facc15] transition-colors"
+                    >
+                      +1.0.0
+                    </button>
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-xs font-mono font-bold text-[#facc15]">
+                    v
+                  </span>
+                  <input
+                    type="text"
+                    maxLength={22}
+                    required
+                    value={versionInput}
+                    onChange={(e) => setVersionInput(e.target.value)}
+                    placeholder="1.0.0"
+                    className="w-full rounded-xl border border-neutral-800 bg-neutral-950 pl-7 pr-4 py-2.5 text-sm font-mono font-bold text-white focus:border-[#facc15] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-medium text-neutral-300">
+                    Note de mise à jour (optionnel)
+                  </label>
+                  <span className="text-[10px] font-mono text-neutral-500">
+                    {versionNoteInput.length}/240
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  maxLength={240}
+                  value={versionNoteInput}
+                  onChange={(e) => setVersionNoteInput(e.target.value)}
+                  placeholder="Ex: Connexion Google + nouveau chargement A2F"
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-2.5 text-xs text-white placeholder-neutral-600 focus:border-[#facc15] focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              {isSaved ? (
+                <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Version v{normalizeSiteVersion(settings.siteVersion)} publiée !</span>
+                </span>
+              ) : (
+                <span className="text-[11px] text-neutral-500">
+                  Visible immédiatement en pied de page.
+                </span>
+              )}
+
+              <button
+                type="submit"
+                className="flex items-center gap-2 rounded-xl bg-[#facc15] hover:bg-[#eab308] active:scale-[0.98] text-black px-5 py-2.5 text-xs font-black transition-all shadow-[0_0_15px_rgba(250,204,21,0.3)]"
+              >
+                <Sparkles className="h-4 w-4" />
+                <span>Publier la mise à jour</span>
+              </button>
+            </div>
           </div>
         </form>
       )}

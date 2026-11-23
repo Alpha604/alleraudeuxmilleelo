@@ -36,7 +36,7 @@ import {
   SyncRecord,
 } from './types/chess';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from './firebase';
+import { auth, isAuthorizedOwnerUser, signOutFirebase } from './firebase';
 import { FirebaseMirrorStatus, getFirebaseMirrorStatus, mirrorDataToFirestore } from './utils/firebaseMirror';
 import {
   deriveFirebaseIndicatorStatus,
@@ -96,6 +96,7 @@ import {
   getStoredSettings,
   getStoredSyncHistory,
   handleAccountSwitch,
+  normalizeSiteVersion,
   purgeAllUserData,
   purgeLegacyAndStaleData,
   saveStoredSettings,
@@ -111,30 +112,25 @@ import {
   triggerNotificationHaptic,
 } from './utils/notifications';
 
-function ensureDirectAlphaSession(): UserSession {
-  const existing = getActiveUserSession();
-  if (existing && existing.username === 'alpharomeo1500' && !existing.isSpectator) {
-    return existing;
-  }
-  saveUserSession('alpharomeo1500', false);
-  return (
-    getActiveUserSession() || {
-      username: 'alpharomeo1500',
-      connectedAt: Date.now(),
-      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-      isSpectator: false,
-    }
-  );
-}
-
 export default function App() {
   // Strict Iframe & Embed Mode Detection
   const isIframe = useMemo(() => isRunningInIframe(), []);
 
-  // Direct single-account @alpharomeo1500 entry WITHOUT elevated permissions (2FA still required for admin actions)
-  const [userSession, setUserSession] = useState<UserSession | null>(() => ensureDirectAlphaSession());
+  // Mandatory Google Sign-In state (owner account verified via SHA-256 without exposing email)
+  const [googleAuthState, setGoogleAuthState] = useState<{
+    ready: boolean;
+    authorized: boolean;
+    error: string | null;
+  }>({
+    ready: false,
+    authorized: false,
+    error: null,
+  });
 
-  // Admin 2FA Session state (strictly false on fresh load unless unlocked by 2FA)
+  // Session state (must pass Google auth first, then either 2FA for full rights or limited read access)
+  const [userSession, setUserSession] = useState<UserSession | null>(() => getActiveUserSession());
+
+  // Admin 2FA Session state (strictly false unless unlocked by 2FA)
   const [isAdmin, setIsAdmin] = useState<boolean>(() => isAdminSessionActive());
   const [hasAdminRole, setHasAdminRole] = useState<boolean>(() => true);
   const [securityModalOpen, setSecurityModalOpen] = useState(false);
@@ -323,11 +319,45 @@ export default function App() {
     };
   }, [settings.username]);
 
-  // Reconcile Firebase-first (with JSONBin fallback) whenever Firebase Auth restores a verified session
+  // Enforce authorized Google Auth state & reconcile Firebase-first (with JSONBin fallback)
   useEffect(() => {
     let active = true;
+
+    const handleAuthRejected = (e: Event) => {
+      if (!active) return;
+      const reason =
+        (e as CustomEvent<{ reason?: string }>).detail?.reason ||
+        "Accès refusé : ce compte Google n'est pas autorisé à accéder à cet espace.";
+      setGoogleAuthState({ ready: true, authorized: false, error: reason });
+    };
+
+    window.addEventListener('roadto2000:firebase-auth-rejected', handleAuthRejected);
+
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
-      if (!active || !fbUser || !fbUser.emailVerified) return;
+      if (!active) return;
+      if (!fbUser) {
+        setGoogleAuthState((prev) => ({
+          ready: true,
+          authorized: false,
+          error: prev.error,
+        }));
+        return;
+      }
+
+      const authorized = await isAuthorizedOwnerUser(fbUser);
+      if (!active) return;
+
+      if (!authorized) {
+        setGoogleAuthState({
+          ready: true,
+          authorized: false,
+          error: "Accès refusé : ce compte Google n'est pas autorisé à accéder à cet espace.",
+        });
+        return;
+      }
+
+      setGoogleAuthState({ ready: true, authorized: true, error: null });
+
       try {
         const res = await reconcileCloudSync(settings.username, syncHistory, settings, {
           isSpectator: Boolean(userSession?.isSpectator),
@@ -352,8 +382,10 @@ export default function App() {
         }
       } catch {}
     });
+
     return () => {
       active = false;
+      window.removeEventListener('roadto2000:firebase-auth-rejected', handleAuthRejected);
       unsub();
     };
   }, [settings.username]);
@@ -915,12 +947,14 @@ export default function App() {
       }
     };
 
-    if (userSession) {
+    const canRunCloudSync = Boolean(userSession) && (isExplicitReadOnlyEmbed() || googleAuthState.authorized);
+
+    if (canRunCloudSync) {
       doReconciliation(true);
     }
 
     const handleFocus = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible' && userSession) {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible' && canRunCloudSync) {
         doReconciliation(false);
       }
     };
@@ -933,7 +967,7 @@ export default function App() {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleFocus);
     };
-  }, [settings.username, Boolean(userSession)]);
+  }, [settings.username, Boolean(userSession), googleAuthState.authorized]);
 
   // Periodic auto-sync (Disabled in spectator mode)
   useEffect(() => {
@@ -1067,8 +1101,11 @@ export default function App() {
     [showToast]
   );
 
-  // User logout / lock session
-  const handleLogout = useCallback(() => {
+  // User logout / lock session & sign out Google Firebase
+  const handleLogout = useCallback(async () => {
+    try {
+      await signOutFirebase();
+    } catch {}
     clearUserSession();
     revokeAdminSession();
     setIsAdmin(false);
@@ -1076,7 +1113,7 @@ export default function App() {
     setHasAdminRole(true);
     setUserSession(null);
     setCurrentTab('dashboard');
-    showToast('Session verrouillée. Reconnectez-vous en mode lecture ou avec l’A2F.', 'info', 'Session fermée');
+    showToast('Session verrouillée. Reconnectez-vous via Google & A2F.', 'info', 'Session fermée');
   }, [showToast]);
 
   // Blocked Account Creation Wizard
@@ -1248,19 +1285,47 @@ export default function App() {
     );
   }
 
-  // When user manually locked/closed session, display the single-account @alpharomeo1500 portal
-  if (!userSession) {
+  const readOnlyEmbed = isExplicitReadOnlyEmbed();
+
+  // Wait for Firebase Auth restoration before rendering protected screens
+  if (!readOnlyEmbed && !googleAuthState.ready) {
     return (
-      <LoginPage
-        onLoginSuccess={handleLoginSuccess}
-        defaultUsername="alpharomeo1500"
-      />
+      <div className="min-h-screen w-full bg-[#07090e] text-neutral-100 flex flex-col items-center justify-center p-6 font-sans">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="h-12 w-12 rounded-2xl border border-[#facc15]/30 bg-[#facc15]/10 flex items-center justify-center">
+            <span className="h-5 w-5 rounded-full border-2 border-[#facc15] border-t-transparent animate-spin" />
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-bold text-white">Vérification de la session Google...</p>
+            <p className="text-xs font-mono text-neutral-500">
+              Version v{normalizeSiteVersion(settings.siteVersion)}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Enforce mandatory authorized Google Sign-In + optional 2FA gate before entering app
+  if (!readOnlyEmbed && (!googleAuthState.authorized || !userSession)) {
+    return (
+      <>
+        <LoginPage
+          isGoogleAuthorized={googleAuthState.authorized}
+          authError={googleAuthState.error}
+          siteVersion={settings.siteVersion}
+          onClearAuthError={() => setGoogleAuthState((prev) => ({ ...prev, error: null }))}
+          onLoginSuccess={handleLoginSuccess}
+        />
+        <NotificationToast toasts={toasts} onDismiss={dismissToast} />
+      </>
     );
   }
 
   const isSpectator = false;
   const effectiveIsIframe = isIframe;
   const hasAdminAccess = true;
+  const effectiveSessionExpiresAt = userSession?.expiresAt ?? Date.now() + 24 * 60 * 60 * 1000;
 
   const firebaseIndicatorStatus = deriveFirebaseIndicatorStatus(
     syncDiagnostics,
@@ -1310,7 +1375,7 @@ export default function App() {
         isExpanded={isSidebarExpanded}
         onToggleExpanded={handleToggleSidebar}
         onLogout={handleLogout}
-        sessionExpiresAt={userSession.expiresAt}
+        sessionExpiresAt={effectiveSessionExpiresAt}
         hasAdminAccess={hasAdminAccess}
         onQuickSwitchAccount={handleQuickSwitchAccount}
       />
@@ -1339,7 +1404,7 @@ export default function App() {
         firebaseIssuesCount={firebaseIssuesCount}
         isNetworkOnline={isNetworkOnline}
         onLogout={handleLogout}
-        sessionExpiresAt={userSession.expiresAt}
+        sessionExpiresAt={effectiveSessionExpiresAt}
         hasAdminAccess={hasAdminAccess}
         onQuickSwitchAccount={handleQuickSwitchAccount}
         unreadNotificationsCount={notificationHistory.filter((n) => !n.read).length}
@@ -1698,7 +1763,7 @@ export default function App() {
       )}
 
       {/* Editorial Clean Footer - Responsive for Mobile & Tablet */}
-      <footer className="relative z-10 border-t border-white/[0.06] bg-[#070a10]/90 py-4 sm:py-6 text-center text-xs text-neutral-400 transition-colors backdrop-blur-md">
+      <footer className="relative z-10 border-t border-white/[0.06] bg-[#070a10]/90 pt-4 pb-24 sm:py-6 text-center text-xs text-neutral-400 transition-colors backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3 text-center sm:text-left">
           <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
             <span className="font-bold text-white tracking-wide">ROAD TO 2000 ELO</span>
@@ -1721,6 +1786,13 @@ export default function App() {
             <span>@{settings.username}</span>
             <span aria-hidden="true" className="text-neutral-600">·</span>
             <span>Échéance 31/12/2027</span>
+            <span aria-hidden="true" className="text-neutral-600">·</span>
+            <span
+              title={settings.siteVersionNote || undefined}
+              className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#facc15]/10 border border-[#facc15]/25 text-[#facc15] font-bold"
+            >
+              Version v{normalizeSiteVersion(settings.siteVersion)}
+            </span>
           </div>
         </div>
       </footer>
@@ -1735,7 +1807,7 @@ export default function App() {
         isAdmin={isAdmin}
         isIframe={isIframe}
         isSpectator={isSpectator}
-        sessionExpiresAt={userSession.expiresAt}
+        sessionExpiresAt={effectiveSessionExpiresAt}
         onSelectTab={setCurrentTab}
         onOpenSecurityModal={handleOpenSecurityModal}
         onLockAdmin={handleLockAdmin}

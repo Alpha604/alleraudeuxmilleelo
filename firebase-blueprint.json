@@ -104,6 +104,22 @@
           "description": "ISO timestamp of the source JSONBin snapshot.",
           "maxLength": 64
         },
+        "siteVersion": {
+          "type": "string",
+          "description": "Owner-managed published site version label.",
+          "minLength": 1,
+          "maxLength": 24
+        },
+        "siteVersionNote": {
+          "type": "string",
+          "description": "Optional release note for the published site version.",
+          "maxLength": 240
+        },
+        "siteVersionUpdatedAt": {
+          "type": "string",
+          "description": "ISO timestamp when the site version was updated.",
+          "maxLength": 64
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",

@@ -44,6 +44,7 @@ function evaluatePlayerCreateInvariant(
   const allowed = new Set([
     ...required,
     'bullet', 'blitz', 'rapid', 'puzzles', 'jsonBinSyncedAt',
+    'siteVersion', 'siteVersionNote', 'siteVersionUpdatedAt',
   ]);
   for (const k of required) {
     if (!(k in payload)) return false;
@@ -55,6 +56,7 @@ function evaluatePlayerCreateInvariant(
   if (payload.username !== playerId) return false;
   if (!usesServerTime) return false;
   if (typeof payload.bestRating !== 'number' || payload.bestRating < 0 || payload.bestRating > 4000) return false;
+  if ('siteVersion' in payload && (typeof payload.siteVersion !== 'string' || payload.siteVersion.length < 1 || payload.siteVersion.length > 24)) return false;
   return true;
 }
 

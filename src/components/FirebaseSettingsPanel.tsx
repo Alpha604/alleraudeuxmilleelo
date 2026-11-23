@@ -122,8 +122,8 @@ export const FirebaseSettingsPanel: React.FC<FirebaseSettingsPanelProps> = ({
     setIsSigningIn(true);
     setExplorerError(null);
     try {
-      const user = await signInWithGoogleFirebase();
-      onShowMessage(`Connecté à Firebase (${user.email || 'Google'})`, 'success');
+      await signInWithGoogleFirebase();
+      onShowMessage('Connecté à Firebase (Compte Google autorisé)', 'success');
       // Immediately mirror JSONBin-backed data to populate Firestore
       setIsMirroring(true);
       const res = await mirrorDataToFirestore({
@@ -296,7 +296,7 @@ export const FirebaseSettingsPanel: React.FC<FirebaseSettingsPanelProps> = ({
             <div className="flex items-center gap-2.5">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-[11px] font-bold text-emerald-300">
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                <span>{firebaseUser.email || firebaseUser.uid}</span>
+                <span>Compte Google Administrateur vérifié</span>
               </span>
               <button
                 type="button"
@@ -323,9 +323,8 @@ export const FirebaseSettingsPanel: React.FC<FirebaseSettingsPanelProps> = ({
         {!firebaseUser ? (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200 leading-relaxed">
             Votre base Firestore est protégée par des règles strictes : cliquez sur{' '}
-            <strong>« Connecter Google pour voir &amp; miroiter Firebase »</strong> avec votre compte{' '}
-            <span className="font-mono text-white">romeo.brawlstars59@gmail.com</span> pour activer le miroir
-            automatique et afficher le contenu en direct sur PC.
+            <strong>« Connecter Google pour voir &amp; miroiter Firebase »</strong> avec votre compte Google
+            administrateur autorisé pour activer le miroir automatique et afficher le contenu en direct sur PC.
           </div>
         ) : (
           <>

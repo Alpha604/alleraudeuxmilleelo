@@ -266,6 +266,9 @@ export function computeClientDataSignature(
     trajectoryModel: s.trajectoryModel,
     autoSyncMinutes: s.autoSyncMinutes,
     theme: s.theme,
+    siteVersion: s.siteVersion,
+    siteVersionNote: s.siteVersionNote,
+    siteVersionUpdatedAt: s.siteVersionUpdatedAt,
     notifications: s.notifications,
     customMilestones: s.customMilestones,
   });
