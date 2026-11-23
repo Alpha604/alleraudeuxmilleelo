@@ -6,6 +6,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AdminPanelView } from './components/AdminPanelView';
 import { DailyObjectiveCard } from './components/DailyObjectiveCard';
+import { FirebaseErrorBoundary } from './components/FirebaseErrorBoundary';
 import { GameModesBreakdown } from './components/GameModesBreakdown';
 import { HeroEloCard } from './components/HeroEloCard';
 import { HistoryChart } from './components/HistoryChart';
@@ -33,6 +34,9 @@ import {
   GameMode,
   SyncRecord,
 } from './types/chess';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from './firebase';
+import { mirrorDataToFirestore } from './utils/firebaseMirror';
 import {
   fetchJsonBinStatus,
   formatJsonBinTimestamp,
@@ -287,6 +291,21 @@ export default function App() {
       window.removeEventListener('roadto2000:jsonbin-updated', handleJsonBinUpdated);
       clearInterval(interval);
     };
+  }, [settings.username]);
+
+  // Mirror active JSONBin state to Firestore whenever Firebase Auth restores a verified session
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (fbUser) => {
+      if (fbUser && fbUser.emailVerified && syncHistory.length > 0) {
+        mirrorDataToFirestore({
+          username: settings.username,
+          history: syncHistory,
+          settings,
+          jsonBinSyncedAt: lastSyncTime,
+        }).catch(() => {});
+      }
+    });
+    return () => unsub();
   }, [settings.username]);
 
   // Reconcile TOTP secret from backend on mount & keep device category responsive to resize/rotation
@@ -1412,6 +1431,7 @@ export default function App() {
         {currentTab === 'settings' && !isIframe && (
           <SettingsView
             settings={settings}
+            syncHistory={syncHistory}
             onSettingsUpdate={handleSettingsUpdate}
             onPreviewTheme={handlePreviewTheme}
             onShowMessage={showToast}

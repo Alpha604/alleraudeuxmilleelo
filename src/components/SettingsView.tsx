@@ -14,6 +14,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  Flame,
   Globe,
   KeyRound,
   Lock,
@@ -39,6 +40,8 @@ import {
 } from 'lucide-react';
 import { AppSettings, AppTheme, GameMode, SyncRecord, TrajectoryModel } from '../types/chess';
 import { DEFAULT_SETTINGS, getStoredSyncHistory, OFFICIAL_DAILY_RECORDS } from '../utils/storage';
+import { FirebaseErrorBoundary } from './FirebaseErrorBoundary';
+import { FirebaseSettingsPanel } from './FirebaseSettingsPanel';
 import { SecurePurgeModal } from './SecurePurgeModal';
 import {
   addTrustedIp,
@@ -56,10 +59,11 @@ import {
   syncNowToJsonBin,
 } from '../utils/cloudSync';
 
-type SettingsSection = 'preferences' | 'project' | 'security' | 'cloud';
+type SettingsSection = 'preferences' | 'project' | 'security' | 'cloud' | 'firebase';
 
 interface SettingsViewProps {
   settings: AppSettings;
+  syncHistory?: SyncRecord[];
   onSettingsUpdate: (updated: AppSettings) => void;
   onPreviewTheme?: (theme: AppTheme) => void;
   onShowMessage: (msg: string, type?: 'info' | 'success' | 'warning') => void;
@@ -73,6 +77,7 @@ interface SettingsViewProps {
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   settings,
+  syncHistory,
   onSettingsUpdate,
   onPreviewTheme,
   onShowMessage,
@@ -410,11 +415,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     onPreviewTheme?.(themeId);
   };
 
-  const sectionTabs: { id: SettingsSection; label: string; icon: React.ReactNode }[] = [
+  const sectionTabs: {
+    id: SettingsSection;
+    label: string;
+    icon: React.ReactNode;
+    desktopOnly?: boolean;
+  }[] = [
     { id: 'preferences', label: 'Préférences', icon: <Palette className="h-3.5 w-3.5" /> },
     { id: 'project', label: 'Projet & Calcul', icon: <Sliders className="h-3.5 w-3.5" /> },
     { id: 'security', label: 'Sécurité & IPs', icon: <ShieldCheck className="h-3.5 w-3.5" /> },
     { id: 'cloud', label: 'Cloud & Purge', icon: <Cloud className="h-3.5 w-3.5" /> },
+    {
+      id: 'firebase',
+      label: 'Paramètre Firebase',
+      icon: <Flame className="h-3.5 w-3.5" />,
+      desktopOnly: true,
+    },
   ];
 
   return (
@@ -466,7 +482,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               key={sec.id}
               type="button"
               onClick={() => setActiveSection(sec.id)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
+              className={`${
+                sec.desktopOnly ? 'hidden sm:flex' : 'flex'
+              } items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition-all ${
                 isActive
                   ? 'bg-[#facc15] text-black shadow-md'
                   : 'text-neutral-300 hover:text-white hover:bg-white/[0.04]'
@@ -1191,6 +1209,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
       </div>
+      )}
+
+      {/* SECTION: PARAMÈTRE FIREBASE (Vue PC) */}
+      {activeSection === 'firebase' && (
+        <div className="hidden sm:block">
+          <FirebaseErrorBoundary fallbackTitle="Erreur dans l'explorateur Firebase">
+            <FirebaseSettingsPanel
+              username={form.username}
+              settings={form}
+              jsonBinHistory={syncHistory ?? getStoredSyncHistory(form.username)}
+              onShowMessage={onShowMessage}
+            />
+          </FirebaseErrorBoundary>
+        </div>
       )}
 
       {/* Secure Purge / Reset Modal with Mandatory Backup & Double 2FA */}

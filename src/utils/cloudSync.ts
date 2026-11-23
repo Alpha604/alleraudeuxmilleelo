@@ -13,6 +13,7 @@ import {
   saveStoredSettings,
   saveStoredSyncHistory,
 } from './storage';
+import { mirrorDataToFirestore } from './firebaseMirror';
 
 /**
  * Cloud Sync Utility (Dual-Mode: Express Server + Vercel Direct Client-Side JSONBin):
@@ -449,6 +450,14 @@ export async function saveServerData(
           confirmedDayHashes,
         });
 
+        mirrorDataToFirestore({
+          username: clean,
+          history: Array.isArray(data.history) && !replaceExact ? data.history : history,
+          settings: data.settings || settings || getStoredSettings(clean),
+          jsonBinSyncedAt: remoteUpdatedAt,
+          replaceExact,
+        }).catch(() => {});
+
         return {
           ok: true,
           jsonBinSynced: Boolean(jb.pushed),
@@ -856,6 +865,14 @@ export async function syncNowToJsonBin(
           confirmedDayHashes,
         });
 
+        mirrorDataToFirestore({
+          username: cleanUser,
+          history: Array.isArray(data.history) && !replaceExact ? data.history : localHistory,
+          settings,
+          jsonBinSyncedAt: remoteUpdatedAt,
+          replaceExact,
+        }).catch(() => {});
+
         return {
           success: data.success !== false,
           error: data?.error,
@@ -1051,6 +1068,14 @@ export async function syncNowToJsonBin(
       confirmedDayHashes,
     });
 
+    mirrorDataToFirestore({
+      username: cleanUser,
+      history: recordsToPush,
+      settings,
+      jsonBinSyncedAt: exportedAt,
+      replaceExact,
+    }).catch(() => {});
+
     return {
       success: true,
       lastSyncTime: nowMs,
@@ -1129,6 +1154,12 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
             lastError: null,
             confirmedDayHashes,
           });
+          mirrorDataToFirestore({
+            username: cleanUser,
+            history: mergedLocal,
+            settings: data.settings ? { ...getStoredSettings(cleanUser), ...data.settings, username: cleanUser } : getStoredSettings(cleanUser),
+            jsonBinSyncedAt: remoteUpdatedAt,
+          }).catch(() => {});
           return {
             success: true,
             history: mergedLocal,
@@ -1221,6 +1252,13 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
       lastError: null,
       confirmedDayHashes,
     });
+
+    mirrorDataToFirestore({
+      username,
+      history: mergedHistory,
+      settings: restoredSettings || getStoredSettings(username),
+      jsonBinSyncedAt: remoteUpdatedAt,
+    }).catch(() => {});
 
     return {
       success: true,
