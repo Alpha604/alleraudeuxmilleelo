@@ -32,6 +32,17 @@
   }
 }
 
+@keyframes roadto2000ToastIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -14px, 0) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-spin,
   .animate-ping,

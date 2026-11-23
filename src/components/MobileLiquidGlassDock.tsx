@@ -8,39 +8,36 @@ import {
   Calendar,
   History,
   LayoutDashboard,
+  LayoutGrid,
   LineChart,
-  Lock,
-  Settings as SettingsIcon,
-  ShieldAlert,
 } from 'lucide-react';
 import { NavTab } from './Navbar';
 import { triggerNotificationHaptic } from '../utils/notifications';
 
+type DockSlotKey = NavTab | 'more';
+
 interface DockItem {
-  key: NavTab;
+  key: DockSlotKey;
   label: string;
   icon: React.ReactNode;
-  protected?: boolean;
 }
 
 interface MobileLiquidGlassDockProps {
   currentTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
-  isAdmin: boolean;
-  isIframe: boolean;
   isSpectator: boolean;
-  hasAdminAccess: boolean;
-  onOpenSecurityModal: (title?: string, onGranted?: () => void) => void;
+  isMoreSheetOpen: boolean;
+  onOpenMoreSheet: () => void;
 }
+
+const MORE_SUB_TABS: NavTab[] = ['admin', 'settings', 'profile', 'tests', 'iframe'];
 
 export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
   currentTab,
   onSelectTab,
-  isAdmin,
-  isIframe,
   isSpectator,
-  hasAdminAccess,
-  onOpenSecurityModal,
+  isMoreSheetOpen,
+  onOpenMoreSheet,
 }) => {
   const items: DockItem[] = useMemo(() => {
     const list: DockItem[] = [
@@ -51,29 +48,22 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
     if (!isSpectator) {
       list.push({ key: 'history', label: 'Journal', icon: <History className="h-[19px] w-[19px]" /> });
     }
-    if (!isIframe && !isSpectator && hasAdminAccess) {
-      list.push({
-        key: 'admin',
-        label: 'Admin',
-        icon: <ShieldAlert className="h-[19px] w-[19px]" />,
-        protected: true,
-      });
-    }
-    if (!isIframe && !isSpectator) {
-      list.push({
-        key: 'settings',
-        label: 'Réglages',
-        icon: <SettingsIcon className="h-[19px] w-[19px]" />,
-        protected: true,
-      });
-    }
+    list.push({
+      key: 'more',
+      label: 'Plus',
+      icon: <LayoutGrid className="h-[19px] w-[19px]" />,
+    });
     return list;
-  }, [isSpectator, isIframe, hasAdminAccess]);
+  }, [isSpectator]);
 
   const activeIndex = useMemo(() => {
+    if (isMoreSheetOpen || MORE_SUB_TABS.includes(currentTab)) {
+      const moreIdx = items.findIndex((it) => it.key === 'more');
+      return moreIdx >= 0 ? moreIdx : 0;
+    }
     const idx = items.findIndex((it) => it.key === currentTab);
     return idx >= 0 ? idx : 0;
-  }, [items, currentTab]);
+  }, [items, currentTab, isMoreSheetOpen]);
 
   const trackRef = useRef<HTMLDivElement>(null);
   const pointerStateRef = useRef<{
@@ -96,16 +86,13 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
 
   const commitItem = useCallback(
     (item: DockItem) => {
-      if (!isAdmin && item.protected) {
-        onOpenSecurityModal(
-          item.key === 'admin' ? 'Panel Administrateur' : 'Accès aux Réglages',
-          () => onSelectTab(item.key)
-        );
+      if (item.key === 'more') {
+        onOpenMoreSheet();
         return;
       }
       onSelectTab(item.key);
     },
-    [isAdmin, onOpenSecurityModal, onSelectTab]
+    [onOpenMoreSheet, onSelectTab]
   );
 
   // Compute fractional position & nearest slot from pointer X
@@ -117,7 +104,6 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
       const slotWidth = rect.width / items.length;
       if (slotWidth <= 0) return { frac: 0, slot: 0 };
 
-      // Center pointer directly inside slot coordinate [0 .. items.length - 1]
       const relX = clientX - rect.left;
       const rawFrac = relX / slotWidth - 0.5;
       const clampedFrac = Math.max(0, Math.min(items.length - 1, rawFrac));
@@ -192,7 +178,6 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
     }
   };
 
-  // Sync drag fallback cleanly if tab changes externally
   useEffect(() => {
     if (!pointerStateRef.current.active) {
       setDragPosition(null);
@@ -203,6 +188,7 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
   const effectiveIndex = dragPosition !== null ? dragPosition : activeIndex;
   const hoveredSlot = Math.max(0, Math.min(items.length - 1, Math.round(effectiveIndex)));
   const slotPercentWidth = 100 / Math.max(1, items.length);
+  const isMoreSubTabActive = MORE_SUB_TABS.includes(currentTab);
 
   return (
     <nav
@@ -210,22 +196,24 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
       className="sm:hidden fixed bottom-2.5 left-2.5 right-2.5 z-40 select-none pb-[env(safe-area-inset-bottom)]"
     >
       {/* Floating Magnified Liquid Preview Bubble shown above the droplet while sliding */}
-      {isDragging && items[hoveredSlot] && (
-        <div
-          className="pointer-events-none absolute -top-11 left-0 right-0 flex justify-center transition-opacity duration-150"
-          aria-hidden="true"
-        >
+      <div
+        className={`pointer-events-none absolute -top-11 left-0 right-0 flex justify-center transition-all duration-200 ${
+          isDragging ? 'opacity-100 scale-100' : 'opacity-0 scale-90 translate-y-1.5'
+        }`}
+        aria-hidden="true"
+      >
+        {items[hoveredSlot] && (
           <div
-            className="px-3.5 py-1.5 rounded-full border border-white/25 bg-[#0c111a]/75 backdrop-blur-2xl backdrop-saturate-150 text-xs font-bold text-[#facc15] shadow-[0_8px_24px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.28)]"
+            className="px-3.5 py-1.5 rounded-full border border-white/25 bg-[#0c111a]/80 backdrop-blur-2xl backdrop-saturate-150 text-xs font-bold text-[#facc15] shadow-[0_8px_24px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.28)]"
             style={{
-              transform: `translateX(${((hoveredSlot - (items.length - 1) / 2) / items.length) * 210}px)`,
+              transform: `translateX(${((hoveredSlot - (items.length - 1) / 2) / items.length) * 200}px)`,
               transition: 'transform 140ms cubic-bezier(0.22, 1, 0.36, 1)',
             }}
           >
             {items[hoveredSlot].label}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Outer Liquid Glass Dock Container */}
       <div className="relative rounded-[28px] p-1 border border-white/[0.16] bg-[#0a0e16]/65 backdrop-blur-2xl backdrop-saturate-[180%] shadow-[0_14px_40px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.24),inset_0_-1px_0_rgba(255,255,255,0.06)] overflow-hidden">
@@ -274,9 +262,12 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
                 key={item.key}
                 type="button"
                 role="tab"
-                aria-selected={currentTab === item.key}
+                aria-selected={
+                  item.key === 'more'
+                    ? isMoreSheetOpen || isMoreSubTabActive
+                    : currentTab === item.key
+                }
                 onClick={(e) => {
-                  // Keyboard / synthetic accessibility clicks still work cleanly; pointer taps are handled in finishPointer
                   if (e.detail === 0) {
                     commitItem(item);
                   }
@@ -293,8 +284,8 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
               >
                 <div className="relative flex items-center justify-center">
                   {item.icon}
-                  {item.protected && !isAdmin && (
-                    <Lock className="h-2.5 w-2.5 absolute -top-1 -right-1.5 text-[#facc15] drop-shadow" />
+                  {item.key === 'more' && isMoreSubTabActive && (
+                    <span className="absolute -top-0.5 -right-1 h-2 w-2 rounded-full bg-[#facc15] shadow-[0_0_8px_rgba(250,204,21,0.85)]" />
                   )}
                 </div>
                 <span
@@ -312,3 +303,4 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
     </nav>
   );
 };
+

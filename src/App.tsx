@@ -13,6 +13,7 @@ import { IframeEmbedGuide } from './components/IframeEmbedGuide';
 import { KpiSummaryRow } from './components/KpiSummaryRow';
 import { MilestoneCalendar } from './components/MilestoneCalendar';
 import { MobileLiquidGlassDock } from './components/MobileLiquidGlassDock';
+import { MobileMoreSheet } from './components/MobileMoreSheet';
 import { MobileNotificationCenter } from './components/MobileNotificationCenter';
 import { Navbar, NavTab } from './components/Navbar';
 import { NotificationToast, ToastMessage } from './components/NotificationToast';
@@ -155,6 +156,7 @@ export default function App() {
   );
   const [notifPrefs, setNotifPrefs] = useState<MobileNotificationPrefs>(() => getNotificationPrefs());
   const [notificationCenterOpen, setNotificationCenterOpen] = useState<boolean>(false);
+  const [moreSheetOpen, setMoreSheetOpen] = useState<boolean>(false);
 
   // Network & JSONBin online status states
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
@@ -479,7 +481,7 @@ export default function App() {
       if (durationMs > 0) {
         setTimeout(() => {
           setToasts((prev) => prev.filter((t) => t.id !== id));
-        }, durationMs);
+        }, durationMs + 400);
       }
     },
     [notifPrefs]
@@ -1555,15 +1557,34 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Mobile Liquid Glass Sliding Dock (< sm) */}
-      <MobileLiquidGlassDock
+      {/* Mobile "Plus" Drawer Sheet (Paramètres, Panel Admin, Profil, Tests, Iframe) */}
+      <MobileMoreSheet
+        isOpen={moreSheetOpen}
+        onClose={() => setMoreSheetOpen(false)}
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
+        username={settings.username}
         isAdmin={isAdmin}
         isIframe={isIframe}
         isSpectator={isSpectator}
         hasAdminAccess={hasAdminAccess}
+        isSyncing={isSyncing}
+        unreadNotificationsCount={notificationHistory.filter((n) => !n.read).length}
+        jsonBinStatus={jsonBinStatus}
         onOpenSecurityModal={handleOpenSecurityModal}
+        onLockAdmin={handleLockAdmin}
+        onSync={() => performSync(true)}
+        onOpenNotificationCenter={() => setNotificationCenterOpen(true)}
+        onOpenNetworkModal={() => setNetworkModalOpen(true)}
+      />
+
+      {/* Mobile Liquid Glass Sliding Dock (< sm) */}
+      <MobileLiquidGlassDock
+        currentTab={currentTab}
+        onSelectTab={setCurrentTab}
+        isSpectator={isSpectator}
+        isMoreSheetOpen={moreSheetOpen}
+        onOpenMoreSheet={() => setMoreSheetOpen(true)}
       />
     </div>
   );
