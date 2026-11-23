@@ -145,6 +145,59 @@ service cloud.firestore {
         data.updatedAt == request.time;
     }
 
+    function isValidSiteActivityState(data, configId) {
+      return configId == 'global' &&
+        data.keys().hasAll([
+          'configId', 'enabled', 'mode', 'customTitle', 'customMessage',
+          'scheduleType', 'countdownMinutes', 'resumeType', 'resumeDurationMinutes',
+          'autoResume', 'showCountdownBanner', 'devicesAll', 'devicesDesktop',
+          'devicesMobile', 'devicesTablet', 'iframePolicy', 'ipPolicyMode',
+          'ipPolicyIps', 'ipPolicyExemptTrustedAdminIps', 'allowAdminBypass',
+          'revision', 'updatedAtMs', 'updatedBy', 'updatedByUid',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'configId', 'enabled', 'mode', 'customTitle', 'customMessage',
+          'scheduleType', 'countdownMinutes', 'pauseAtTimestamp', 'resumeType',
+          'resumeDurationMinutes', 'resumeAtTimestamp', 'autoResume',
+          'showCountdownBanner', 'devicesAll', 'devicesDesktop', 'devicesMobile',
+          'devicesTablet', 'iframePolicy', 'ipPolicyMode', 'ipPolicyIps',
+          'ipPolicyExemptTrustedAdminIps', 'allowAdminBypass', 'revision',
+          'updatedAtMs', 'updatedBy', 'updatedByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        data.configId == 'global' &&
+        data.enabled is bool &&
+        data.mode in ['arret', 'maintenance', 'administration', 'moderation', 'mise_a_jour'] &&
+        data.customTitle is string && data.customTitle.size() >= 1 && data.customTitle.size() <= 120 &&
+        data.customMessage is string && data.customMessage.size() >= 1 && data.customMessage.size() <= 500 &&
+        data.scheduleType in ['immediate', 'countdown', 'exact_date'] &&
+        (data.countdownMinutes is int || data.countdownMinutes is float) && data.countdownMinutes >= 1 && data.countdownMinutes <= 10080 &&
+        (!('pauseAtTimestamp' in data) || ((data.pauseAtTimestamp is int || data.pauseAtTimestamp is float) && data.pauseAtTimestamp >= 0)) &&
+        data.resumeType in ['manual', 'duration', 'exact_date'] &&
+        (data.resumeDurationMinutes is int || data.resumeDurationMinutes is float) && data.resumeDurationMinutes >= 1 && data.resumeDurationMinutes <= 43200 &&
+        (!('resumeAtTimestamp' in data) || ((data.resumeAtTimestamp is int || data.resumeAtTimestamp is float) && data.resumeAtTimestamp >= 0)) &&
+        data.autoResume is bool &&
+        data.showCountdownBanner is bool &&
+        data.devicesAll is bool &&
+        data.devicesDesktop is bool &&
+        data.devicesMobile is bool &&
+        data.devicesTablet is bool &&
+        data.iframePolicy in ['block_all', 'block_only_iframes', 'allow_iframes'] &&
+        data.ipPolicyMode in ['all', 'except_list', 'only_list'] &&
+        data.ipPolicyIps is list && data.ipPolicyIps.size() <= 50 &&
+        (data.ipPolicyIps.size() == 0 || (data.ipPolicyIps[0] is string && data.ipPolicyIps[0].size() <= 64)) &&
+        data.ipPolicyExemptTrustedAdminIps is bool &&
+        data.allowAdminBypass is bool &&
+        (data.revision is int || data.revision is float) && data.revision >= 0 &&
+        (data.updatedAtMs is int || data.updatedAtMs is float) && data.updatedAtMs >= 0 &&
+        data.updatedBy is string && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 80 &&
+        isValidId(data.updatedByUid) &&
+        data.updatedByUid == request.auth.uid &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
     // 4. Collection Rules
     match /players/{playerId} {
       allow get: if isValidPlayerId(playerId) && isVerifiedUser() && (
@@ -227,6 +280,31 @@ service cloud.firestore {
         (userId == request.auth.uid || isAdmin()) &&
         incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'linkedPlayer', 'updatedAt']);
       allow delete: if isValidId(userId) && isVerifiedUser() && (userId == request.auth.uid || isAdmin());
+    }
+
+    // Real-time Site Activity / Maintenance Pause Control
+    match /siteActivity/{configId} {
+      allow get: if configId == 'global';
+      allow list: if false;
+      allow create: if configId == 'global' &&
+        isAdmin() &&
+        isValidSiteActivityState(incoming(), configId) &&
+        incoming().createdAt == request.time;
+      allow update: if configId == 'global' &&
+        isAdmin() &&
+        isValidSiteActivityState(incoming(), configId) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().configId == existing().configId &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'enabled', 'mode', 'customTitle', 'customMessage', 'scheduleType',
+          'countdownMinutes', 'pauseAtTimestamp', 'resumeType', 'resumeDurationMinutes',
+          'resumeAtTimestamp', 'autoResume', 'showCountdownBanner', 'devicesAll',
+          'devicesDesktop', 'devicesMobile', 'devicesTablet', 'iframePolicy',
+          'ipPolicyMode', 'ipPolicyIps', 'ipPolicyExemptTrustedAdminIps',
+          'allowAdminBypass', 'revision', 'updatedAtMs', 'updatedBy',
+          'updatedByUid', 'updatedAt'
+        ]);
+      allow delete: if configId == 'global' && isAdmin();
     }
 
     // Read-only admins lookup collection (no client writes allowed)

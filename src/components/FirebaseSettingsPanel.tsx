@@ -235,13 +235,13 @@ export const FirebaseSettingsPanel: React.FC<FirebaseSettingsPanelProps> = ({
             <div>
               <h3 className="text-sm font-black text-white flex items-center gap-2">
                 <span>Paramètre Firebase Firestore (Vue PC)</span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">
-                  Lecture App : JSONBin uniquement
+                <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/15 border border-sky-500/30 px-2.5 py-0.5 text-[10px] font-bold text-sky-300">
+                  Source Prioritaire : Firebase · Repli JSONBin
                 </span>
               </h3>
               <p className="text-xs text-neutral-300 mt-0.5">
-                Toutes vos données restent lues depuis <strong>JSONBin</strong>, tandis que{' '}
-                <strong>Firebase Firestore</strong> reçoit un miroir complet en parallèle.
+                L&apos;application lit désormais en priorité depuis <strong>Firebase Firestore</strong> (y compris
+                le blocage du site en temps réel) et bascule automatiquement sur <strong>JSONBin</strong> en secours.
               </p>
             </div>
           </div>
@@ -333,7 +333,7 @@ export const FirebaseSettingsPanel: React.FC<FirebaseSettingsPanelProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="rounded-xl border border-neutral-800 bg-black/40 p-3.5 space-y-1">
                 <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
-                  Relevés JSONBin (Source)
+                  Relevés JSONBin (Secours)
                 </span>
                 <div className="text-xl font-black text-white font-mono">
                   {jsonBinHistory.length} <span className="text-xs font-normal text-neutral-400">jours</span>
@@ -345,7 +345,7 @@ export const FirebaseSettingsPanel: React.FC<FirebaseSettingsPanelProps> = ({
 
               <div className="rounded-xl border border-neutral-800 bg-black/40 p-3.5 space-y-1">
                 <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider">
-                  Relevés Firestore (Miroir)
+                  Relevés Firestore (Principal)
                 </span>
                 <div className="text-xl font-black text-sky-300 font-mono">
                   {dailyDocs.length} <span className="text-xs font-normal text-neutral-400">docs</span>

@@ -271,20 +271,105 @@
         }
       },
       "required": ["uid", "displayName", "linkedPlayer", "createdAt", "updatedAt"]
+    },
+    "SiteActivityState": {
+      "title": "SiteActivityState",
+      "description": "Global site maintenance, pause, countdown, device/iframe/IP targeting state for instant cross-device enforcement.",
+      "type": "object",
+      "properties": {
+        "configId": {
+          "type": "string",
+          "enum": ["global"]
+        },
+        "enabled": { "type": "boolean" },
+        "mode": {
+          "type": "string",
+          "enum": ["arret", "maintenance", "administration", "moderation", "mise_a_jour"]
+        },
+        "customTitle": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "customMessage": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "scheduleType": {
+          "type": "string",
+          "enum": ["immediate", "countdown", "exact_date"]
+        },
+        "countdownMinutes": { "type": "number" },
+        "pauseAtTimestamp": { "type": "number" },
+        "resumeType": {
+          "type": "string",
+          "enum": ["manual", "duration", "exact_date"]
+        },
+        "resumeDurationMinutes": { "type": "number" },
+        "resumeAtTimestamp": { "type": "number" },
+        "autoResume": { "type": "boolean" },
+        "showCountdownBanner": { "type": "boolean" },
+        "devicesAll": { "type": "boolean" },
+        "devicesDesktop": { "type": "boolean" },
+        "devicesMobile": { "type": "boolean" },
+        "devicesTablet": { "type": "boolean" },
+        "iframePolicy": {
+          "type": "string",
+          "enum": ["block_all", "block_only_iframes", "allow_iframes"]
+        },
+        "ipPolicyMode": {
+          "type": "string",
+          "enum": ["all", "except_list", "only_list"]
+        },
+        "ipPolicyIps": { "type": "array" },
+        "ipPolicyExemptTrustedAdminIps": { "type": "boolean" },
+        "allowAdminBypass": { "type": "boolean" },
+        "revision": { "type": "number" },
+        "updatedAtMs": { "type": "number" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "updatedByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "configId",
+        "enabled",
+        "mode",
+        "customTitle",
+        "customMessage",
+        "scheduleType",
+        "countdownMinutes",
+        "resumeType",
+        "resumeDurationMinutes",
+        "autoResume",
+        "showCountdownBanner",
+        "devicesAll",
+        "devicesDesktop",
+        "devicesMobile",
+        "devicesTablet",
+        "iframePolicy",
+        "ipPolicyMode",
+        "ipPolicyIps",
+        "ipPolicyExemptTrustedAdminIps",
+        "allowAdminBypass",
+        "revision",
+        "updatedAtMs",
+        "updatedBy",
+        "updatedByUid",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
     "/players/{playerId}": {
       "schema": { "$ref": "#/entities/PlayerMirror" },
-      "description": "Mirrored player profile, settings, and latest summary snapshot per Chess.com username."
+      "description": "Primary player profile, settings, and latest summary snapshot per Chess.com username."
     },
     "/players/{playerId}/dailyRecords/{dayKey}": {
       "schema": { "$ref": "#/entities/DailySyncRecord" },
-      "description": "Daily Elo sync snapshots mirrored under each player."
+      "description": "Daily Elo sync snapshots stored under each player."
     },
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserAccount" },
       "description": "Owner-only non-PII account metadata linking Firebase Auth UID to tracked player."
+    },
+    "/siteActivity/{configId}": {
+      "schema": { "$ref": "#/entities/SiteActivityState" },
+      "description": "Real-time global site activity / maintenance block state for instant cross-device updates."
     }
   }
 }

@@ -66,8 +66,10 @@ import {
   fetchSiteActivity,
   formatRemainingDuration,
   getLocalSiteActivityConfig,
+  setLocalSiteActivityConfig,
   SITE_PAUSE_MODE_META,
   SiteActivityConfig,
+  subscribeSiteActivityFirestore,
 } from './utils/siteActivity';
 import {
   clearUserSession,
@@ -293,19 +295,39 @@ export default function App() {
     };
   }, [settings.username]);
 
-  // Mirror active JSONBin state to Firestore whenever Firebase Auth restores a verified session
+  // Reconcile Firebase-first (with JSONBin fallback) whenever Firebase Auth restores a verified session
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (fbUser) => {
-      if (fbUser && fbUser.emailVerified && syncHistory.length > 0) {
-        mirrorDataToFirestore({
-          username: settings.username,
-          history: syncHistory,
-          settings,
-          jsonBinSyncedAt: lastSyncTime,
-        }).catch(() => {});
-      }
+    let active = true;
+    const unsub = onAuthStateChanged(auth, async (fbUser) => {
+      if (!active || !fbUser || !fbUser.emailVerified) return;
+      try {
+        const res = await reconcileCloudSync(settings.username, syncHistory, settings, {
+          isSpectator: Boolean(userSession?.isSpectator),
+          forcePull: false,
+        });
+        if (!active) return;
+        if (res.didUpdate) {
+          setSyncHistory(res.history);
+          if (res.history.length > 0) setLastSyncTime(res.history[0].timestamp);
+          if (res.settings) setSettings({ ...res.settings, username: 'alpharomeo1500' });
+        }
+        if (res.sourceUsed === 'firebase') {
+          setJsonBinStatus('synced');
+          if (res.confirmedDayHashes) setConfirmedDayHashes(res.confirmedDayHashes);
+        } else if (syncHistory.length > 0) {
+          mirrorDataToFirestore({
+            username: settings.username,
+            history: syncHistory,
+            settings,
+            jsonBinSyncedAt: lastSyncTime,
+          }).catch(() => {});
+        }
+      } catch {}
     });
-    return () => unsub();
+    return () => {
+      active = false;
+      unsub();
+    };
   }, [settings.username]);
 
   // Reconcile TOTP secret from backend on mount & keep device category responsive to resize/rotation
@@ -349,6 +371,12 @@ export default function App() {
   useEffect(() => {
     refreshSiteActivity(true);
 
+    // Real-time Firestore listener (<100ms propagation for site pause/resume across all devices)
+    const unsubSiteActivity = subscribeSiteActivityFirestore((fbConfig) => {
+      setLocalSiteActivityConfig(fbConfig);
+      setSiteActivityConfig(fbConfig);
+    });
+
     const handleUpdated = (e: Event) => {
       const custom = e as CustomEvent<SiteActivityConfig>;
       if (custom.detail) {
@@ -375,9 +403,10 @@ export default function App() {
 
     const pollId = setInterval(() => {
       refreshSiteActivity(false);
-    }, 6000);
+    }, 15000);
 
     return () => {
+      unsubSiteActivity();
       window.removeEventListener('roadto2000:site-activity-updated', handleUpdated);
       window.removeEventListener('focus', handleVisibilityOrFocus);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);

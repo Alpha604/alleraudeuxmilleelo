@@ -7,17 +7,27 @@ import {
   collection,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
+  getDocsFromServer,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   Timestamp,
   Unsubscribe,
   writeBatch,
 } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
-import { AppSettings, GameMode, SyncRecord } from '../types/chess';
+import {
+  auth,
+  db,
+  handleFirestoreError,
+  OperationType,
+  waitForFirebaseAuthReady,
+} from '../firebase';
+import { AppSettings, AppTheme, GameMode, SyncRecord, TrajectoryModel } from '../types/chess';
+import type { SiteActivityConfig } from './siteActivity';
 import { normalizeParisDayKey } from './storage';
 
 export interface FirebaseMirrorStatus {
@@ -528,4 +538,305 @@ export function subscribePlayerFirestoreExplorer(
     unsubPlayer();
     unsubRecords();
   };
+}
+
+/**
+ * Primary Firestore Data Reader:
+ * Fetches player configuration & daily records from Firebase Firestore.
+ * Returns { available: false } seamlessly if unauthenticated, offline, empty, or unreachable,
+ * allowing callers to automatically fall back to JSONBin.
+ */
+export async function fetchPlayerDataFromFirestore(username: string): Promise<{
+  available: boolean;
+  history: SyncRecord[];
+  settingsPatch?: Partial<AppSettings>;
+  updatedAt?: string | null;
+  reason?: 'auth_required' | 'empty' | 'error';
+}> {
+  const playerId = sanitizePlayerId(username);
+  const user = await waitForFirebaseAuthReady(1500);
+
+  if (!user || !user.emailVerified) {
+    return { available: false, history: [], reason: 'auth_required' };
+  }
+
+  const playerPath = `players/${playerId}`;
+  const recordsPath = `players/${playerId}/dailyRecords`;
+
+  try {
+    let playerSnap;
+    try {
+      playerSnap = await getDocFromServer(doc(db, 'players', playerId));
+    } catch {
+      playerSnap = await getDoc(doc(db, 'players', playerId));
+    }
+
+    if (!playerSnap.exists()) {
+      return { available: false, history: [], reason: 'empty' };
+    }
+
+    const pData = playerSnap.data();
+    const recordsQuery = query(
+      collection(db, 'players', playerId, 'dailyRecords'),
+      orderBy('dayKey', 'desc')
+    );
+
+    let recordsSnap;
+    try {
+      recordsSnap = await getDocsFromServer(recordsQuery);
+    } catch {
+      recordsSnap = await getDocs(recordsQuery);
+    }
+
+    const history: SyncRecord[] = recordsSnap.docs
+      .map((docSnap) => {
+        const d = docSnap.data();
+        const validSources: SyncRecord['source'][] = [
+          'API Chess.com directe',
+          'Proxy API',
+          'Import fichier',
+          'Saisie manuelle',
+        ];
+        const source = validSources.includes(d.source) ? d.source : 'API Chess.com directe';
+        return {
+          id: typeof d.recordId === 'string' && d.recordId ? d.recordId : docSnap.id,
+          username: playerId,
+          timestamp: typeof d.timestamp === 'string' ? d.timestamp : `${d.dayKey}T12:00:00.000Z`,
+          bullet: typeof d.bullet === 'number' ? d.bullet : null,
+          blitz: typeof d.blitz === 'number' ? d.blitz : null,
+          rapid: typeof d.rapid === 'number' ? d.rapid : null,
+          puzzles: typeof d.puzzles === 'number' ? d.puzzles : null,
+          bestRating: typeof d.bestRating === 'number' ? d.bestRating : 1500,
+          bestMode: isValidMode(d.bestMode),
+          source,
+          ...(typeof d.note === 'string' && d.note ? { note: d.note } : {}),
+        };
+      })
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    if (history.length === 0) {
+      return { available: false, history: [], reason: 'empty' };
+    }
+
+    const validThemes: AppTheme[] = ['dark', 'light', 'ocean', 'colors', 'system'];
+    const validTrajectories: TrajectoryModel[] = ['linear', 'milestones', 'custom'];
+
+    const settingsPatch: Partial<AppSettings> = {
+      username: playerId,
+      ...(typeof pData.startElo === 'number' ? { startElo: pData.startElo } : {}),
+      ...(typeof pData.targetElo === 'number' ? { targetElo: pData.targetElo } : {}),
+      ...(typeof pData.startDate === 'string' ? { startDate: pData.startDate } : {}),
+      ...(typeof pData.targetDate === 'string' ? { targetDate: pData.targetDate } : {}),
+      ...(pData.selectedMode === 'auto' ||
+      pData.selectedMode === 'bullet' ||
+      pData.selectedMode === 'blitz' ||
+      pData.selectedMode === 'rapid'
+        ? { selectedMode: pData.selectedMode }
+        : {}),
+      ...(validTrajectories.includes(pData.trajectoryModel)
+        ? { trajectoryModel: pData.trajectoryModel }
+        : {}),
+      ...(typeof pData.autoSyncMinutes === 'number'
+        ? { autoSyncMinutes: pData.autoSyncMinutes }
+        : {}),
+      ...(validThemes.includes(pData.theme) ? { theme: pData.theme } : {}),
+    };
+
+    const updatedAt = formatFirestoreTimestamp(pData.updatedAt);
+
+    updateMirrorStatus({
+      status: 'synced',
+      lastMirroredAt: updatedAt ? new Date(updatedAt).getTime() : Date.now(),
+      recordsMirrored: history.length,
+      lastError: null,
+      lastPlayerId: playerId,
+    });
+
+    return {
+      available: true,
+      history,
+      settingsPatch,
+      updatedAt,
+    };
+  } catch (err) {
+    try {
+      handleFirestoreError(err, OperationType.GET, `${playerPath} | ${recordsPath}`);
+    } catch (wrapped) {
+      updateMirrorStatus({
+        status: 'error',
+        lastError: wrapped instanceof Error ? wrapped.message : String(wrapped),
+        lastPlayerId: playerId,
+      });
+    }
+    return { available: false, history: [], reason: 'error' };
+  }
+}
+
+function mapFirestoreSiteActivityDoc(d: Record<string, any>): SiteActivityConfig {
+  return {
+    enabled: Boolean(d.enabled),
+    mode:
+      d.mode === 'arret' ||
+      d.mode === 'maintenance' ||
+      d.mode === 'administration' ||
+      d.mode === 'moderation' ||
+      d.mode === 'mise_a_jour'
+        ? d.mode
+        : 'maintenance',
+    customTitle: typeof d.customTitle === 'string' ? d.customTitle : 'Maintenance technique en cours',
+    customMessage:
+      typeof d.customMessage === 'string'
+        ? d.customMessage
+        : 'Une opération de maintenance est en cours.',
+    scheduleType:
+      d.scheduleType === 'countdown' || d.scheduleType === 'exact_date'
+        ? d.scheduleType
+        : 'immediate',
+    countdownMinutes: typeof d.countdownMinutes === 'number' ? d.countdownMinutes : 5,
+    pauseAtTimestamp: typeof d.pauseAtTimestamp === 'number' ? d.pauseAtTimestamp : null,
+    resumeType:
+      d.resumeType === 'duration' || d.resumeType === 'exact_date' ? d.resumeType : 'manual',
+    resumeDurationMinutes: typeof d.resumeDurationMinutes === 'number' ? d.resumeDurationMinutes : 30,
+    resumeAtTimestamp: typeof d.resumeAtTimestamp === 'number' ? d.resumeAtTimestamp : null,
+    autoResume: Boolean(d.autoResume),
+    showCountdownBanner: d.showCountdownBanner !== false,
+    devices: {
+      all: d.devicesAll !== undefined ? Boolean(d.devicesAll) : true,
+      desktop: d.devicesDesktop !== undefined ? Boolean(d.devicesDesktop) : true,
+      mobile: d.devicesMobile !== undefined ? Boolean(d.devicesMobile) : true,
+      tablet: d.devicesTablet !== undefined ? Boolean(d.devicesTablet) : true,
+    },
+    iframePolicy:
+      d.iframePolicy === 'block_only_iframes' || d.iframePolicy === 'allow_iframes'
+        ? d.iframePolicy
+        : 'block_all',
+    ipPolicy: {
+      mode:
+        d.ipPolicyMode === 'except_list' || d.ipPolicyMode === 'only_list'
+          ? d.ipPolicyMode
+          : 'all',
+      ips: Array.isArray(d.ipPolicyIps) ? d.ipPolicyIps.map((x: any) => String(x)) : [],
+      exemptTrustedAdminIps: d.ipPolicyExemptTrustedAdminIps !== false,
+    },
+    allowAdminBypass: d.allowAdminBypass !== false,
+    revision: typeof d.revision === 'number' ? d.revision : 0,
+    updatedAt: typeof d.updatedAtMs === 'number' ? d.updatedAtMs : 0,
+    updatedBy: typeof d.updatedBy === 'string' ? d.updatedBy : 'alpharomeo1500',
+  };
+}
+
+/**
+ * Saves SiteActivityConfig to Firestore (/siteActivity/global) for instant (<100ms) propagation
+ * to every connected PC, Mobile, Tablet, and Iframe via onSnapshot.
+ */
+export async function saveSiteActivityToFirestore(
+  config: SiteActivityConfig
+): Promise<{ ok: boolean; error?: string }> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) {
+    return { ok: false, error: 'Connexion Google Firebase requise pour le push instantané Firestore' };
+  }
+
+  const docPath = 'siteActivity/global';
+  const docRef = doc(db, 'siteActivity', 'global');
+
+  try {
+    let existingCreatedAt: any = null;
+    try {
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        existingCreatedAt = snap.data().createdAt ?? null;
+      }
+    } catch {
+      // proceed with serverTimestamp if not yet created
+    }
+
+    const sanitizedIps = (Array.isArray(config.ipPolicy?.ips) ? config.ipPolicy.ips : [])
+      .map((ip) => String(ip).trim().slice(0, 64))
+      .filter((ip) => ip.length >= 3)
+      .slice(0, 50);
+
+    const payload: Record<string, any> = {
+      configId: 'global',
+      enabled: Boolean(config.enabled),
+      mode: config.mode,
+      customTitle: (config.customTitle || 'Site en pause').trim().slice(0, 120),
+      customMessage: (config.customMessage || 'Pause administrative en cours.').trim().slice(0, 500),
+      scheduleType: config.scheduleType,
+      countdownMinutes: Math.max(1, Math.min(10080, Math.round(config.countdownMinutes || 5))),
+      resumeType: config.resumeType,
+      resumeDurationMinutes: Math.max(
+        1,
+        Math.min(43200, Math.round(config.resumeDurationMinutes || 30))
+      ),
+      autoResume: Boolean(config.autoResume),
+      showCountdownBanner: Boolean(config.showCountdownBanner),
+      devicesAll: Boolean(config.devices?.all),
+      devicesDesktop: Boolean(config.devices?.desktop),
+      devicesMobile: Boolean(config.devices?.mobile),
+      devicesTablet: Boolean(config.devices?.tablet),
+      iframePolicy: config.iframePolicy,
+      ipPolicyMode: config.ipPolicy?.mode || 'all',
+      ipPolicyIps: sanitizedIps,
+      ipPolicyExemptTrustedAdminIps: Boolean(config.ipPolicy?.exemptTrustedAdminIps),
+      allowAdminBypass: Boolean(config.allowAdminBypass),
+      revision: Math.max(0, Math.round(config.revision || 0)),
+      updatedAtMs: Math.max(0, Math.round(config.updatedAt || Date.now())),
+      updatedBy: (config.updatedBy || 'alpharomeo1500').trim().slice(0, 80) || 'alpharomeo1500',
+      updatedByUid: user.uid,
+      createdAt: existingCreatedAt || serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    if (typeof config.pauseAtTimestamp === 'number' && config.pauseAtTimestamp >= 0) {
+      payload.pauseAtTimestamp = Math.round(config.pauseAtTimestamp);
+    }
+    if (typeof config.resumeAtTimestamp === 'number' && config.resumeAtTimestamp >= 0) {
+      payload.resumeAtTimestamp = Math.round(config.resumeAtTimestamp);
+    }
+
+    await setDoc(docRef, payload);
+    return { ok: true };
+  } catch (err) {
+    try {
+      handleFirestoreError(err, OperationType.WRITE, docPath);
+    } catch (wrapped) {
+      return {
+        ok: false,
+        error: wrapped instanceof Error ? wrapped.message : String(wrapped),
+      };
+    }
+  }
+}
+
+export async function fetchSiteActivityFromFirestore(
+  forceServer = false
+): Promise<SiteActivityConfig | null> {
+  try {
+    const ref = doc(db, 'siteActivity', 'global');
+    const snap = forceServer ? await getDocFromServer(ref) : await getDoc(ref);
+    if (!snap.exists()) return null;
+    return mapFirestoreSiteActivityDoc(snap.data());
+  } catch {
+    return null;
+  }
+}
+
+export function subscribeSiteActivityFirestore(
+  onUpdate: (config: SiteActivityConfig) => void,
+  onError?: (err: Error) => void
+): Unsubscribe {
+  const ref = doc(db, 'siteActivity', 'global');
+  return onSnapshot(
+    ref,
+    (snap) => {
+      if (!snap.exists()) return;
+      onUpdate(mapFirestoreSiteActivityDoc(snap.data()));
+    },
+    (error) => {
+      if (onError) {
+        onError(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+  );
 }

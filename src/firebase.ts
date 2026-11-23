@@ -7,6 +7,7 @@ import { initializeApp } from 'firebase/app';
 import {
   getAuth,
   GoogleAuthProvider,
+  onAuthStateChanged,
   signInWithPopup,
   signOut,
   User,
@@ -103,6 +104,24 @@ export async function testConnection(): Promise<FirebaseConnectionState> {
 }
 
 testConnection();
+
+export function waitForFirebaseAuthReady(timeoutMs = 1500): Promise<User | null> {
+  if (auth.currentUser) {
+    return Promise.resolve(auth.currentUser);
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (user: User | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      unsub();
+      resolve(user);
+    };
+    const timer = setTimeout(() => finish(auth.currentUser), timeoutMs);
+    const unsub = onAuthStateChanged(auth, (user) => finish(user));
+  });
+}
 
 export async function signInWithGoogleFirebase(): Promise<User> {
   const credential = await signInWithPopup(auth, googleProvider);

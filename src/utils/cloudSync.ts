@@ -13,7 +13,7 @@ import {
   saveStoredSettings,
   saveStoredSyncHistory,
 } from './storage';
-import { mirrorDataToFirestore } from './firebaseMirror';
+import { fetchPlayerDataFromFirestore, mirrorDataToFirestore } from './firebaseMirror';
 
 /**
  * Cloud Sync Utility (Dual-Mode: Express Server + Vercel Direct Client-Side JSONBin):
@@ -515,20 +515,82 @@ export async function reconcileCloudSync(
   didUpdate: boolean;
   lastJsonBinSyncTime: number | null;
   confirmedDayHashes?: Record<string, string>;
+  sourceUsed?: 'firebase' | 'jsonbin' | 'local';
 }> {
   const clean = (username || '').trim().toLowerCase();
   if (!clean) {
-    return { history: localHistory, settings: localSettings, didUpdate: false, lastJsonBinSyncTime: null };
+    return {
+      history: localHistory,
+      settings: localSettings,
+      didUpdate: false,
+      lastJsonBinSyncTime: null,
+      sourceUsed: 'local',
+    };
   }
 
   const isSpectator = Boolean(options?.isSpectator);
   const forcePull = Boolean(options?.forcePull);
   const lastPullKey = `${STORAGE_KEYS.lastPullPrefix}${clean}`;
 
+  const initialMetrics = getLocalMetrics(clean);
+  let lastJsonBinSyncTime: number | null = initialMetrics.lastSyncTime;
+  let confirmedDayHashes: Record<string, string> | undefined = initialMetrics.confirmedDayHashes;
+
+  // 1. PRIMARY SOURCE: Try Firebase Firestore first
+  try {
+    const fbRes = await fetchPlayerDataFromFirestore(clean);
+    if (fbRes.available && fbRes.history.length > 0) {
+      const mergedFromFb = mergeSyncHistories(localHistory, fbRes.history, clean);
+      const didHistoryChange =
+        mergedFromFb.length !== localHistory.length ||
+        JSON.stringify(mergedFromFb) !== JSON.stringify(localHistory);
+
+      if (didHistoryChange) {
+        saveStoredSyncHistory(mergedFromFb, clean);
+      }
+
+      let nextSettings = localSettings;
+      let didSettingsChange = false;
+      if (fbRes.settingsPatch) {
+        const mergedSettingsObj: AppSettings = {
+          ...(localSettings || getStoredSettings(clean)),
+          ...fbRes.settingsPatch,
+          username: clean,
+        };
+        if (!localSettings || JSON.stringify(mergedSettingsObj) !== JSON.stringify(localSettings)) {
+          nextSettings = mergedSettingsObj;
+          if (!isSpectator) {
+            saveStoredSettings(mergedSettingsObj);
+          }
+          didSettingsChange = true;
+        }
+      }
+
+      const fbSyncMs = fbRes.updatedAt ? new Date(fbRes.updatedAt).getTime() : Date.now();
+      const validFbMs = Number.isFinite(fbSyncMs) ? fbSyncMs : Date.now();
+      const fbHashes = buildConfirmedDayHashes(fbRes.history, clean);
+
+      if (!isSpectator && localHistory.length > 0 && mergedFromFb.length > fbRes.history.length) {
+        saveServerData(clean, mergedFromFb, nextSettings, { force: false }).catch(() => {});
+      }
+
+      return {
+        history: mergedFromFb,
+        settings: nextSettings,
+        didUpdate: didHistoryChange || didSettingsChange,
+        lastJsonBinSyncTime: lastJsonBinSyncTime || validFbMs,
+        confirmedDayHashes: fbHashes,
+        sourceUsed: 'firebase',
+      };
+    }
+  } catch {
+    // Firebase unavailable -> seamless fallback to JSONBin below
+  }
+
+  // 2. FALLBACK SOURCE: JSONBin + Express Server if Firebase is unavailable/empty
   let shouldPullJsonBin = forcePull || localHistory.length === 0;
   try {
     if (!shouldPullJsonBin && typeof window !== 'undefined' && window.sessionStorage) {
-      // At least once per browser session (and no more than once per 60s unless forced)
       const sessionPull = Number(window.sessionStorage.getItem(lastPullKey) || '0');
       if (!sessionPull || Date.now() - sessionPull > 60 * 1000) {
         shouldPullJsonBin = true;
@@ -540,11 +602,7 @@ export async function reconcileCloudSync(
 
   let remoteHistory: SyncRecord[] = [];
   let remoteSettings: AppSettings | null = null;
-  const initialMetrics = getLocalMetrics(clean);
-  let lastJsonBinSyncTime: number | null = initialMetrics.lastSyncTime;
-  let confirmedDayHashes: Record<string, string> | undefined = initialMetrics.confirmedDayHashes;
 
-  // 1. Check Express server
   const serverResult = await fetchServerData(clean);
   if (serverResult) {
     remoteHistory = mergeSyncHistories(serverResult.history || [], remoteHistory, clean);
@@ -553,7 +611,6 @@ export async function reconcileCloudSync(
     if (serverResult.confirmedDayHashes) confirmedDayHashes = serverResult.confirmedDayHashes;
   }
 
-  // 2. Directly pull latest from JSONBin when needed (only non-spectator OR when cache is empty)
   if (shouldPullJsonBin && (!isSpectator || remoteHistory.length === 0)) {
     const binPull = await pullFromJsonBin(clean);
     if (binPull.success) {
@@ -584,10 +641,10 @@ export async function reconcileCloudSync(
       didUpdate: false,
       lastJsonBinSyncTime,
       confirmedDayHashes,
+      sourceUsed: 'local',
     };
   }
 
-  // Merge remote (authoritative for remote-only days or newer remote records) with local
   const mergedHistory = mergeSyncHistories(localHistory, remoteHistory, clean);
 
   const didHistoryChange =
@@ -601,7 +658,6 @@ export async function reconcileCloudSync(
   let nextSettings = localSettings;
   let didSettingsChange = false;
   if (remoteSettings) {
-    // Restore remote settings cleanly when remote settings differ and user isn't mid-edit
     const mergedSettingsObj: AppSettings = {
       ...(localSettings || getStoredSettings(clean)),
       ...remoteSettings,
@@ -624,7 +680,6 @@ export async function reconcileCloudSync(
     }
   }
 
-  // Never push back to JSONBin in spectator mode
   if (!isSpectator && localHistory.length > 0 && mergedHistory.length > remoteHistory.length) {
     saveServerData(clean, mergedHistory, nextSettings, { force: false }).catch(() => {});
   }
@@ -635,6 +690,7 @@ export async function reconcileCloudSync(
     didUpdate: didHistoryChange || didSettingsChange,
     lastJsonBinSyncTime,
     confirmedDayHashes,
+    sourceUsed: 'jsonbin',
   };
 }
 

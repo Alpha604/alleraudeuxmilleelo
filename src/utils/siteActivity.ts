@@ -3,6 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import {
+  fetchSiteActivityFromFirestore,
+  saveSiteActivityToFirestore,
+  subscribeSiteActivityFirestore,
+} from './firebaseMirror';
+
+export { subscribeSiteActivityFirestore };
+
 export type SitePauseMode =
   | 'arret'
   | 'maintenance'
@@ -545,7 +553,16 @@ export async function fetchSiteActivity(forceCloud = false): Promise<{
 }> {
   const localConfig = getLocalSiteActivityConfig();
 
-  // 1. Primary path: Express backend (which reconciles local disk + JSONBin cloud cache)
+  // 1. Primary ultra-fast source: Firebase Firestore (/siteActivity/global)
+  let firestoreCfg: SiteActivityConfig | null = null;
+  try {
+    firestoreCfg = await fetchSiteActivityFromFirestore(forceCloud);
+    if (firestoreCfg) {
+      setLocalSiteActivityConfig(firestoreCfg);
+    }
+  } catch {}
+
+  // 2. Also query Express backend for clientIp / serverTime and JSONBin fallback reconciliation
   try {
     const query = forceCloud ? '?force=1' : '';
     const res = await fetch(`/api/site-activity${query}`, {
@@ -556,14 +573,25 @@ export async function fetchSiteActivity(forceCloud = false): Promise<{
       const ct = res.headers.get('content-type') || '';
       if (ct.includes('application/json')) {
         const data = await res.json();
-        if (data?.config) {
-          const normalized = normalizeSiteActivityConfig(data.config);
-          // Server/Cloud is strictly authoritative across devices so no stale local cache can override a pause
-          setLocalSiteActivityConfig(normalized);
+        const serverNorm = data?.config ? normalizeSiteActivityConfig(data.config) : null;
+        const clientIp = typeof data.clientIp === 'string' ? data.clientIp : '';
+        const serverTime = typeof data.serverTime === 'number' ? data.serverTime : undefined;
+
+        if (firestoreCfg && (!serverNorm || !isConfigNewer(serverNorm, firestoreCfg))) {
           return {
-            config: normalized,
-            clientIp: typeof data.clientIp === 'string' ? data.clientIp : '',
-            serverTime: typeof data.serverTime === 'number' ? data.serverTime : undefined,
+            config: firestoreCfg,
+            clientIp,
+            serverTime,
+            cloudSynced: true,
+          };
+        }
+
+        if (serverNorm) {
+          setLocalSiteActivityConfig(serverNorm);
+          return {
+            config: serverNorm,
+            clientIp,
+            serverTime,
             cloudSynced: Boolean(data.cloudSynced),
           };
         }
@@ -571,7 +599,15 @@ export async function fetchSiteActivity(forceCloud = false): Promise<{
     }
   } catch {}
 
-  // 2. Standalone / Shared-Static Fallback: fetch directly from JSONBin
+  if (firestoreCfg) {
+    return {
+      config: firestoreCfg,
+      clientIp: '',
+      cloudSynced: true,
+    };
+  }
+
+  // 3. Standalone / Shared-Static Fallback: fetch directly from JSONBin
   const cloudCfg = await pullSiteActivityFromCloudDirect();
   if (cloudCfg) {
     setLocalSiteActivityConfig(cloudCfg);
@@ -602,7 +638,10 @@ export async function saveSiteActivity(
   });
   setLocalSiteActivityConfig(normalized);
 
-  // 1. Save via Express backend (writes disk + pushes to JSONBin Cloud with Merge-Before-PUT)
+  // 1. Push immediately to Firebase Firestore for <100ms real-time blocking across all devices
+  const firestorePromise = saveSiteActivityToFirestore(normalized).catch(() => ({ ok: false }));
+
+  // 2. Save via Express backend + JSONBin fallback in parallel
   try {
     const res = await fetch('/api/site-activity', {
       method: 'POST',
@@ -619,14 +658,15 @@ export async function saveSiteActivity(
         if (data?.config) {
           const serverNorm = normalizeSiteActivityConfig(data.config);
           setLocalSiteActivityConfig(serverNorm);
+          const fbRes = await firestorePromise;
 
           // If Express failed to reach JSONBin, try direct client push as fallback
           if (!data.cloudSynced) {
             const directFallback = await pushSiteActivityToCloudDirect(serverNorm);
             return {
-              success: directFallback.success,
+              success: directFallback.success || fbRes.ok,
               config: serverNorm,
-              cloudSynced: directFallback.success,
+              cloudSynced: directFallback.success || fbRes.ok,
               error: directFallback.error || data.cloudError || undefined,
             };
           }
@@ -641,12 +681,15 @@ export async function saveSiteActivity(
     }
   } catch {}
 
-  // 2. Direct JSONBin fallback if Express backend isn't reachable (static hosting)
-  const directRes = await pushSiteActivityToCloudDirect(normalized);
+  const [fbRes, directRes] = await Promise.all([
+    firestorePromise,
+    pushSiteActivityToCloudDirect(normalized),
+  ]);
+
   return {
-    success: directRes.success,
+    success: fbRes.ok || directRes.success,
     config: normalized,
-    cloudSynced: directRes.success,
-    error: directRes.error,
+    cloudSynced: fbRes.ok || directRes.success,
+    error: fbRes.ok ? undefined : directRes.error,
   };
 }
