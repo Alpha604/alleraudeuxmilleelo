@@ -22,3 +22,20 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(150, 150, 150, 0.35);
 }
+
+@keyframes roadto2000NotifShrink {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin,
+  .animate-ping,
+  .animate-pulse {
+    animation-duration: 0.01ms !important;
+  }
+}

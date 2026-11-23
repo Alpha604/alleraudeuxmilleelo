@@ -4,7 +4,6 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Calendar, History, LayoutDashboard, LineChart, Settings as SettingsIcon, ShieldAlert } from 'lucide-react';
 import { AdminPanelView } from './components/AdminPanelView';
 import { DailyObjectiveCard } from './components/DailyObjectiveCard';
 import { GameModesBreakdown } from './components/GameModesBreakdown';
@@ -13,6 +12,8 @@ import { HistoryChart } from './components/HistoryChart';
 import { IframeEmbedGuide } from './components/IframeEmbedGuide';
 import { KpiSummaryRow } from './components/KpiSummaryRow';
 import { MilestoneCalendar } from './components/MilestoneCalendar';
+import { MobileLiquidGlassDock } from './components/MobileLiquidGlassDock';
+import { MobileNotificationCenter } from './components/MobileNotificationCenter';
 import { Navbar, NavTab } from './components/Navbar';
 import { NotificationToast, ToastMessage } from './components/NotificationToast';
 import { MonthlyObjectiveCard } from './components/MonthlyObjectiveCard';
@@ -83,6 +84,16 @@ import {
   purgeLegacyAndStaleData,
   saveStoredSettings,
 } from './utils/storage';
+import {
+  AppNotificationItem,
+  getNotificationPrefs,
+  getStoredNotifications,
+  inferNotificationMeta,
+  MobileNotificationPrefs,
+  saveNotificationPrefs,
+  saveStoredNotifications,
+  triggerNotificationHaptic,
+} from './utils/notifications';
 
 function ensureDirectAlphaSession(): UserSession {
   const existing = getActiveUserSession();
@@ -139,6 +150,11 @@ export default function App() {
     return history.length > 0 ? history[0].timestamp : null;
   });
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [notificationHistory, setNotificationHistory] = useState<AppNotificationItem[]>(() =>
+    getStoredNotifications()
+  );
+  const [notifPrefs, setNotifPrefs] = useState<MobileNotificationPrefs>(() => getNotificationPrefs());
+  const [notificationCenterOpen, setNotificationCenterOpen] = useState<boolean>(false);
 
   // Network & JSONBin online status states
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
@@ -406,23 +422,106 @@ export default function App() {
     };
   }, []);
 
-  // Toast notification helper
-  const showToast = useCallback((message: string, type: 'info' | 'success' | 'warning' = 'info', title = 'Road to 2000') => {
-    const newToast: ToastMessage = {
-      id: `toast_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
-      title,
-      message,
-      type,
-    };
-    setToasts((prev) => [...prev, newToast]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== newToast.id));
-    }, 5000);
-  }, []);
+  // Persistent Notification History & Mobile Toast helper
+  const showToast = useCallback(
+    (
+      message: string,
+      type: 'info' | 'success' | 'warning' = 'info',
+      title = 'Road to 2000',
+      options?: { targetTab?: NavTab; bypassDnd?: boolean }
+    ) => {
+      const inferred = inferNotificationMeta(title, message);
+      const category = inferred.category;
+      const targetTab = options?.targetTab ?? inferred.targetTab;
+      const now = Date.now();
+      const id = `toast_${now}_${Math.random().toString(36).substring(2, 6)}`;
+
+      const historyItem: AppNotificationItem = {
+        id,
+        title,
+        message,
+        type,
+        category,
+        createdAt: now,
+        read: false,
+        targetTab,
+      };
+
+      setNotificationHistory((prev) => {
+        const next = [historyItem, ...prev].slice(0, 40);
+        saveStoredNotifications(next);
+        return next;
+      });
+
+      if (!options?.bypassDnd && (notifPrefs.dnd || !notifPrefs.categories[category])) {
+        return;
+      }
+
+      if (notifPrefs.haptic) {
+        triggerNotificationHaptic(type);
+      }
+
+      const durationMs =
+        notifPrefs.autoHideSeconds === 0 ? 0 : (notifPrefs.autoHideSeconds || 6) * 1000;
+
+      const newToast: ToastMessage = {
+        id,
+        title,
+        message,
+        type,
+        category,
+        createdAt: now,
+        durationMs,
+        targetTab,
+      };
+
+      setToasts((prev) => [...prev, newToast]);
+      if (durationMs > 0) {
+        setTimeout(() => {
+          setToasts((prev) => prev.filter((t) => t.id !== id));
+        }, durationMs);
+      }
+    },
+    [notifPrefs]
+  );
 
   const dismissToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  const handleUpdateNotifPrefs = useCallback((next: MobileNotificationPrefs) => {
+    setNotifPrefs(next);
+    saveNotificationPrefs(next);
+  }, []);
+
+  const handleMarkAllNotificationsRead = useCallback(() => {
+    setNotificationHistory((prev) => {
+      const next = prev.map((item) => ({ ...item, read: true }));
+      saveStoredNotifications(next);
+      return next;
+    });
+  }, []);
+
+  const handleMarkOneNotificationRead = useCallback((id: string) => {
+    setNotificationHistory((prev) => {
+      const next = prev.map((item) => (item.id === id ? { ...item, read: true } : item));
+      saveStoredNotifications(next);
+      return next;
+    });
+  }, []);
+
+  const handleDeleteOneNotification = useCallback((id: string) => {
+    setNotificationHistory((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      saveStoredNotifications(next);
+      return next;
+    });
+  }, []);
+
+  const handleClearAllNotifications = useCallback(() => {
+    setNotificationHistory([]);
+    saveStoredNotifications([]);
+  }, []);
 
   // Unified Cloud + JSONBin save helper that updates timestamps and always reports real save status
   const persistToCloudAndNotify = useCallback(
@@ -1134,10 +1233,12 @@ export default function App() {
         sessionExpiresAt={userSession.expiresAt}
         hasAdminAccess={hasAdminAccess}
         onQuickSwitchAccount={handleQuickSwitchAccount}
+        unreadNotificationsCount={notificationHistory.filter((n) => !n.read).length}
+        onOpenNotificationCenter={() => setNotificationCenterOpen(true)}
       />
 
       {/* Main Content Viewport - Fully responsive for Mobile, Tablet & PC */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-24 sm:pb-8 space-y-5 sm:space-y-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-28 sm:pb-8 space-y-5 sm:space-y-8">
         {/* Scheduled Countdown Warning Banner */}
         {siteActivityEvaluation.isCountdownActive && siteActivityConfig.showCountdownBanner && (
           <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs backdrop-blur-sm">
@@ -1343,8 +1444,53 @@ export default function App() {
         )}
       </main>
 
-      {/* Discrete Notification Toasts */}
-      <NotificationToast toasts={toasts} onDismiss={dismissToast} />
+      {/* Top-Anchored Swipeable Mobile Notifications & Desktop Toasts */}
+      <NotificationToast
+        toasts={toasts}
+        onDismiss={dismissToast}
+        onOpenCenter={() => setNotificationCenterOpen(true)}
+        onNavigateTab={(tab) => {
+          if (!isAdmin && (tab === 'settings' || tab === 'tests' || tab === 'admin')) {
+            handleOpenSecurityModal(
+              tab === 'admin' ? 'Panel Administrateur' : 'Paramètres',
+              () => setCurrentTab(tab)
+            );
+            return;
+          }
+          setCurrentTab(tab);
+        }}
+      />
+
+      {/* Mobile Notification Center Bottom Sheet & Preferences */}
+      <MobileNotificationCenter
+        isOpen={notificationCenterOpen}
+        onClose={() => setNotificationCenterOpen(false)}
+        notifications={notificationHistory}
+        prefs={notifPrefs}
+        onUpdatePrefs={handleUpdateNotifPrefs}
+        onMarkAllRead={handleMarkAllNotificationsRead}
+        onMarkOneRead={handleMarkOneNotificationRead}
+        onDeleteOne={handleDeleteOneNotification}
+        onClearAll={handleClearAllNotifications}
+        onNavigateTab={(tab) => {
+          if (!isAdmin && (tab === 'settings' || tab === 'tests' || tab === 'admin')) {
+            handleOpenSecurityModal(
+              tab === 'admin' ? 'Panel Administrateur' : 'Paramètres',
+              () => setCurrentTab(tab)
+            );
+            return;
+          }
+          setCurrentTab(tab);
+        }}
+        onSendTestNotification={() => {
+          showToast(
+            'Glissez horizontalement pour fermer cette bannière, ou touchez-la pour ouvrir les graphiques.',
+            'success',
+            'Aperçu Notification Mobile',
+            { targetTab: 'charts', bypassDnd: true }
+          );
+        }}
+      />
 
       {/* 2FA Security Modal with Smartphone QR Code Scan */}
       {securityModalOpen && (
@@ -1409,101 +1555,16 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Mobile Minimalist Bottom Navigation Dock (< sm) */}
-      <nav
-        aria-label="Navigation mobile"
-        className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#07090e]/95 backdrop-blur-xl border-t border-neutral-800/80 px-2 py-1.5 flex items-center justify-around shadow-[0_-8px_30px_rgba(0,0,0,0.6)]"
-      >
-        <button
-          onClick={() => setCurrentTab('dashboard')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
-            currentTab === 'dashboard'
-              ? 'text-[#facc15] font-black'
-              : 'text-neutral-400 hover:text-white'
-          }`}
-        >
-          <LayoutDashboard className="h-5 w-5 mb-0.5" />
-          <span className="text-[10px] tracking-tight">Bilan</span>
-        </button>
-
-        <button
-          onClick={() => setCurrentTab('charts')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
-            currentTab === 'charts'
-              ? 'text-[#facc15] font-black'
-              : 'text-neutral-400 hover:text-white'
-          }`}
-        >
-          <LineChart className="h-5 w-5 mb-0.5" />
-          <span className="text-[10px] tracking-tight">Courbe</span>
-        </button>
-
-        <button
-          onClick={() => setCurrentTab('calendar')}
-          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
-            currentTab === 'calendar'
-              ? 'text-[#facc15] font-black'
-              : 'text-neutral-400 hover:text-white'
-          }`}
-        >
-          <Calendar className="h-5 w-5 mb-0.5" />
-          <span className="text-[10px] tracking-tight">Calendrier</span>
-        </button>
-
-        {!isSpectator && (
-          <button
-            onClick={() => setCurrentTab('history')}
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
-              currentTab === 'history'
-                ? 'text-[#facc15] font-black'
-                : 'text-neutral-400 hover:text-white'
-            }`}
-          >
-            <History className="h-5 w-5 mb-0.5" />
-            <span className="text-[10px] tracking-tight">Historique</span>
-          </button>
-        )}
-
-        {!isIframe && !isSpectator && hasAdminAccess && (
-          <button
-            onClick={() => {
-              if (!isAdmin) {
-                handleOpenSecurityModal('Panel Administrateur', () => setCurrentTab('admin'));
-              } else {
-                setCurrentTab('admin');
-              }
-            }}
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
-              currentTab === 'admin'
-                ? 'text-[#facc15] font-black'
-                : 'text-neutral-400 hover:text-white'
-            }`}
-          >
-            <ShieldAlert className="h-5 w-5 mb-0.5" />
-            <span className="text-[10px] tracking-tight">Admin</span>
-          </button>
-        )}
-
-        {!isIframe && !isSpectator && (
-          <button
-            onClick={() => {
-              if (!isAdmin) {
-                handleOpenSecurityModal('Accès aux Réglages', () => setCurrentTab('settings'));
-              } else {
-                setCurrentTab('settings');
-              }
-            }}
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
-              currentTab === 'settings'
-                ? 'text-[#facc15] font-black'
-                : 'text-neutral-400 hover:text-white'
-            }`}
-          >
-            <SettingsIcon className="h-5 w-5 mb-0.5" />
-            <span className="text-[10px] tracking-tight">Réglages</span>
-          </button>
-        )}
-      </nav>
+      {/* Mobile Liquid Glass Sliding Dock (< sm) */}
+      <MobileLiquidGlassDock
+        currentTab={currentTab}
+        onSelectTab={setCurrentTab}
+        isAdmin={isAdmin}
+        isIframe={isIframe}
+        isSpectator={isSpectator}
+        hasAdminAccess={hasAdminAccess}
+        onOpenSecurityModal={handleOpenSecurityModal}
+      />
     </div>
   );
 }

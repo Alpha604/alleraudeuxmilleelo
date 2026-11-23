@@ -3,63 +3,235 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
-import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { AlertCircle, ArrowRight, CheckCircle2, Info, X } from 'lucide-react';
+import {
+  formatRelativeNotificationTime,
+  NOTIFICATION_CATEGORY_LABEL,
+  NotificationCategory,
+} from '../utils/notifications';
+import type { NavTab } from './Navbar';
 
 export interface ToastMessage {
   id: string;
   title: string;
   message: string;
   type?: 'success' | 'warning' | 'info';
+  category?: NotificationCategory;
+  createdAt?: number;
+  durationMs?: number;
+  targetTab?: NavTab;
 }
 
 interface NotificationToastProps {
   toasts: ToastMessage[];
   onDismiss: (id: string) => void;
+  onOpenCenter?: () => void;
+  onNavigateTab?: (tab: NavTab) => void;
 }
 
-export const NotificationToast: React.FC<NotificationToastProps> = ({ toasts, onDismiss }) => {
+interface ToastCardProps {
+  toast: ToastMessage;
+  onDismiss: (id: string) => void;
+  onOpenCenter?: () => void;
+  onNavigateTab?: (tab: NavTab) => void;
+}
+
+const SwipeableToastCard: React.FC<ToastCardProps> = ({
+  toast,
+  onDismiss,
+  onOpenCenter,
+  onNavigateTab,
+}) => {
+  const [offsetX, setOffsetX] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+  const dragRef = useRef<{ active: boolean; startX: number; moved: boolean }>({
+    active: false,
+    startX: 0,
+    moved: false,
+  });
+
+  const type = toast.type || 'info';
+
+  const icons = {
+    success: <CheckCircle2 className="h-4 w-4 text-[#10b981]" />,
+    warning: <AlertCircle className="h-4 w-4 text-[#ef4444]" />,
+    info: <Info className="h-4 w-4 text-[#facc15]" />,
+  };
+
+  const iconContainer = {
+    success: 'bg-[#10b981]/15 border-[#10b981]/35',
+    warning: 'bg-[#ef4444]/15 border-[#ef4444]/35',
+    info: 'bg-[#facc15]/15 border-[#facc15]/35',
+  };
+
+  const borderTint = {
+    success: 'border-[#10b981]/35',
+    warning: 'border-[#ef4444]/40',
+    info: 'border-white/20',
+  };
+
+  const progressTint = {
+    success: 'bg-[#10b981]',
+    warning: 'bg-[#ef4444]',
+    info: 'bg-[#facc15]',
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    dragRef.current = { active: true, startX: e.clientX, moved: false };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current.active) return;
+    const dx = e.clientX - dragRef.current.startX;
+    if (Math.abs(dx) > 6) {
+      dragRef.current.moved = true;
+      setIsSwiping(true);
+    }
+    if (dragRef.current.moved) {
+      setOffsetX(dx);
+    }
+  };
+
+  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current.active) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const wasMoved = dragRef.current.moved;
+    dragRef.current.active = false;
+    setIsSwiping(false);
+
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {}
+
+    if (wasMoved && Math.abs(dx) > 75) {
+      onDismiss(toast.id);
+      return;
+    }
+
+    setOffsetX(0);
+
+    if (!wasMoved) {
+      if (toast.targetTab && onNavigateTab) {
+        onNavigateTab(toast.targetTab);
+        onDismiss(toast.id);
+      } else if (onOpenCenter) {
+        onOpenCenter();
+        onDismiss(toast.id);
+      }
+    }
+  };
+
+  const opacity = Math.max(0.25, 1 - Math.abs(offsetX) / 190);
+  const categoryText = toast.category
+    ? NOTIFICATION_CATEGORY_LABEL[toast.category]
+    : 'Notification';
+
+  return (
+    <div
+      role="status"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={() => {
+        dragRef.current.active = false;
+        setIsSwiping(false);
+        setOffsetX(0);
+      }}
+      style={{
+        transform: `translate3d(${offsetX}px, 0, 0)`,
+        opacity,
+        transition: isSwiping ? 'none' : 'transform 240ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease',
+      }}
+      className={`pointer-events-auto relative overflow-hidden rounded-[22px] border ${borderTint[type]} bg-[#0a0e16]/88 backdrop-blur-2xl backdrop-saturate-[180%] shadow-[0_14px_34px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.22)] touch-pan-y cursor-pointer`}
+    >
+      <div className="p-3.5 flex items-start gap-3">
+        <div
+          className={`h-9 w-9 rounded-xl border flex items-center justify-center shrink-0 ${iconContainer[type]}`}
+        >
+          {icons[type]}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2 text-[10px] text-neutral-400">
+            <span className="font-semibold truncate">{categoryText}</span>
+            <span className="font-mono shrink-0 tabular-nums">
+              {toast.createdAt ? formatRelativeNotificationTime(toast.createdAt) : "À l'instant"}
+            </span>
+          </div>
+
+          <h4 className="text-xs font-bold text-white leading-snug mt-0.5 truncate">
+            {toast.title}
+          </h4>
+          <p className="text-[11px] text-neutral-300 leading-snug mt-0.5 line-clamp-2">
+            {toast.message}
+          </p>
+
+          {toast.targetTab && onNavigateTab && (
+            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-[#facc15]">
+              <span>Toucher pour ouvrir</span>
+              <ArrowRight className="h-3 w-3" />
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDismiss(toast.id);
+          }}
+          aria-label="Fermer la notification"
+          className="h-8 w-8 -mr-1 -mt-1 rounded-xl flex items-center justify-center text-neutral-400 hover:text-white hover:bg-white/10 transition-colors shrink-0"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Subtle Bottom Progress Accent */}
+      {toast.durationMs !== 0 && (
+        <div className="h-[2px] w-full bg-white/[0.06] overflow-hidden">
+          <div
+            className={`h-full ${progressTint[type]} opacity-70`}
+            style={{
+              transformOrigin: 'left center',
+              animation: `roadto2000NotifShrink ${toast.durationMs || 6000}ms linear forwards`,
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const NotificationToast: React.FC<NotificationToastProps> = ({
+  toasts,
+  onDismiss,
+  onOpenCenter,
+  onNavigateTab,
+}) => {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-5 right-5 z-[130] flex flex-col gap-2 max-w-sm w-full pointer-events-none">
-      {toasts.map((toast) => {
-        const icons = {
-          success: <CheckCircle2 className="h-4 w-4 text-[#10b981] shrink-0" />,
-          warning: <AlertCircle className="h-4 w-4 text-[#ef4444] shrink-0" />,
-          info: <Info className="h-4 w-4 text-[#facc15] shrink-0" />,
-        };
-
-        const borders = {
-          success: 'border-[#10b981]/40 bg-[#0c0f14]/95 text-white',
-          warning: 'border-[#ef4444]/40 bg-[#0c0f14]/95 text-white',
-          info: 'border-[#facc15]/40 bg-[#0c0f14]/95 text-white',
-        };
-
-        const type = toast.type || 'info';
-
-        return (
-          <div
-            key={toast.id}
-            className={`pointer-events-auto flex items-start justify-between gap-3 p-3.5 rounded-xl border shadow-2xl backdrop-blur-md transition-all ${borders[type]}`}
-          >
-            <div className="flex items-start gap-2.5">
-              {icons[type]}
-              <div>
-                <h4 className="text-xs font-bold">{toast.title}</h4>
-                <p className="text-[11px] text-neutral-400 mt-0.5">{toast.message}</p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => onDismiss(toast.id)}
-              className="text-neutral-500 hover:text-white transition-colors"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        );
-      })}
+    <div
+      className="fixed top-16 left-3 right-3 sm:top-auto sm:bottom-6 sm:right-6 sm:left-auto z-[130] flex flex-col gap-2 sm:max-w-sm sm:w-full pointer-events-none"
+      aria-live="polite"
+    >
+      {toasts.slice(-3).map((toast) => (
+        <SwipeableToastCard
+          key={toast.id}
+          toast={toast}
+          onDismiss={onDismiss}
+          onOpenCenter={onOpenCenter}
+          onNavigateTab={onNavigateTab}
+        />
+      ))}
     </div>
   );
 };

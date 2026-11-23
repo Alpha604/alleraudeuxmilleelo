@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import {
   Activity,
   BarChart2,
+  Bell,
   Calendar,
   CheckCircle2,
   Code2,
@@ -49,6 +50,8 @@ interface NavbarProps {
   sessionExpiresAt?: number;
   hasAdminAccess?: boolean;
   onQuickSwitchAccount?: (targetUsername: string) => void;
+  unreadNotificationsCount?: number;
+  onOpenNotificationCenter?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -71,6 +74,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout = () => {},
   sessionExpiresAt,
   hasAdminAccess = false,
+  unreadNotificationsCount = 0,
+  onOpenNotificationCenter,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -114,20 +119,20 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   return (
-    <header className="sticky top-0 z-30 w-full border-b border-neutral-800 bg-[#07090e]/95 backdrop-blur-xl transition-all">
-      <div className="w-full flex h-14 sm:h-16 items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-30 w-full border-b border-neutral-800 bg-[#07090e]/95 backdrop-blur-xl transition-all overflow-x-clip">
+      <div className="w-full flex h-14 sm:h-16 items-center justify-between gap-1.5 sm:gap-4 px-2 sm:px-6 lg:px-8">
         {/* Brand identity: White, Black & Yellow Crown (comme avant) */}
         <button
           onClick={() => onSelectTab('dashboard')}
-          className="group flex items-center gap-2.5 sm:gap-3 text-left transition-opacity hover:opacity-90 shrink-0"
+          className="group flex items-center gap-1.5 sm:gap-3 text-left transition-opacity hover:opacity-90 min-w-0 shrink"
         >
-          <div className="relative flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-[#facc15] via-[#eab308] to-[#ca8a04] p-0.5 shadow-[0_0_15px_rgba(250,204,21,0.3)]">
-            <div className="flex h-full w-full items-center justify-center rounded-[14px] bg-[#07090e]">
-              <Crown className="h-4 w-4 sm:h-5 sm:w-5 text-[#facc15] transition-transform group-hover:scale-110" />
+          <div className="relative flex h-7 w-7 sm:h-10 sm:w-10 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-[#facc15] via-[#eab308] to-[#ca8a04] p-0.5 shadow-[0_0_15px_rgba(250,204,21,0.3)] shrink-0">
+            <div className="flex h-full w-full items-center justify-center rounded-[10px] sm:rounded-[14px] bg-[#07090e]">
+              <Crown className="h-3.5 w-3.5 sm:h-5 sm:w-5 text-[#facc15] transition-transform group-hover:scale-110" />
             </div>
           </div>
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1 font-display text-sm sm:text-base font-black tracking-wider text-white">
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-1 font-display text-[11px] sm:text-base font-black tracking-wide sm:tracking-wider text-white whitespace-nowrap">
               <span>ROAD TO 2000</span>
               <span className="text-[#facc15]">ELO</span>
             </div>
@@ -138,27 +143,43 @@ export const Navbar: React.FC<NavbarProps> = ({
         </button>
 
         {/* Action Controls pushed to the right extremity */}
-        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
           {/* Spectator Mode Indicator */}
           {isSpectator && (
-            <div className="flex h-8 sm:h-9 items-center justify-center gap-1.5 rounded-xl border border-sky-500/40 bg-sky-500/15 px-2.5 sm:px-3 text-xs font-bold text-sky-400">
+            <div className="flex h-8 sm:h-9 items-center justify-center gap-1.5 rounded-xl border border-sky-500/40 bg-sky-500/15 px-2 sm:px-3 text-xs font-bold text-sky-400 whitespace-nowrap">
               <Eye className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Spectateur (Lecture Seule)</span>
             </div>
           )}
-
-          {/* Single-account mode: quick switcher disabled while account management is locked */}
 
           {/* Classic Sync Button (Blocked in spectator mode to preserve quota) */}
           {!isIframe && !isSpectator && (
             <button
               onClick={handleSyncClick}
               disabled={isSyncing}
-              className="flex h-8 sm:h-9 items-center justify-center gap-2 rounded-xl px-2.5 sm:px-3.5 py-1.5 text-xs font-bold transition-all disabled:opacity-50 border border-[#facc15]/40 bg-neutral-900 text-[#facc15] hover:bg-[#facc15]/10 hover:border-[#facc15] shadow-[0_0_10px_rgba(250,204,21,0.12)] active:scale-95"
+              className="flex h-8 min-w-[32px] sm:h-9 sm:w-auto items-center justify-center gap-2 rounded-xl px-2 sm:px-3.5 py-1.5 text-xs font-bold transition-all disabled:opacity-50 border border-[#facc15]/40 bg-neutral-900 text-[#facc15] hover:bg-[#facc15]/10 hover:border-[#facc15] shadow-[0_0_10px_rgba(250,204,21,0.12)] active:scale-95 whitespace-nowrap"
               title="Synchroniser immédiatement avec l'API Chess.com"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin text-[#facc15]' : ''}`} />
               <span className="hidden sm:inline">{isSyncing ? 'Sync...' : 'Synchroniser'}</span>
+            </button>
+          )}
+
+          {/* Mobile & Desktop Notification Center Trigger */}
+          {onOpenNotificationCenter && (
+            <button
+              type="button"
+              onClick={onOpenNotificationCenter}
+              className="relative flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border border-white/[0.14] bg-white/[0.04] hover:bg-white/[0.1] text-neutral-200 hover:text-[#facc15] transition-all active:scale-95 shrink-0"
+              title="Centre de notifications"
+              aria-label={`Ouvrir les notifications${unreadNotificationsCount > 0 ? ` (${unreadNotificationsCount} non lues)` : ''}`}
+            >
+              <Bell className="h-4 w-4" />
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-[#facc15] text-black text-[9px] font-black leading-none flex items-center justify-center tabular-nums shadow-[0_2px_8px_rgba(250,204,21,0.45)]">
+                  {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+                </span>
+              )}
             </button>
           )}
 
@@ -239,11 +260,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                   src={profile.avatar}
                   alt={profile.name || username}
                   referrerPolicy="no-referrer"
-                  className="h-8 w-8 sm:h-9 sm:w-9 rounded-full border border-[#facc15] object-cover shadow-[0_0_10px_rgba(250,204,21,0.25)]"
+                  className="h-8 w-8 sm:h-9 sm:w-9 rounded-full border border-[#facc15] object-cover shadow-[0_0_10px_rgba(250,204,21,0.25)] shrink-0"
                 />
               ) : (
                 <div
-                  className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border border-[#facc15] bg-neutral-900 text-xs font-black text-[#facc15]"
+                  className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full border border-[#facc15] bg-neutral-900 text-xs font-black text-[#facc15] shrink-0"
                 >
                   {username.substring(0, 2).toUpperCase()}
                 </div>
