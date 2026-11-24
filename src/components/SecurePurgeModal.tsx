@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -48,6 +48,15 @@ export const SecurePurgeModal: React.FC<SecurePurgeModalProps> = ({
 
   const firstInputRef = useRef<HTMLInputElement>(null);
   const secondInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -148,12 +157,25 @@ export const SecurePurgeModal: React.FC<SecurePurgeModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg rounded-3xl border border-neutral-800 bg-[#0c0f14] p-6 sm:p-8 shadow-2xl space-y-6 text-white">
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-lg rounded-3xl border border-neutral-800 bg-[#0c0f14] p-6 sm:p-8 shadow-2xl space-y-6 text-white"
+      >
         {/* Close Button */}
         <button
-          onClick={onClose}
-          className="absolute top-5 right-5 text-neutral-400 hover:text-white p-1 rounded-lg transition-colors"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          aria-label="Fermer"
+          className="absolute top-5 right-5 z-20 flex h-9 w-9 items-center justify-center text-neutral-400 hover:text-white rounded-xl hover:bg-neutral-800 transition-colors"
           title="Fermer"
         >
           <X className="h-5 w-5" />

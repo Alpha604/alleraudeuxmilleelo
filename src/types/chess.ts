@@ -78,6 +78,19 @@ export interface MonthlyMilestone {
 
 export type AppTheme = 'dark' | 'light' | 'ocean' | 'colors' | 'system';
 
+export type ReleaseCategory = 'major' | 'feature' | 'improvement' | 'fix' | 'security';
+
+export interface SiteReleaseEntry {
+  id: string;
+  version: string;
+  title: string;
+  category: ReleaseCategory;
+  summary: string;
+  changes: string[];
+  publishedAt: string; // ISO
+  forcePopup?: boolean;
+}
+
 export interface AppSettings {
   username: string;
   startElo: number;
@@ -92,6 +105,10 @@ export interface AppSettings {
   siteVersion?: string;
   siteVersionUpdatedAt?: string;
   siteVersionNote?: string;
+  siteVersionTitle?: string;
+  siteVersionCategory?: ReleaseCategory;
+  siteVersionChanges?: string[];
+  siteVersionHistory?: SiteReleaseEntry[];
   notifications: {
     newPeak: boolean;
     milestoneReached: boolean;

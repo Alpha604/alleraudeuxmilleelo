@@ -1167,6 +1167,13 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
       trajectoryModel: s.trajectoryModel,
       autoSyncMinutes: s.autoSyncMinutes,
       theme: s.theme,
+      siteVersion: s.siteVersion,
+      siteVersionTitle: s.siteVersionTitle,
+      siteVersionCategory: s.siteVersionCategory,
+      siteVersionNote: s.siteVersionNote,
+      siteVersionChanges: s.siteVersionChanges,
+      siteVersionHistory: s.siteVersionHistory,
+      siteVersionUpdatedAt: s.siteVersionUpdatedAt,
       notifications: s.notifications,
       customMilestones: s.customMilestones,
     });
@@ -1932,6 +1939,8 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
       mode: 'maintenance',
       customTitle: 'Maintenance technique en cours',
       customMessage: 'Une opération de maintenance est en cours pour sécuriser et optimiser vos données.',
+      upcomingVersion: '',
+      extendedDetails: '',
       scheduleType: 'immediate',
       countdownMinutes: 5,
       pauseAtTimestamp: null,
@@ -1965,6 +1974,10 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
     return {
       ...def,
       ...raw,
+      customTitle: typeof raw.customTitle === 'string' ? raw.customTitle.slice(0, 120) : def.customTitle,
+      customMessage: typeof raw.customMessage === 'string' ? raw.customMessage.slice(0, 2000) : def.customMessage,
+      upcomingVersion: typeof raw.upcomingVersion === 'string' ? raw.upcomingVersion.trim().replace(/^v+/i, '').slice(0, 32) : '',
+      extendedDetails: typeof raw.extendedDetails === 'string' ? raw.extendedDetails.slice(0, 2500) : '',
       devices: {
         ...def.devices,
         ...(raw.devices || {}),

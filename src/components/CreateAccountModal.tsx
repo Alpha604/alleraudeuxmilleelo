@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -51,6 +51,15 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
   const [createdUsername, setCreatedUsername] = useState<string | null>(null);
   const [copiedJson, setCopiedJson] = useState(false);
   const [showJsonPreview, setShowJsonPreview] = useState(true);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   const initialJsonPayload = useMemo(() => {
     const cleanUser = (createdUsername || username || 'nouveau_joueur')
@@ -154,7 +163,12 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+    >
       <div
         className="relative w-full max-w-xl rounded-3xl border border-neutral-800 bg-[#0c0f14] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
@@ -176,8 +190,13 @@ export const CreateAccountModal: React.FC<CreateAccountModalProps> = ({
           </div>
 
           <button
-            onClick={onClose}
-            className="h-8 w-8 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400 hover:text-white"
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            aria-label="Fermer"
+            className="relative z-20 h-9 w-9 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400 hover:text-white transition-colors"
           >
             <X className="h-4 w-4" />
           </button>

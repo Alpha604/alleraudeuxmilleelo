@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -99,6 +99,15 @@ export const SyncLog: React.FC<SyncLogProps> = ({
   const [manualBlitz, setManualBlitz] = useState<string>('1504');
   const [manualRapid, setManualRapid] = useState<string>('1289');
   const [manualPuzzles, setManualPuzzles] = useState<string>('');
+
+  useEffect(() => {
+    if (!manualModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setManualModalOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [manualModalOpen]);
 
   // Compute map of sync records by date key YYYY-MM-DD
   const recordsByDateKey = useMemo(() => {
@@ -918,8 +927,16 @@ export const SyncLog: React.FC<SyncLogProps> = ({
 
       {/* Manual Sync Modal (Add or Edit) */}
       {manualModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="relative w-full max-w-md rounded-3xl border border-neutral-800 bg-[#0c0f14] p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setManualModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-md rounded-3xl border border-neutral-800 bg-[#0c0f14] p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200"
+          >
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2">
                 {isEditMode ? (
@@ -932,8 +949,13 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                 </h3>
               </div>
               <button
-                onClick={() => setManualModalOpen(false)}
-                className="text-neutral-400 hover:text-white p-1 rounded-lg"
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setManualModalOpen(false);
+                }}
+                aria-label="Fermer"
+                className="relative z-20 flex h-9 w-9 items-center justify-center text-neutral-400 hover:text-white rounded-xl hover:bg-neutral-800 transition-colors"
               >
                 <X className="h-5 w-5" />
               </button>

@@ -113,7 +113,22 @@
         "siteVersionNote": {
           "type": "string",
           "description": "Optional release note for the published site version.",
-          "maxLength": 240
+          "maxLength": 600
+        },
+        "siteVersionTitle": {
+          "type": "string",
+          "description": "Optional headline title for the published site version.",
+          "maxLength": 120
+        },
+        "siteVersionCategory": {
+          "type": "string",
+          "description": "Category tag of the published site version.",
+          "enum": ["major", "feature", "improvement", "fix", "security"]
+        },
+        "siteVersionHistoryJson": {
+          "type": "string",
+          "description": "JSON-serialized release history list for cross-device version changelog sync.",
+          "maxLength": 32000
         },
         "siteVersionUpdatedAt": {
           "type": "string",
@@ -303,7 +318,9 @@
           "enum": ["arret", "maintenance", "administration", "moderation", "mise_a_jour"]
         },
         "customTitle": { "type": "string", "minLength": 1, "maxLength": 120 },
-        "customMessage": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "customMessage": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "upcomingVersion": { "type": "string", "maxLength": 32 },
+        "extendedDetails": { "type": "string", "maxLength": 2500 },
         "scheduleType": {
           "type": "string",
           "enum": ["immediate", "countdown", "exact_date"]

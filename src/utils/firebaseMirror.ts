@@ -28,7 +28,11 @@ import {
 } from '../firebase';
 import { AppSettings, AppTheme, GameMode, SyncRecord, TrajectoryModel } from '../types/chess';
 import type { SiteActivityConfig } from './siteActivity';
-import { normalizeParisDayKey } from './storage';
+import {
+  normalizeParisDayKey,
+  normalizeReleaseCategory,
+  normalizeSiteReleaseHistory,
+} from './storage';
 import {
   interpretFirebaseError,
   reportSyncIssue,
@@ -68,6 +72,9 @@ export interface FirestorePlayerDoc {
   jsonBinSyncedAt?: string;
   siteVersion?: string;
   siteVersionNote?: string;
+  siteVersionTitle?: string;
+  siteVersionCategory?: string;
+  siteVersionHistoryJson?: string;
   siteVersionUpdatedAt?: string;
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -332,7 +339,25 @@ export async function mirrorDataToFirestore(params: {
       playerPayload.siteVersion = params.settings.siteVersion.trim().slice(0, 24);
     }
     if (typeof params.settings?.siteVersionNote === 'string' && params.settings.siteVersionNote.trim().length > 0) {
-      playerPayload.siteVersionNote = params.settings.siteVersionNote.trim().slice(0, 240);
+      playerPayload.siteVersionNote = params.settings.siteVersionNote.trim().slice(0, 600);
+    }
+    if (typeof params.settings?.siteVersionTitle === 'string' && params.settings.siteVersionTitle.trim().length > 0) {
+      playerPayload.siteVersionTitle = params.settings.siteVersionTitle.trim().slice(0, 120);
+    }
+    if (params.settings?.siteVersionCategory) {
+      playerPayload.siteVersionCategory = normalizeReleaseCategory(params.settings.siteVersionCategory);
+    }
+    if (Array.isArray(params.settings?.siteVersionHistory) && params.settings.siteVersionHistory.length > 0) {
+      const normalizedHist = normalizeSiteReleaseHistory(params.settings.siteVersionHistory);
+      let trimmedHist = [...normalizedHist];
+      let serialized = JSON.stringify(trimmedHist);
+      while (serialized.length > 31800 && trimmedHist.length > 1) {
+        trimmedHist.pop();
+        serialized = JSON.stringify(trimmedHist);
+      }
+      if (serialized.length <= 32000) {
+        playerPayload.siteVersionHistoryJson = serialized;
+      }
     }
     if (
       typeof params.settings?.siteVersionUpdatedAt === 'string' &&
@@ -523,6 +548,9 @@ export function subscribePlayerFirestoreExplorer(
         jsonBinSyncedAt: d.jsonBinSyncedAt,
         siteVersion: d.siteVersion,
         siteVersionNote: d.siteVersionNote,
+        siteVersionTitle: d.siteVersionTitle,
+        siteVersionCategory: d.siteVersionCategory,
+        siteVersionHistoryJson: d.siteVersionHistoryJson,
         siteVersionUpdatedAt: d.siteVersionUpdatedAt,
         createdAt: formatFirestoreTimestamp(d.createdAt),
         updatedAt: formatFirestoreTimestamp(d.updatedAt),
@@ -668,6 +696,16 @@ export async function fetchPlayerDataFromFirestore(username: string): Promise<{
     const validThemes: AppTheme[] = ['dark', 'light', 'ocean', 'colors', 'system'];
     const validTrajectories: TrajectoryModel[] = ['linear', 'milestones', 'custom'];
 
+    let parsedHistory = undefined;
+    if (typeof pData.siteVersionHistoryJson === 'string' && pData.siteVersionHistoryJson.trim()) {
+      try {
+        parsedHistory = normalizeSiteReleaseHistory(JSON.parse(pData.siteVersionHistoryJson));
+      } catch {}
+    }
+
+    const latestRelease =
+      Array.isArray(parsedHistory) && parsedHistory.length > 0 ? parsedHistory[0] : undefined;
+
     const settingsPatch: Partial<AppSettings> = {
       username: playerId,
       ...(typeof pData.startElo === 'number' ? { startElo: pData.startElo } : {}),
@@ -693,6 +731,14 @@ export async function fetchPlayerDataFromFirestore(username: string): Promise<{
       ...(typeof pData.siteVersionNote === 'string'
         ? { siteVersionNote: pData.siteVersionNote }
         : {}),
+      ...(typeof pData.siteVersionTitle === 'string'
+        ? { siteVersionTitle: pData.siteVersionTitle }
+        : {}),
+      ...(pData.siteVersionCategory
+        ? { siteVersionCategory: normalizeReleaseCategory(pData.siteVersionCategory) }
+        : {}),
+      ...(latestRelease?.changes ? { siteVersionChanges: latestRelease.changes } : {}),
+      ...(Array.isArray(parsedHistory) ? { siteVersionHistory: parsedHistory } : {}),
       ...(typeof pData.siteVersionUpdatedAt === 'string'
         ? { siteVersionUpdatedAt: pData.siteVersionUpdatedAt }
         : {}),
@@ -754,6 +800,8 @@ function mapFirestoreSiteActivityDoc(d: Record<string, any>): SiteActivityConfig
       typeof d.customMessage === 'string'
         ? d.customMessage
         : 'Une opération de maintenance est en cours.',
+    upcomingVersion: typeof d.upcomingVersion === 'string' ? d.upcomingVersion : '',
+    extendedDetails: typeof d.extendedDetails === 'string' ? d.extendedDetails : '',
     scheduleType:
       d.scheduleType === 'countdown' || d.scheduleType === 'exact_date'
         ? d.scheduleType
@@ -827,7 +875,7 @@ export async function saveSiteActivityToFirestore(
       enabled: Boolean(config.enabled),
       mode: config.mode,
       customTitle: (config.customTitle || 'Site en pause').trim().slice(0, 120),
-      customMessage: (config.customMessage || 'Pause administrative en cours.').trim().slice(0, 500),
+      customMessage: (config.customMessage || 'Pause administrative en cours.').trim().slice(0, 2000),
       scheduleType: config.scheduleType,
       countdownMinutes: Math.max(1, Math.min(10080, Math.round(config.countdownMinutes || 5))),
       resumeType: config.resumeType,
@@ -854,6 +902,12 @@ export async function saveSiteActivityToFirestore(
       updatedAt: serverTimestamp(),
     };
 
+    if (typeof config.upcomingVersion === 'string' && config.upcomingVersion.trim()) {
+      payload.upcomingVersion = config.upcomingVersion.trim().replace(/^v+/i, '').slice(0, 32);
+    }
+    if (typeof config.extendedDetails === 'string' && config.extendedDetails.trim()) {
+      payload.extendedDetails = config.extendedDetails.trim().slice(0, 2500);
+    }
     if (typeof config.pauseAtTimestamp === 'number' && config.pauseAtTimestamp >= 0) {
       payload.pauseAtTimestamp = Math.round(config.pauseAtTimestamp);
     }

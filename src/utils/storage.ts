@@ -3,7 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AppSettings, GameMode, NotificationItem, SyncRecord } from '../types/chess';
+import {
+  AppSettings,
+  GameMode,
+  NotificationItem,
+  ReleaseCategory,
+  SiteReleaseEntry,
+  SyncRecord,
+} from '../types/chess';
 import {
   DEFAULT_START_DATE,
   DEFAULT_START_ELO,
@@ -132,6 +139,158 @@ export function normalizeSiteVersion(version?: string | null): string {
   return raw || '1.0.0';
 }
 
+const VALID_RELEASE_CATEGORIES: ReleaseCategory[] = [
+  'major',
+  'feature',
+  'improvement',
+  'fix',
+  'security',
+];
+
+export function normalizeReleaseCategory(cat?: unknown): ReleaseCategory {
+  return VALID_RELEASE_CATEGORIES.includes(cat as ReleaseCategory)
+    ? (cat as ReleaseCategory)
+    : 'feature';
+}
+
+export function normalizeSiteReleaseHistory(raw: unknown): SiteReleaseEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const list: SiteReleaseEntry[] = [];
+  const seenIds = new Set<string>();
+
+  for (let i = 0; i < raw.length && list.length < 25; i++) {
+    const item = raw[i];
+    if (!item || typeof item !== 'object') continue;
+    const r = item as Record<string, any>;
+    const version = normalizeSiteVersion(typeof r.version === 'string' ? r.version : '');
+    const id =
+      typeof r.id === 'string' && r.id.trim()
+        ? r.id.trim().slice(0, 64)
+        : `rel_${version}_${i}`;
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+
+    const changes = Array.isArray(r.changes)
+      ? r.changes
+          .map((c: unknown) => String(c || '').trim().slice(0, 220))
+          .filter(Boolean)
+          .slice(0, 20)
+      : [];
+
+    list.push({
+      id,
+      version,
+      title:
+        typeof r.title === 'string' && r.title.trim()
+          ? r.title.trim().slice(0, 120)
+          : `Version v${version}`,
+      category: normalizeReleaseCategory(r.category),
+      summary: typeof r.summary === 'string' ? r.summary.trim().slice(0, 600) : '',
+      changes,
+      publishedAt:
+        typeof r.publishedAt === 'string' && r.publishedAt.trim()
+          ? r.publishedAt.trim().slice(0, 64)
+          : new Date().toISOString(),
+      forcePopup: r.forcePopup !== false,
+    });
+  }
+
+  return list.sort((a, b) => {
+    const ta = new Date(b.publishedAt).getTime();
+    const tb = new Date(a.publishedAt).getTime();
+    return (Number.isFinite(ta) ? ta : 0) - (Number.isFinite(tb) ? tb : 0);
+  });
+}
+
+export function getEffectiveReleaseHistory(settings?: Partial<AppSettings> | null): SiteReleaseEntry[] {
+  const normalized = normalizeSiteReleaseHistory(settings?.siteVersionHistory);
+  if (normalized.length > 0) return normalized;
+
+  const currentVersion = normalizeSiteVersion(settings?.siteVersion);
+  const fallbackNote =
+    typeof settings?.siteVersionNote === 'string' && settings.siteVersionNote.trim()
+      ? settings.siteVersionNote.trim().slice(0, 600)
+      : 'Tableau de bord de suivi Chess.com, synchronisation cloud Firebase & JSONBin et protection A2F.';
+
+  return [
+    {
+      id: `rel_${currentVersion}_init`,
+      version: currentVersion,
+      title:
+        typeof settings?.siteVersionTitle === 'string' && settings.siteVersionTitle.trim()
+          ? settings.siteVersionTitle.trim().slice(0, 120)
+          : `Lancement Road to 2000 Elo · v${currentVersion}`,
+      category: normalizeReleaseCategory(settings?.siteVersionCategory),
+      summary: fallbackNote,
+      changes:
+        Array.isArray(settings?.siteVersionChanges) && settings.siteVersionChanges.length > 0
+          ? settings.siteVersionChanges.slice(0, 20)
+          : [
+              'Suivi temps réel de la progression Elo vers 2000 Elo.',
+              'Synchronisation sécurisée Firebase Firestore & repli JSONBin.',
+              'Accès administrateur protégé par authentification Google & A2F.',
+            ],
+      publishedAt:
+        typeof settings?.siteVersionUpdatedAt === 'string' && settings.siteVersionUpdatedAt.trim()
+          ? settings.siteVersionUpdatedAt
+          : '2026-11-10T12:00:00.000Z',
+      forcePopup: true,
+    },
+  ];
+}
+
+const DEVICE_RELEASE_STATE_KEY = 'roadto2000_device_release_state_v1';
+
+export interface DeviceReleaseState {
+  isFirstVisit: boolean;
+  firstVisitedAt: string | null;
+  lastSeenVersion: string | null;
+  lastSeenPublishedAt: string | null;
+}
+
+export function getDeviceReleaseState(): DeviceReleaseState {
+  const raw = safeGetItem(DEVICE_RELEASE_STATE_KEY);
+  if (!raw) {
+    return {
+      isFirstVisit: true,
+      firstVisitedAt: null,
+      lastSeenVersion: null,
+      lastSeenPublishedAt: null,
+    };
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      isFirstVisit: false,
+      firstVisitedAt: typeof parsed.firstVisitedAt === 'string' ? parsed.firstVisitedAt : null,
+      lastSeenVersion:
+        typeof parsed.lastSeenVersion === 'string' && parsed.lastSeenVersion.trim()
+          ? normalizeSiteVersion(parsed.lastSeenVersion)
+          : null,
+      lastSeenPublishedAt:
+        typeof parsed.lastSeenPublishedAt === 'string' ? parsed.lastSeenPublishedAt : null,
+    };
+  } catch {
+    return {
+      isFirstVisit: true,
+      firstVisitedAt: null,
+      lastSeenVersion: null,
+      lastSeenPublishedAt: null,
+    };
+  }
+}
+
+export function markDeviceReleaseSeen(version: string, publishedAt?: string | null): void {
+  const existing = getDeviceReleaseState();
+  const payload = {
+    firstVisitedAt: existing.firstVisitedAt || new Date().toISOString(),
+    lastSeenVersion: normalizeSiteVersion(version),
+    lastSeenPublishedAt: publishedAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  safeSetItem(DEVICE_RELEASE_STATE_KEY, JSON.stringify(payload));
+}
+
 export const DEFAULT_SETTINGS: AppSettings = {
   username: 'alpharomeo1500',
   startElo: DEFAULT_START_ELO,
@@ -146,6 +305,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   siteVersion: '1.0.0',
   siteVersionUpdatedAt: '',
   siteVersionNote: '',
+  siteVersionTitle: '',
+  siteVersionCategory: 'feature',
+  siteVersionChanges: [],
+  siteVersionHistory: [],
   notifications: {
     newPeak: true,
     milestoneReached: true,
@@ -181,6 +344,12 @@ export function getStoredSettings(username?: string): AppSettings {
       ...DEFAULT_SETTINGS,
       ...parsed,
       username: sanitizedUser,
+      siteVersion: normalizeSiteVersion(parsed.siteVersion),
+      siteVersionCategory: normalizeReleaseCategory(parsed.siteVersionCategory),
+      siteVersionChanges: Array.isArray(parsed.siteVersionChanges)
+        ? parsed.siteVersionChanges.map((c: unknown) => String(c || '').trim()).filter(Boolean).slice(0, 20)
+        : [],
+      siteVersionHistory: normalizeSiteReleaseHistory(parsed.siteVersionHistory),
       notifications: {
         ...DEFAULT_SETTINGS.notifications,
         ...(parsed.notifications || {}),

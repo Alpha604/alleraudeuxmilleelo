@@ -72,7 +72,8 @@ service cloud.firestore {
           'startElo', 'targetElo', 'startDate', 'targetDate', 'selectedMode',
           'trajectoryModel', 'autoSyncMinutes', 'theme', 'bestRating', 'bestMode',
           'bullet', 'blitz', 'rapid', 'puzzles', 'jsonBinSyncedAt',
-          'siteVersion', 'siteVersionNote', 'siteVersionUpdatedAt',
+          'siteVersion', 'siteVersionNote', 'siteVersionTitle',
+          'siteVersionCategory', 'siteVersionHistoryJson', 'siteVersionUpdatedAt',
           'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.ownerUid) &&
@@ -98,7 +99,10 @@ service cloud.firestore {
         (!('puzzles' in data) || isValidRatingField(data.puzzles)) &&
         (!('jsonBinSyncedAt' in data) || (data.jsonBinSyncedAt is string && data.jsonBinSyncedAt.size() <= 64)) &&
         (!('siteVersion' in data) || (data.siteVersion is string && data.siteVersion.size() >= 1 && data.siteVersion.size() <= 24)) &&
-        (!('siteVersionNote' in data) || (data.siteVersionNote is string && data.siteVersionNote.size() <= 240)) &&
+        (!('siteVersionNote' in data) || (data.siteVersionNote is string && data.siteVersionNote.size() <= 600)) &&
+        (!('siteVersionTitle' in data) || (data.siteVersionTitle is string && data.siteVersionTitle.size() <= 120)) &&
+        (!('siteVersionCategory' in data) || data.siteVersionCategory in ['major', 'feature', 'improvement', 'fix', 'security']) &&
+        (!('siteVersionHistoryJson' in data) || (data.siteVersionHistoryJson is string && data.siteVersionHistoryJson.size() <= 32000)) &&
         (!('siteVersionUpdatedAt' in data) || (data.siteVersionUpdatedAt is string && data.siteVersionUpdatedAt.size() <= 64)) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp &&
@@ -162,6 +166,7 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'configId', 'enabled', 'mode', 'customTitle', 'customMessage',
+          'upcomingVersion', 'extendedDetails',
           'scheduleType', 'countdownMinutes', 'pauseAtTimestamp', 'resumeType',
           'resumeDurationMinutes', 'resumeAtTimestamp', 'autoResume',
           'showCountdownBanner', 'devicesAll', 'devicesDesktop', 'devicesMobile',
@@ -173,7 +178,9 @@ service cloud.firestore {
         data.enabled is bool &&
         data.mode in ['arret', 'maintenance', 'administration', 'moderation', 'mise_a_jour'] &&
         data.customTitle is string && data.customTitle.size() >= 1 && data.customTitle.size() <= 120 &&
-        data.customMessage is string && data.customMessage.size() >= 1 && data.customMessage.size() <= 500 &&
+        data.customMessage is string && data.customMessage.size() >= 1 && data.customMessage.size() <= 2000 &&
+        (!('upcomingVersion' in data) || (data.upcomingVersion is string && data.upcomingVersion.size() <= 32)) &&
+        (!('extendedDetails' in data) || (data.extendedDetails is string && data.extendedDetails.size() <= 2500)) &&
         data.scheduleType in ['immediate', 'countdown', 'exact_date'] &&
         (data.countdownMinutes is int || data.countdownMinutes is float) && data.countdownMinutes >= 1 && data.countdownMinutes <= 10080 &&
         (!('pauseAtTimestamp' in data) || ((data.pauseAtTimestamp is int || data.pauseAtTimestamp is float) && data.pauseAtTimestamp >= 0)) &&
@@ -226,7 +233,8 @@ service cloud.firestore {
           'recordsCount', 'startElo', 'targetElo', 'startDate', 'targetDate',
           'selectedMode', 'trajectoryModel', 'autoSyncMinutes', 'theme',
           'bestRating', 'bestMode', 'bullet', 'blitz', 'rapid', 'puzzles',
-          'jsonBinSyncedAt', 'siteVersion', 'siteVersionNote', 'siteVersionUpdatedAt',
+          'jsonBinSyncedAt', 'siteVersion', 'siteVersionNote', 'siteVersionTitle',
+          'siteVersionCategory', 'siteVersionHistoryJson', 'siteVersionUpdatedAt',
           'updatedAt'
         ]);
       allow delete: if isValidPlayerId(playerId) &&
@@ -301,8 +309,8 @@ service cloud.firestore {
         incoming().createdAt == existing().createdAt &&
         incoming().configId == existing().configId &&
         incoming().diff(existing()).affectedKeys().hasOnly([
-          'enabled', 'mode', 'customTitle', 'customMessage', 'scheduleType',
-          'countdownMinutes', 'pauseAtTimestamp', 'resumeType', 'resumeDurationMinutes',
+          'enabled', 'mode', 'customTitle', 'customMessage', 'upcomingVersion', 'extendedDetails',
+          'scheduleType', 'countdownMinutes', 'pauseAtTimestamp', 'resumeType', 'resumeDurationMinutes',
           'resumeAtTimestamp', 'autoResume', 'showCountdownBanner', 'devicesAll',
           'devicesDesktop', 'devicesMobile', 'devicesTablet', 'iframePolicy',
           'ipPolicyMode', 'ipPolicyIps', 'ipPolicyExemptTrustedAdminIps',

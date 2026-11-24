@@ -44,7 +44,8 @@ function evaluatePlayerCreateInvariant(
   const allowed = new Set([
     ...required,
     'bullet', 'blitz', 'rapid', 'puzzles', 'jsonBinSyncedAt',
-    'siteVersion', 'siteVersionNote', 'siteVersionUpdatedAt',
+    'siteVersion', 'siteVersionNote', 'siteVersionTitle',
+    'siteVersionCategory', 'siteVersionHistoryJson', 'siteVersionUpdatedAt',
   ]);
   for (const k of required) {
     if (!(k in payload)) return false;
@@ -57,6 +58,10 @@ function evaluatePlayerCreateInvariant(
   if (!usesServerTime) return false;
   if (typeof payload.bestRating !== 'number' || payload.bestRating < 0 || payload.bestRating > 4000) return false;
   if ('siteVersion' in payload && (typeof payload.siteVersion !== 'string' || payload.siteVersion.length < 1 || payload.siteVersion.length > 24)) return false;
+  if ('siteVersionNote' in payload && (typeof payload.siteVersionNote !== 'string' || payload.siteVersionNote.length > 600)) return false;
+  if ('siteVersionTitle' in payload && (typeof payload.siteVersionTitle !== 'string' || payload.siteVersionTitle.length > 120)) return false;
+  if ('siteVersionCategory' in payload && !['major', 'feature', 'improvement', 'fix', 'security'].includes(payload.siteVersionCategory)) return false;
+  if ('siteVersionHistoryJson' in payload && (typeof payload.siteVersionHistoryJson !== 'string' || payload.siteVersionHistoryJson.length > 32000)) return false;
   return true;
 }
 
@@ -160,7 +165,15 @@ function runDirtyDozenSuite() {
   // 12. Blanket List Query Scraping
   assertAdversarialRejected('12. Requête list non autorisée inter-utilisateurs', () => false);
 
-  console.log('--- TOUS LES 12 TESTS DE SÉCURITÉ FIRESTORE SONT VALIDÉS ! ---');
+  // 13. Oversized release history / invalid category
+  assertAdversarialRejected('13. Catégorie release invalide', () =>
+    evaluatePlayerCreateInvariant(validOwner, 'alpharomeo1500', { ...basePayload, siteVersionCategory: 'unknown' }, true)
+  );
+  assertAdversarialRejected('14. Historique release JSON trop volumineux (>32000)', () =>
+    evaluatePlayerCreateInvariant(validOwner, 'alpharomeo1500', { ...basePayload, siteVersionHistoryJson: 'x'.repeat(32001) }, true)
+  );
+
+  console.log('--- TOUS LES TESTS DE SÉCURITÉ FIRESTORE SONT VALIDÉS ! ---');
 }
 
 runDirtyDozenSuite();

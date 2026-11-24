@@ -107,15 +107,20 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
 
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('keydown', handleKeyDown);
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, username]);
+  }, [isOpen, username, onClose]);
 
   if (!isOpen) return null;
 
@@ -241,9 +246,13 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="network-modal-title"
+      onClick={onClose}
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
     >
-      <div className="relative w-full max-w-xl max-h-[92vh] flex flex-col rounded-3xl border border-neutral-800 bg-[#0a0d14] text-neutral-100 shadow-2xl overflow-hidden">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-xl max-h-[92vh] flex flex-col rounded-3xl border border-neutral-800 bg-[#0a0d14] text-neutral-100 shadow-2xl overflow-hidden"
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-neutral-800/80 px-5 sm:px-6 py-4 bg-[#0d111a]">
           <div className="flex items-center gap-2.5">
@@ -260,8 +269,13 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-white transition-colors"
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            aria-label="Fermer"
+            className="relative z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-white transition-colors"
           >
             <X className="h-4 w-4" />
           </button>

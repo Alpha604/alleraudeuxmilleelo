@@ -10,17 +10,21 @@ import {
   CheckCircle2,
   Cloud,
   Copy,
+  Crown,
   Database,
   ExternalLink,
   Eye,
   EyeOff,
   Flame,
   Globe,
+  History,
   KeyRound,
+  Layers,
   Lock,
   Monitor,
   Moon,
   Palette,
+  Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -37,13 +41,24 @@ import {
   User,
   Waves,
   Wifi,
+  Wrench,
   X,
   Zap,
 } from 'lucide-react';
-import { AppSettings, AppTheme, GameMode, SyncRecord, TrajectoryModel } from '../types/chess';
+import {
+  AppSettings,
+  AppTheme,
+  GameMode,
+  ReleaseCategory,
+  SiteReleaseEntry,
+  SyncRecord,
+  TrajectoryModel,
+} from '../types/chess';
 import {
   DEFAULT_SETTINGS,
+  getEffectiveReleaseHistory,
   getStoredSyncHistory,
+  normalizeReleaseCategory,
   normalizeSiteVersion,
   OFFICIAL_DAILY_RECORDS,
 } from '../utils/storage';
@@ -80,6 +95,7 @@ interface SettingsViewProps {
   isIframe?: boolean;
   onOpenSecurityModal?: (title?: string) => void;
   onLockAdmin?: () => void;
+  onPreviewReleasePopup?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -94,6 +110,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   isIframe = false,
   onOpenSecurityModal,
   onLockAdmin,
+  onPreviewReleasePopup,
 }) => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('preferences');
   const [form, setForm] = useState<AppSettings>(settings);
@@ -116,14 +133,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [binFeedback, setBinFeedback] = useState<{ message: string; isError?: boolean } | null>(null);
   const [isSyncingBin, setIsSyncingBin] = useState<boolean>(false);
   const [copiedBinJson, setCopiedBinJson] = useState<boolean>(false);
+
+  // Release Publisher & History state
   const [versionInput, setVersionInput] = useState<string>(() => normalizeSiteVersion(settings.siteVersion));
+  const [versionTitleInput, setVersionTitleInput] = useState<string>(
+    () => settings.siteVersionTitle || ''
+  );
+  const [versionCategoryInput, setVersionCategoryInput] = useState<ReleaseCategory>(() =>
+    normalizeReleaseCategory(settings.siteVersionCategory)
+  );
   const [versionNoteInput, setVersionNoteInput] = useState<string>(() => settings.siteVersionNote || '');
+  const [versionChangesInput, setVersionChangesInput] = useState<string[]>(() =>
+    Array.isArray(settings.siteVersionChanges) ? settings.siteVersionChanges : []
+  );
+  const [newChangeBullet, setNewChangeBullet] = useState<string>('');
+  const [forcePopupInput, setForcePopupInput] = useState<boolean>(true);
+  const [editingReleaseId, setEditingReleaseId] = useState<string | null>(null);
 
   useEffect(() => {
     setForm(settings);
-    setVersionInput(normalizeSiteVersion(settings.siteVersion));
-    setVersionNoteInput(settings.siteVersionNote || '');
-  }, [settings]);
+    if (!editingReleaseId) {
+      setVersionInput(normalizeSiteVersion(settings.siteVersion));
+      setVersionTitleInput(settings.siteVersionTitle || '');
+      setVersionCategoryInput(normalizeReleaseCategory(settings.siteVersionCategory));
+      setVersionNoteInput(settings.siteVersionNote || '');
+      setVersionChangesInput(
+        Array.isArray(settings.siteVersionChanges) ? settings.siteVersionChanges : []
+      );
+    }
+  }, [settings, editingReleaseId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -259,11 +297,91 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
     if (part === 'major') {
       setVersionInput(`${major + 1}.0.0`);
+      setVersionCategoryInput('major');
     } else if (part === 'minor') {
       setVersionInput(`${major}.${minor + 1}.0`);
+      setVersionCategoryInput('feature');
     } else {
       setVersionInput(`${major}.${minor}.${patch + 1}`);
+      setVersionCategoryInput('fix');
     }
+  };
+
+  const handleAddChangeBullet = () => {
+    const clean = newChangeBullet.trim().slice(0, 220);
+    if (!clean) return;
+    if (versionChangesInput.length >= 20) {
+      onShowMessage('Maximum 20 points détaillés par version.', 'warning');
+      return;
+    }
+    setVersionChangesInput((prev) => [...prev, clean]);
+    setNewChangeBullet('');
+  };
+
+  const handleRemoveChangeBullet = (index: number) => {
+    setVersionChangesInput((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleUpdateChangeBullet = (index: number, value: string) => {
+    setVersionChangesInput((prev) =>
+      prev.map((item, idx) => (idx === index ? value.slice(0, 220) : item))
+    );
+  };
+
+  const handleLoadReleaseForEdit = (entry: SiteReleaseEntry) => {
+    setEditingReleaseId(entry.id);
+    setVersionInput(normalizeSiteVersion(entry.version));
+    setVersionTitleInput(entry.title || '');
+    setVersionCategoryInput(normalizeReleaseCategory(entry.category));
+    setVersionNoteInput(entry.summary || '');
+    setVersionChangesInput(Array.isArray(entry.changes) ? entry.changes : []);
+    setForcePopupInput(entry.forcePopup !== false);
+  };
+
+  const handleCancelEditRelease = () => {
+    setEditingReleaseId(null);
+    setVersionInput(normalizeSiteVersion(form.siteVersion));
+    setVersionTitleInput(form.siteVersionTitle || '');
+    setVersionCategoryInput(normalizeReleaseCategory(form.siteVersionCategory));
+    setVersionNoteInput(form.siteVersionNote || '');
+    setVersionChangesInput(Array.isArray(form.siteVersionChanges) ? form.siteVersionChanges : []);
+    setForcePopupInput(true);
+  };
+
+  const handleDeleteReleaseFromHistory = (id: string) => {
+    if (isIframe) return;
+    if (!isAdmin) {
+      if (onOpenSecurityModal) onOpenSecurityModal('Suppression d’une entrée d’historique');
+      return;
+    }
+
+    const currentHistory = getEffectiveReleaseHistory(form);
+    if (currentHistory.length <= 1) {
+      onShowMessage('Impossible de supprimer la seule version active.', 'warning');
+      return;
+    }
+
+    const filtered = currentHistory.filter((entry) => entry.id !== id);
+    const newest = filtered[0];
+
+    const updatedSettings: AppSettings = {
+      ...form,
+      siteVersion: newest.version,
+      siteVersionTitle: newest.title,
+      siteVersionCategory: newest.category,
+      siteVersionNote: newest.summary,
+      siteVersionChanges: newest.changes,
+      siteVersionUpdatedAt: newest.publishedAt,
+      siteVersionHistory: filtered,
+    };
+
+    if (editingReleaseId === id) {
+      setEditingReleaseId(null);
+    }
+
+    setForm(updatedSettings);
+    onSettingsUpdate(updatedSettings);
+    onShowMessage('Entrée retirée de l’historique des versions.', 'info');
   };
 
   const handlePublishSiteUpdate = (e: React.FormEvent) => {
@@ -278,23 +396,71 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
 
     const nextVersion = normalizeSiteVersion(versionInput);
-    const nextNote = versionNoteInput.trim().slice(0, 240);
+    const nextTitle = versionTitleInput.trim().slice(0, 120) || `Mise à jour v${nextVersion}`;
+    const nextSummary = versionNoteInput.trim().slice(0, 600);
+    const pendingBullet = newChangeBullet.trim().slice(0, 220);
+    const finalChanges = [
+      ...versionChangesInput.map((c) => c.trim().slice(0, 220)).filter(Boolean),
+      ...(pendingBullet ? [pendingBullet] : []),
+    ].slice(0, 20);
+
+    const existingHistory = getEffectiveReleaseHistory(form);
     const nowIso = new Date().toISOString();
 
+    let nextHistory: SiteReleaseEntry[];
+    if (editingReleaseId) {
+      const existingItem = existingHistory.find((r) => r.id === editingReleaseId);
+      const updatedEntry: SiteReleaseEntry = {
+        id: editingReleaseId,
+        version: nextVersion,
+        title: nextTitle,
+        category: versionCategoryInput,
+        summary: nextSummary,
+        changes: finalChanges,
+        publishedAt: existingItem?.publishedAt || nowIso,
+        forcePopup: forcePopupInput,
+      };
+      nextHistory = existingHistory.map((item) =>
+        item.id === editingReleaseId ? updatedEntry : item
+      );
+    } else {
+      const newEntry: SiteReleaseEntry = {
+        id: `rel_${nextVersion}_${Date.now()}`,
+        version: nextVersion,
+        title: nextTitle,
+        category: versionCategoryInput,
+        summary: nextSummary,
+        changes: finalChanges,
+        publishedAt: nowIso,
+        forcePopup: forcePopupInput,
+      };
+      nextHistory = [newEntry, ...existingHistory].slice(0, 25);
+    }
+
+    const newest = nextHistory[0];
     const updatedSettings: AppSettings = {
       ...form,
-      siteVersion: nextVersion,
-      siteVersionNote: nextNote,
-      siteVersionUpdatedAt: nowIso,
+      siteVersion: newest.version,
+      siteVersionTitle: newest.title,
+      siteVersionCategory: newest.category,
+      siteVersionNote: newest.summary,
+      siteVersionChanges: newest.changes,
+      siteVersionUpdatedAt: newest.publishedAt,
+      siteVersionHistory: nextHistory,
     };
 
+    setEditingReleaseId(null);
+    setNewChangeBullet('');
     setForm(updatedSettings);
-    setVersionInput(nextVersion);
-    setVersionNoteInput(nextNote);
+    setVersionInput(newest.version);
+    setVersionTitleInput(newest.title);
+    setVersionCategoryInput(newest.category);
+    setVersionNoteInput(newest.summary);
+    setVersionChangesInput(newest.changes);
     onSettingsUpdate(updatedSettings);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
-    onShowMessage(`Version v${nextVersion} publiée et affichée en bas du site !`, 'success');
+    onShowMessage(`Version v${newest.version} publiée dans l’historique et le pied de page !`, 'success');
   };
 
   const handleReset = () => {
@@ -851,27 +1017,48 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </form>
       )}
 
-      {/* SECTION: MISE À JOUR DU SITE */}
+      {/* SECTION: MISE À JOUR DU SITE & HISTORIQUE DES VERSIONS */}
       {activeSection === 'updates' && (
-        <form onSubmit={handlePublishSiteUpdate} className="space-y-5 animate-in fade-in duration-150">
+        <div className="space-y-5 animate-in fade-in duration-150">
           {/* Current Version Overview Card */}
           <div className="rounded-2xl border border-[#facc15]/30 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
                 <Tag className="h-4 w-4" />
-                <span>Version Actuelle En Production</span>
+                <span>Version Active En Production</span>
               </div>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#facc15]/15 border border-[#facc15]/35 font-mono text-xs font-black text-[#facc15]">
-                v{normalizeSiteVersion(settings.siteVersion)}
-              </span>
+              <div className="flex items-center gap-2">
+                {onPreviewReleasePopup && (
+                  <button
+                    type="button"
+                    onClick={onPreviewReleasePopup}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-700 bg-neutral-950 hover:border-[#facc15]/50 text-[11px] font-bold text-neutral-200 hover:text-[#facc15] transition-colors"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    <span>Aperçu Pop-up</span>
+                  </button>
+                )}
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#facc15]/15 border border-[#facc15]/35 font-mono text-xs font-black text-[#facc15]">
+                  v{normalizeSiteVersion(settings.siteVersion)}
+                </span>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="rounded-xl border border-neutral-800 bg-black/40 p-3.5 space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 block">
+                  Titre de la version
+                </span>
+                <span className="text-white font-bold block truncate">
+                  {settings.siteVersionTitle || `Version v${normalizeSiteVersion(settings.siteVersion)}`}
+                </span>
+              </div>
+
               <div className="rounded-xl border border-neutral-800 bg-black/40 p-3.5 space-y-1">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 block">
                   Dernière publication
                 </span>
-                <span className="font-mono text-white font-semibold block">
+                <span className="font-mono text-neutral-200 font-semibold block">
                   {settings.siteVersionUpdatedAt
                     ? formatJsonBinTimestamp(settings.siteVersionUpdatedAt)
                     : 'Version initiale'}
@@ -880,51 +1067,68 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
               <div className="rounded-xl border border-neutral-800 bg-black/40 p-3.5 space-y-1">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 block">
-                  Note affichée
+                  Versions archivées
                 </span>
-                <span className="text-neutral-200 block truncate" title={settings.siteVersionNote || ''}>
-                  {settings.siteVersionNote || 'Aucune note enregistrée'}
+                <span className="font-mono text-[#facc15] font-bold block">
+                  {getEffectiveReleaseHistory(form).length} publication(s)
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Publish New Site Version Form */}
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15] border-b border-neutral-800 pb-3">
-              <Sparkles className="h-4 w-4" />
-              <span>Mettre à jour la version du site</span>
+          {/* Publish / Edit Site Release Form */}
+          <form
+            onSubmit={handlePublishSiteUpdate}
+            className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-5"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
+                <Sparkles className="h-4 w-4" />
+                <span>
+                  {editingReleaseId
+                    ? 'Modifier une version existante'
+                    : 'Créer et publier une nouvelle mise à jour'}
+                </span>
+              </div>
+
+              {editingReleaseId && (
+                <button
+                  type="button"
+                  onClick={handleCancelEditRelease}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-neutral-400 hover:text-white"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  <span>Annuler la modification</span>
+                </button>
+              )}
             </div>
 
-            <p className="text-xs text-neutral-300 leading-relaxed">
-              Définissez le numéro de version affiché en bas de chaque page et synchronisez-le automatiquement sur tous vos appareils (Firebase &amp; JSONBin).
-            </p>
-
-            <div className="space-y-4">
+            {/* Version & SemVer Bumps */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
                   <label className="text-xs font-medium text-neutral-300">
-                    Nouveau numéro de version
+                    Numéro de version
                   </label>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => handleBumpSemver('patch')}
-                      className="px-2.5 py-1 rounded-lg border border-neutral-700 bg-neutral-950 hover:border-[#facc15]/50 text-[11px] font-mono font-bold text-neutral-200 hover:text-[#facc15] transition-colors"
+                      className="px-2 py-0.5 rounded-md border border-neutral-700 bg-neutral-950 hover:border-[#facc15]/50 text-[10px] font-mono font-bold text-neutral-200 hover:text-[#facc15] transition-colors"
                     >
                       +0.0.1
                     </button>
                     <button
                       type="button"
                       onClick={() => handleBumpSemver('minor')}
-                      className="px-2.5 py-1 rounded-lg border border-neutral-700 bg-neutral-950 hover:border-[#facc15]/50 text-[11px] font-mono font-bold text-neutral-200 hover:text-[#facc15] transition-colors"
+                      className="px-2 py-0.5 rounded-md border border-neutral-700 bg-neutral-950 hover:border-[#facc15]/50 text-[10px] font-mono font-bold text-neutral-200 hover:text-[#facc15] transition-colors"
                     >
                       +0.1.0
                     </button>
                     <button
                       type="button"
                       onClick={() => handleBumpSemver('major')}
-                      className="px-2.5 py-1 rounded-lg border border-neutral-700 bg-neutral-950 hover:border-[#facc15]/50 text-[11px] font-mono font-bold text-neutral-200 hover:text-[#facc15] transition-colors"
+                      className="px-2 py-0.5 rounded-md border border-neutral-700 bg-neutral-950 hover:border-[#facc15]/50 text-[10px] font-mono font-bold text-neutral-200 hover:text-[#facc15] transition-colors"
                     >
                       +1.0.0
                     </button>
@@ -941,41 +1145,193 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     required
                     value={versionInput}
                     onChange={(e) => setVersionInput(e.target.value)}
-                    placeholder="1.0.0"
+                    placeholder="1.1.0"
                     className="w-full rounded-xl border border-neutral-800 bg-neutral-950 pl-7 pr-4 py-2.5 text-sm font-mono font-bold text-white focus:border-[#facc15] focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-medium text-neutral-300">
-                    Note de mise à jour (optionnel)
-                  </label>
-                  <span className="text-[10px] font-mono text-neutral-500">
-                    {versionNoteInput.length}/240
-                  </span>
-                </div>
+                <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                  Titre principal de la version
+                </label>
                 <input
                   type="text"
-                  maxLength={240}
-                  value={versionNoteInput}
-                  onChange={(e) => setVersionNoteInput(e.target.value)}
-                  placeholder="Ex: Connexion Google + nouveau chargement A2F"
+                  maxLength={120}
+                  value={versionTitleInput}
+                  onChange={(e) => setVersionTitleInput(e.target.value)}
+                  placeholder="Ex: Nouveau système de suivi & mode hors-ligne"
                   className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-2.5 text-xs text-white placeholder-neutral-600 focus:border-[#facc15] focus:outline-none"
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-2">
+            {/* Category Selector */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-neutral-300">
+                Catégorie de mise à jour
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                {(
+                  [
+                    {
+                      id: 'feature',
+                      label: 'Nouveautés',
+                      icon: <Sparkles className="h-3.5 w-3.5 text-sky-400" />,
+                    },
+                    {
+                      id: 'improvement',
+                      label: 'Améliorations',
+                      icon: <Layers className="h-3.5 w-3.5 text-emerald-400" />,
+                    },
+                    {
+                      id: 'fix',
+                      label: 'Correctifs',
+                      icon: <Wrench className="h-3.5 w-3.5 text-amber-400" />,
+                    },
+                    {
+                      id: 'security',
+                      label: 'Sécurité',
+                      icon: <ShieldCheck className="h-3.5 w-3.5 text-rose-400" />,
+                    },
+                    {
+                      id: 'major',
+                      label: 'Majeure',
+                      icon: <Crown className="h-3.5 w-3.5 text-[#facc15]" />,
+                    },
+                  ] as const
+                ).map((cat) => {
+                  const selected = versionCategoryInput === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setVersionCategoryInput(cat.id)}
+                      className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
+                        selected
+                          ? 'border-[#facc15] bg-[#facc15]/15 text-white'
+                          : 'border-neutral-800 bg-neutral-950 text-neutral-400 hover:text-white hover:border-neutral-700'
+                      }`}
+                    >
+                      {cat.icon}
+                      <span>{cat.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Detailed Summary */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-medium text-neutral-300">
+                  Description / Résumé pour les visiteurs
+                </label>
+                <span className="text-[10px] font-mono text-neutral-500">
+                  {versionNoteInput.length}/600
+                </span>
+              </div>
+              <textarea
+                rows={3}
+                maxLength={600}
+                value={versionNoteInput}
+                onChange={(e) => setVersionNoteInput(e.target.value)}
+                placeholder="Décrivez brièvement les nouveautés affichées dans la pop-up d'accueil et le journal des versions..."
+                className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-2.5 text-xs text-white placeholder-neutral-600 focus:border-[#facc15] focus:outline-none resize-y leading-relaxed"
+              />
+            </div>
+
+            {/* Interactive Bullet Changes Builder */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-neutral-300">
+                  Points détaillés (Changelog affiché dans la pop-up)
+                </label>
+                <span className="text-[10px] font-mono text-neutral-500">
+                  {versionChangesInput.length}/20 points
+                </span>
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  maxLength={220}
+                  value={newChangeBullet}
+                  onChange={(e) => setNewChangeBullet(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddChangeBullet();
+                    }
+                  }}
+                  placeholder="Ex: Historique des versions consultable depuis le pied de page"
+                  className="flex-1 rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs text-white placeholder-neutral-600 focus:border-[#facc15] focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddChangeBullet}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[#facc15]/40 bg-[#facc15]/15 hover:bg-[#facc15]/25 text-xs font-bold text-[#facc15] transition-colors shrink-0"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Ajouter</span>
+                </button>
+              </div>
+
+              {versionChangesInput.length > 0 && (
+                <ul className="space-y-2 pt-1">
+                  {versionChangesInput.map((item, idx) => (
+                    <li key={idx} className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold text-[#facc15] w-5 text-center shrink-0">
+                        {idx + 1}.
+                      </span>
+                      <input
+                        type="text"
+                        maxLength={220}
+                        value={item}
+                        onChange={(e) => handleUpdateChangeBullet(idx, e.target.value)}
+                        className="flex-1 rounded-lg border border-neutral-800 bg-black/50 px-3 py-1.5 text-xs text-neutral-200 focus:border-[#facc15] focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveChangeBullet(idx)}
+                        className="h-8 w-8 rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 hover:text-rose-400 hover:border-rose-500/40 flex items-center justify-center shrink-0 transition-colors"
+                        title="Retirer ce point"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Pop-up Behavior Toggle */}
+            <label className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-neutral-800 bg-neutral-950/60 cursor-pointer text-xs">
+              <div>
+                <span className="font-bold text-white block">
+                  Afficher automatiquement la pop-up sur les appareils
+                </span>
+                <span className="text-[11px] text-neutral-400 block mt-0.5">
+                  Les nouveaux appareils et ceux n&apos;ayant pas encore vu cette version verront la fenêtre d&apos;information à leur arrivée.
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={forcePopupInput}
+                onChange={(e) => setForcePopupInput(e.target.checked)}
+                className="h-4 w-4 accent-[#facc15] shrink-0"
+              />
+            </label>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
               {isSaved ? (
                 <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold">
                   <CheckCircle2 className="h-4 w-4" />
-                  <span>Version v{normalizeSiteVersion(settings.siteVersion)} publiée !</span>
+                  <span>Version v{normalizeSiteVersion(settings.siteVersion)} enregistrée !</span>
                 </span>
               ) : (
                 <span className="text-[11px] text-neutral-500">
-                  Visible immédiatement en pied de page.
+                  Synchronisé en temps réel via Firebase &amp; JSONBin.
                 </span>
               )}
 
@@ -984,11 +1340,96 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 className="flex items-center gap-2 rounded-xl bg-[#facc15] hover:bg-[#eab308] active:scale-[0.98] text-black px-5 py-2.5 text-xs font-black transition-all shadow-[0_0_15px_rgba(250,204,21,0.3)]"
               >
                 <Sparkles className="h-4 w-4" />
-                <span>Publier la mise à jour</span>
+                <span>
+                  {editingReleaseId ? 'Enregistrer la modification' : 'Publier la mise à jour'}
+                </span>
               </button>
             </div>
+          </form>
+
+          {/* Release History Timeline */}
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
+                <History className="h-4 w-4" />
+                <span>Historique des versions publiées</span>
+              </div>
+              <span className="text-[11px] font-mono text-neutral-400">
+                {getEffectiveReleaseHistory(form).length} entrée(s)
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {getEffectiveReleaseHistory(form).map((entry, idx) => (
+                <div
+                  key={entry.id}
+                  className={`rounded-xl border p-4 space-y-2.5 transition-colors ${
+                    idx === 0
+                      ? 'border-[#facc15]/35 bg-[#facc15]/[0.04]'
+                      : 'border-neutral-800 bg-black/35'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-xs font-black text-[#facc15]">
+                        v{entry.version}
+                      </span>
+                      {idx === 0 && (
+                        <span className="text-[10px] font-bold uppercase text-emerald-400">
+                          Active
+                        </span>
+                      )}
+                      <span className="text-xs font-bold text-white truncate">
+                        · {entry.title}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono text-neutral-500">
+                        {formatJsonBinTimestamp(entry.publishedAt)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleLoadReleaseForEdit(entry)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-neutral-700 bg-neutral-900 hover:border-[#facc15]/50 text-[11px] font-bold text-neutral-200 hover:text-[#facc15] transition-colors"
+                      >
+                        <Pencil className="h-3 w-3" />
+                        <span>Modifier</span>
+                      </button>
+                      {getEffectiveReleaseHistory(form).length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteReleaseFromHistory(entry.id)}
+                          className="h-7 w-7 rounded-lg border border-neutral-800 bg-neutral-950 text-neutral-400 hover:text-rose-400 hover:border-rose-500/40 flex items-center justify-center transition-colors"
+                          title="Supprimer cette version de l'historique"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {entry.summary && (
+                    <p className="text-xs text-neutral-300 leading-relaxed">
+                      {entry.summary}
+                    </p>
+                  )}
+
+                  {entry.changes.length > 0 && (
+                    <ul className="space-y-1 text-[11px] text-neutral-400 pl-1">
+                      {entry.changes.map((chg, cIdx) => (
+                        <li key={cIdx} className="flex items-start gap-2">
+                          <span className="text-[#facc15] font-bold">•</span>
+                          <span>{chg}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        </form>
+        </div>
       )}
 
       {/* SECTION: SÉCURITÉ & IPS */}
@@ -1039,7 +1480,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <span>IPs De Confiance : Autorisation Instantanée Par QR Code (Multi-IP)</span>
           </div>
           <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
             {trustedIps.length} {trustedIps.length > 1 ? 'adresses actives' : 'adresse active'}
           </span>
         </div>

@@ -65,6 +65,7 @@ import {
 } from './utils/eloEngine';
 import { LoginPage } from './components/LoginPage';
 import { ProfileView } from './components/ProfileView';
+import { ReleaseChangelogModal } from './components/ReleaseChangelogModal';
 import { SitePauseOverlay } from './components/SitePauseOverlay';
 import {
   detectDeviceCategory,
@@ -93,9 +94,12 @@ import {
 } from './utils/security';
 import {
   addSyncRecord,
+  getDeviceReleaseState,
+  getEffectiveReleaseHistory,
   getStoredSettings,
   getStoredSyncHistory,
   handleAccountSwitch,
+  markDeviceReleaseSeen,
   normalizeSiteVersion,
   purgeAllUserData,
   purgeLegacyAndStaleData,
@@ -169,6 +173,9 @@ export default function App() {
   const [notificationCenterOpen, setNotificationCenterOpen] = useState<boolean>(false);
   const [moreSheetOpen, setMoreSheetOpen] = useState<boolean>(false);
   const [profileSheetOpen, setProfileSheetOpen] = useState<boolean>(false);
+  const [releaseModalOpen, setReleaseModalOpen] = useState<boolean>(false);
+  const [releaseModalTab, setReleaseModalTab] = useState<'latest' | 'history'>('latest');
+  const [releaseIsFirstVisit, setReleaseIsFirstVisit] = useState<boolean>(false);
 
   // Network, JSONBin & Firebase online status states
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
@@ -536,13 +543,60 @@ export default function App() {
     };
   }, []);
 
-  // Persistent Notification History & Mobile Toast helper
+  // First-visit & new-release pop-up trigger on active authenticated screens
+  useEffect(() => {
+    const canShowApp =
+      !siteActivityEvaluation.isBlocked &&
+      (isExplicitReadOnlyEmbed() || (googleAuthState.ready && googleAuthState.authorized && Boolean(userSession)));
+    if (!canShowApp) return;
+
+    const deviceState = getDeviceReleaseState();
+    const currentVersion = normalizeSiteVersion(settings.siteVersion);
+    const history = getEffectiveReleaseHistory(settings);
+    const latest = history[0];
+    const shouldForcePopup = latest ? latest.forcePopup !== false : true;
+
+    const isNewRelease =
+      shouldForcePopup &&
+      (deviceState.lastSeenVersion !== currentVersion ||
+        (Boolean(settings.siteVersionUpdatedAt) &&
+          settings.siteVersionUpdatedAt !== deviceState.lastSeenPublishedAt));
+
+    if (!deviceState.isFirstVisit && !isNewRelease) return;
+
+    const timer = window.setTimeout(() => {
+      setReleaseIsFirstVisit(deviceState.isFirstVisit);
+      setReleaseModalTab('latest');
+      setReleaseModalOpen(true);
+    }, 450);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    siteActivityEvaluation.isBlocked,
+    googleAuthState.ready,
+    googleAuthState.authorized,
+    userSession,
+    settings.siteVersion,
+    settings.siteVersionUpdatedAt,
+    settings.siteVersionHistory,
+  ]);
+
+  const handleCloseReleaseModal = useCallback(() => {
+    markDeviceReleaseSeen(
+      normalizeSiteVersion(settings.siteVersion),
+      settings.siteVersionUpdatedAt
+    );
+    setReleaseModalOpen(false);
+    setReleaseIsFirstVisit(false);
+  }, [settings.siteVersion, settings.siteVersionUpdatedAt]);
+
+  // Persistent Notification History (strict anti-spam filtering) & Ephemeral Toasts helper
   const showToast = useCallback(
     (
       message: string,
       type: 'info' | 'success' | 'warning' = 'info',
       title = 'Road to 2000',
-      options?: { targetTab?: NavTab; bypassDnd?: boolean }
+      options?: { targetTab?: NavTab; bypassDnd?: boolean; persist?: boolean }
     ) => {
       const inferred = inferNotificationMeta(title, message);
       const category = inferred.category;
@@ -550,22 +604,88 @@ export default function App() {
       const now = Date.now();
       const id = `toast_${now}_${Math.random().toString(36).substring(2, 6)}`;
 
-      const historyItem: AppNotificationItem = {
-        id,
-        title,
-        message,
-        type,
-        category,
-        createdAt: now,
-        read: false,
-        targetTab,
-      };
+      const lowerTitle = title.trim().toLowerCase();
+      const lowerMsg = message.trim().toLowerCase();
 
-      setNotificationHistory((prev) => {
-        const next = [historyItem, ...prev].slice(0, 40);
-        saveStoredNotifications(next);
-        return next;
-      });
+      const isRoutineNoise = (() => {
+        const noisyTitles = [
+          'synchronisé',
+          'synchronisation réussie',
+          'sauvegarde jsonbin confirmée',
+          'cache cloud à jour',
+          'jsonbin synchronisé',
+          'session active',
+          'session fermée',
+          'notifications',
+          'rechargement cloud',
+          'accès admin',
+          'mode spectateur',
+          'mode mono-compte',
+          'fonctionnalité bloquée',
+          'a2f synchronisée',
+          'registre cloud',
+        ];
+        if (noisyTitles.includes(lowerTitle)) return true;
+
+        const noisyFragments = [
+          'copié',
+          'enregistré',
+          'verrouillée',
+          'détectée',
+          'retirée',
+          'ajoutée',
+          'téléchargé',
+          'interdite en mode iframe',
+          'désactivée en mode iframe',
+          'en ligne',
+          'déjà à jour',
+          'quota préservé',
+          'authentification microsoft authenticator réussie',
+          'statistiques à jour pour',
+          'données de @',
+          'paramètres enregistrés',
+        ];
+        return noisyFragments.some((frag) => lowerMsg.includes(frag));
+      })();
+
+      const isMajorEvent =
+        lowerTitle.includes('sommet') ||
+        lowerTitle.includes('objectif') ||
+        lowerTitle.includes('purge') ||
+        lowerMsg.includes('publiée dans l’historique') ||
+        lowerMsg.includes('nouvelle version') ||
+        (type === 'warning' && !isRoutineNoise);
+
+      const shouldPersist =
+        typeof options?.persist === 'boolean'
+          ? options.persist
+          : !isRoutineNoise && isMajorEvent;
+
+      if (shouldPersist) {
+        const historyItem: AppNotificationItem = {
+          id,
+          title,
+          message,
+          type,
+          category,
+          createdAt: now,
+          read: false,
+          targetTab,
+        };
+
+        setNotificationHistory((prev) => {
+          const isDuplicateRecent = prev.some(
+            (existing) =>
+              existing.title === title &&
+              existing.message === message &&
+              now - existing.createdAt < 10 * 60 * 1000
+          );
+          if (isDuplicateRecent) return prev;
+          const next = [historyItem, ...prev].slice(0, 40);
+          saveStoredNotifications(next);
+          return next;
+        });
+      }
 
       if (!options?.bypassDnd && (notifPrefs.dnd || !notifPrefs.categories[category])) {
         return;
@@ -1587,6 +1707,11 @@ export default function App() {
             isIframe={isIframe}
             onOpenSecurityModal={handleOpenSecurityModal}
             onLockAdmin={handleLockAdmin}
+            onPreviewReleasePopup={() => {
+              setReleaseIsFirstVisit(false);
+              setReleaseModalTab('latest');
+              setReleaseModalOpen(true);
+            }}
           />
         )}
 
@@ -1787,15 +1912,31 @@ export default function App() {
             <span aria-hidden="true" className="text-neutral-600">·</span>
             <span>Échéance 31/12/2027</span>
             <span aria-hidden="true" className="text-neutral-600">·</span>
-            <span
-              title={settings.siteVersionNote || undefined}
-              className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#facc15]/10 border border-[#facc15]/25 text-[#facc15] font-bold"
+            <button
+              type="button"
+              onClick={() => {
+                setReleaseIsFirstVisit(false);
+                setReleaseModalTab('latest');
+                setReleaseModalOpen(true);
+              }}
+              title={settings.siteVersionNote || 'Voir les nouveautés et l’historique des versions'}
+              className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#facc15]/10 hover:bg-[#facc15]/20 border border-[#facc15]/25 hover:border-[#facc15]/45 text-[#facc15] font-bold transition-colors cursor-pointer"
             >
               Version v{normalizeSiteVersion(settings.siteVersion)}
-            </span>
+            </button>
           </div>
         </div>
       </footer>
+
+      {/* Release Notes & First-Visit Welcome Pop-up */}
+      <ReleaseChangelogModal
+        isOpen={releaseModalOpen}
+        onClose={handleCloseReleaseModal}
+        isFirstVisit={releaseIsFirstVisit}
+        currentVersion={normalizeSiteVersion(settings.siteVersion)}
+        releases={getEffectiveReleaseHistory(settings)}
+        initialTab={releaseModalTab}
+      />
 
       {/* Mobile Profile Bottom Sheet (< sm) */}
       <MobileProfileSheet

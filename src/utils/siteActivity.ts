@@ -31,6 +31,8 @@ export interface SiteActivityConfig {
   mode: SitePauseMode;
   customTitle: string;
   customMessage: string;
+  upcomingVersion?: string;
+  extendedDetails?: string;
   scheduleType: ScheduleType;
   countdownMinutes: number;
   pauseAtTimestamp: number | null;
@@ -145,6 +147,8 @@ export function getDefaultSiteActivityConfig(): SiteActivityConfig {
     mode: 'maintenance',
     customTitle: SITE_PAUSE_MODE_META.maintenance.defaultTitle,
     customMessage: SITE_PAUSE_MODE_META.maintenance.defaultMessage,
+    upcomingVersion: '',
+    extendedDetails: '',
     scheduleType: 'immediate',
     countdownMinutes: 5,
     pauseAtTimestamp: null,
@@ -194,12 +198,18 @@ export function normalizeSiteActivityConfig(
     mode,
     customTitle:
       typeof raw.customTitle === 'string' && raw.customTitle.trim()
-        ? raw.customTitle
+        ? raw.customTitle.slice(0, 120)
         : SITE_PAUSE_MODE_META[mode].defaultTitle,
     customMessage:
       typeof raw.customMessage === 'string' && raw.customMessage.trim()
-        ? raw.customMessage
+        ? raw.customMessage.slice(0, 2000)
         : SITE_PAUSE_MODE_META[mode].defaultMessage,
+    upcomingVersion:
+      typeof raw.upcomingVersion === 'string'
+        ? raw.upcomingVersion.trim().replace(/^v+/i, '').slice(0, 32)
+        : '',
+    extendedDetails:
+      typeof raw.extendedDetails === 'string' ? raw.extendedDetails.slice(0, 2500) : '',
     scheduleType:
       raw.scheduleType === 'countdown' || raw.scheduleType === 'exact_date'
         ? raw.scheduleType

@@ -86,11 +86,17 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
       }
     };
 
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+
     window.addEventListener('roadto2000:sync-diagnostics-updated', handleUpdate);
+    window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('roadto2000:sync-diagnostics-updated', handleUpdate);
+      window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   const filteredIssues = useMemo(() => {
     return diag.issues.filter((issue) => {
@@ -332,8 +338,11 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
 
           <button
             type="button"
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-white hover:border-neutral-700 transition-colors shrink-0"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            className="relative z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-white hover:border-neutral-700 transition-colors shrink-0"
             aria-label="Fermer la fenêtre Firebase"
           >
             <X className="h-4 w-4" />

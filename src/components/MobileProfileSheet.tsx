@@ -127,12 +127,21 @@ export const MobileProfileSheet: React.FC<MobileProfileSheetProps> = ({
     onClose();
   }, [onClose]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') requestAnimatedClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, requestAnimatedClose]);
+
   const handleSheetPointerDown = (e: React.PointerEvent<HTMLDivElement>, fromHandle: boolean) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
-    if (!fromHandle && e.pointerType === 'touch') return;
-    if (!fromHandle && (e.target as HTMLElement).closest('button, input, label, a')) {
+    if ((e.target as HTMLElement).closest('button, input, label, select, textarea, a')) {
       return;
     }
+    if (!fromHandle && e.pointerType === 'touch') return;
     const scrollTop = scrollBodyRef.current?.scrollTop ?? 0;
     if (!fromHandle && scrollTop > 2) return;
 
@@ -384,8 +393,12 @@ export const MobileProfileSheet: React.FC<MobileProfileSheetProps> = ({
 
             <button
               type="button"
-              onClick={requestAnimatedClose}
-              className="h-10 w-10 rounded-2xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.1] flex items-center justify-center text-neutral-300 hover:text-white transition-colors shrink-0"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                requestAnimatedClose();
+              }}
+              className="relative z-20 h-10 w-10 rounded-2xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.1] flex items-center justify-center text-neutral-300 hover:text-white transition-colors shrink-0"
               aria-label="Fermer le profil"
             >
               <X className="h-5 w-5" />

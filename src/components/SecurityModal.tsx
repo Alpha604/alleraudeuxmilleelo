@@ -291,6 +291,16 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     return () => clearInterval(interval);
   }, [isOpen]);
 
+  // Escape key dismissal
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   // Complete unlock callback
   const completeUnlock = React.useCallback(() => {
     if (unlockedRef.current) return;
@@ -409,12 +419,25 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-xl p-3 sm:p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md rounded-3xl border border-white/[0.12] bg-[#0c1019]/95 p-4 sm:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.8)] backdrop-blur-2xl space-y-4 sm:space-y-6">
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-xl p-3 sm:p-4 animate-in fade-in duration-200"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-md rounded-3xl border border-white/[0.12] bg-[#0c1019]/95 p-4 sm:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.8)] backdrop-blur-2xl space-y-4 sm:space-y-6"
+      >
         {/* Close Button */}
         <button
-          onClick={onClose}
-          className="absolute top-3.5 right-3.5 sm:top-5 sm:right-5 text-neutral-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-neutral-800"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          aria-label="Fermer"
+          className="absolute top-3.5 right-3.5 sm:top-5 sm:right-5 z-20 flex h-9 w-9 items-center justify-center text-neutral-400 hover:text-white transition-colors rounded-xl hover:bg-neutral-800"
           title="Fermer"
         >
           <X className="h-5 w-5" />

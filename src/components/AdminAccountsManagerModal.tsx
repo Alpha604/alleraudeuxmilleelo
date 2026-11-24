@@ -46,11 +46,15 @@ export const AdminAccountsManagerModal: React.FC<AdminAccountsManagerModalProps>
   };
 
   useEffect(() => {
-    if (isOpen) {
-      refreshAccountsList();
-      setConfirmDeleteUser(null);
-    }
-  }, [isOpen]);
+    if (!isOpen) return;
+    refreshAccountsList();
+    setConfirmDeleteUser(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -120,8 +124,12 @@ export const AdminAccountsManagerModal: React.FC<AdminAccountsManagerModalProps>
 
           <button
             type="button"
-            onClick={onClose}
-            className="p-2 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800/60 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            aria-label="Fermer"
+            className="relative z-20 p-2 rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800/60 transition-colors"
           >
             <X className="h-5 w-5" />
           </button>

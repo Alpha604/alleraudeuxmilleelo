@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Clock,
   Crown,
+  FileText,
   KeyRound,
   Lock,
   Monitor,
@@ -18,8 +19,10 @@ import {
   ShieldCheck,
   Smartphone,
   Tablet,
+  Tag,
   Unlock,
   Wrench,
+  X,
 } from 'lucide-react';
 import {
   DeviceCategory,
@@ -73,6 +76,7 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
   const meta = SITE_PAUSE_MODE_META[config.mode] || SITE_PAUSE_MODE_META.maintenance;
   const readOnlyEmbed = isExplicitReadOnlyEmbed();
 
+  const [adminDrawerOpen, setAdminDrawerOpen] = useState(false);
   const [inlineCode, setInlineCode] = useState('');
   const [inlineError, setInlineError] = useState('');
   const [isVerifyingInline, setIsVerifyingInline] = useState(false);
@@ -85,6 +89,17 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (!adminDrawerOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setAdminDrawerOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [adminDrawerOpen]);
 
   const deviceLabel =
     deviceType === 'mobile' ? 'Mobile' : deviceType === 'tablet' ? 'Tablette' : 'Ordinateur';
@@ -108,12 +123,13 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
         setEnrolled(true);
         syncTotpSecretToServer(secret, true).catch(() => {});
         setAdminSession();
+        setAdminDrawerOpen(false);
         if (onAdminUnlocked) {
           onAdminUnlocked();
         }
       } else {
         setInlineError(
-          'Code incorrect ou expiré. Cliquez sur « Configurer / Changer l’A2F » pour scanner le nouveau QR Code.'
+          'Code incorrect ou expiré. Cliquez sur « Afficher QR / Changer l’A2F » pour scanner le QR Code.'
         );
       }
     } catch {
@@ -123,8 +139,11 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
     }
   };
 
+  const cleanUpcomingVersion = (config.upcomingVersion || '').trim().replace(/^v+/i, '');
+  const cleanExtendedDetails = (config.extendedDetails || '').trim();
+
   return (
-    <div className="fixed inset-0 z-[100] bg-[#07090e] text-neutral-100 flex flex-col items-center justify-center p-4 sm:p-8 overflow-y-auto">
+    <div className="fixed inset-0 z-[100] bg-[#07090e] text-neutral-100 flex flex-col justify-between p-4 sm:p-8 overflow-y-auto">
       {/* Subtle Ambient Accent Glow */}
       <div className="fixed inset-0 pointer-events-none">
         <div
@@ -133,11 +152,17 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
         />
       </div>
 
-      <div className="relative z-10 w-full max-w-xl rounded-3xl border border-neutral-800 bg-[#0b0e14]/95 backdrop-blur-2xl p-6 sm:p-10 shadow-2xl space-y-6 text-center">
-        {/* Brand Top Pill */}
+      {/* Top Spacer for Vertical Centering */}
+      <div className="h-4 shrink-0" aria-hidden="true" />
+
+      {/* Main Centered Visitor Notice Card */}
+      <div className="relative z-10 mx-auto w-full max-w-xl rounded-3xl border border-neutral-800 bg-[#0b0e14]/95 backdrop-blur-2xl p-6 sm:p-10 shadow-2xl space-y-5 text-center">
+        {/* Brand Header */}
         <div className="flex items-center justify-center gap-2 text-xs font-display font-bold tracking-wider text-neutral-400">
           <Crown className="h-4 w-4 text-[#facc15]" />
           <span>ROAD TO 2000 ELO</span>
+          <span aria-hidden="true">·</span>
+          <span style={{ color: meta.accentHex }}>{meta.label}</span>
         </div>
 
         {/* Mode Icon Container */}
@@ -147,28 +172,42 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
           </div>
         </div>
 
-        {/* Mode Badge */}
-        <div className="flex justify-center">
-          <span
-            className={`inline-flex items-center gap-2 px-3.5 py-1 rounded-full border text-xs font-bold uppercase tracking-wider ${meta.badgeClasses}`}
-          >
-            <span
-              className="h-2 w-2 rounded-full animate-pulse"
-              style={{ backgroundColor: meta.accentHex }}
-            />
-            <span>{meta.label}</span>
-          </span>
-        </div>
+        {/* Target Version Banner when Mise à jour (or version provided) */}
+        {cleanUpcomingVersion && (
+          <div className="flex justify-center">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl border border-sky-500/35 bg-sky-500/10 text-sky-300 text-xs font-mono font-bold">
+              <Tag className="h-3.5 w-3.5 text-sky-400" />
+              <span>
+                {config.mode === 'mise_a_jour'
+                  ? `Nouvelle version en déploiement : v${cleanUpcomingVersion}`
+                  : `Version cible : v${cleanUpcomingVersion}`}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Title & Custom Message */}
-        <div className="space-y-2.5">
-          <h1 className="text-2xl sm:text-3xl font-bold text-white font-display tracking-tight">
+        <div className="space-y-3">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white font-display tracking-tight text-balance">
             {config.customTitle || meta.defaultTitle}
           </h1>
-          <p className="text-sm text-neutral-300 leading-relaxed max-w-md mx-auto">
+          <p className="text-sm text-neutral-300 leading-relaxed max-w-lg mx-auto whitespace-pre-line">
             {config.customMessage || meta.defaultMessage}
           </p>
         </div>
+
+        {/* Extended Rich Pause Information */}
+        {cleanExtendedDetails && (
+          <div className="rounded-2xl border border-neutral-800/90 bg-neutral-950/85 p-4 sm:p-5 text-left space-y-2">
+            <div className="flex items-center gap-2 text-xs font-bold text-neutral-200">
+              <FileText className="h-3.5 w-3.5 text-[#facc15] shrink-0" />
+              <span>Informations complémentaires</span>
+            </div>
+            <div className="text-xs sm:text-sm text-neutral-300 leading-relaxed whitespace-pre-line">
+              {cleanExtendedDetails}
+            </div>
+          </div>
+        )}
 
         {/* Estimated Resume Countdown / Time Box */}
         {config.resumeAtTimestamp && (
@@ -194,51 +233,100 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
           </div>
         )}
 
-        {/* Context Metadata (Device / Iframe / IP) */}
-        <div className="flex flex-wrap items-center justify-center gap-2 pt-1 text-[11px] font-mono text-neutral-400">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-neutral-800 bg-neutral-950">
-            <DeviceIcon className="h-3.5 w-3.5 text-neutral-400" />
-            <span>{deviceLabel}</span>
-          </span>
-          {isIframe && (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-neutral-800 bg-neutral-950 text-amber-400">
-              Iframe intégré
+        {/* Context Metadata & Refresh */}
+        <div className="flex flex-col items-center gap-3 pt-2 border-t border-neutral-800/80">
+          <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] font-mono text-neutral-400">
+            <span className="inline-flex items-center gap-1.5">
+              <DeviceIcon className="h-3.5 w-3.5 text-neutral-400" />
+              <span>{deviceLabel}</span>
             </span>
-          )}
-          {clientIp && (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-neutral-800 bg-neutral-950">
-              IP : {clientIp}
-            </span>
-          )}
-        </div>
+            {isIframe && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-amber-400">Iframe intégré</span>
+              </>
+            )}
+            {clientIp && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>IP : {clientIp}</span>
+              </>
+            )}
+          </div>
 
-        {/* Direct PC / Admin 2FA Unlock Box (Available unless URL explicitly enforces read-only embed) */}
+          <button
+            type="button"
+            onClick={onRefreshStatus}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-neutral-800 bg-neutral-950 hover:bg-neutral-900 text-xs font-bold text-neutral-200 transition-colors cursor-pointer"
+          >
+            <RefreshCw className="h-3.5 w-3.5 text-[#facc15]" />
+            <span>Vérifier l&apos;état</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Discrete Bottom Admin Trigger (Hidden out of the main view) */}
+      <div className="relative z-10 w-full flex items-center justify-center pt-6 pb-2 shrink-0">
         {!readOnlyEmbed && (
-          <div className="rounded-2xl border border-[#facc15]/30 bg-neutral-950/90 p-4 sm:p-5 space-y-3 text-left">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setInlineError('');
+              setInlineCode('');
+              setAdminDrawerOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] text-[11px] font-medium text-neutral-500 hover:text-neutral-200 transition-colors cursor-pointer"
+            title="Connexion Administrateur (A2F)"
+          >
+            <Lock className="h-3 w-3" />
+            <span>Accès Admin</span>
+          </button>
+        )}
+      </div>
+
+      {/* Compact On-Demand Admin 2FA Unlock Dialog */}
+      {adminDrawerOpen && !readOnlyEmbed && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Déverrouillage Administrateur A2F"
+          onClick={() => setAdminDrawerOpen(false)}
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-md rounded-3xl border border-neutral-800 bg-[#0b0e14] p-5 sm:p-6 shadow-2xl space-y-4 text-left"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2 text-xs font-bold text-[#facc15]">
-                <Lock className="h-3.5 w-3.5" />
+                <Lock className="h-4 w-4" />
                 <span>Accès Administrateur (A2F)</span>
               </div>
               <button
                 type="button"
-                onClick={onOpenAdminUnlock}
-                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-neutral-200 hover:text-[#facc15] underline underline-offset-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAdminDrawerOpen(false);
+                }}
+                aria-label="Fermer l'accès admin"
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-white transition-colors cursor-pointer"
               >
-                <QrCode className="h-3.5 w-3.5 text-[#facc15]" />
-                <span>{enrolled ? 'Afficher QR / Changer l’A2F' : 'Scanner la nouvelle clé A2F (QR Code)'}</span>
+                <X className="h-4 w-4" />
               </button>
             </div>
 
             {!enrolled && (
-              <div className="p-2.5 rounded-xl border border-[#facc15]/40 bg-[#facc15]/10 text-[11px] text-amber-200 flex items-center justify-between gap-2">
-                <span>Une nouvelle clé A2F est prête. Scannez d'abord son QR code pour l'activer.</span>
+              <div className="p-3 rounded-xl border border-[#facc15]/40 bg-[#facc15]/10 text-xs text-amber-200 flex items-center justify-between gap-2">
+                <span>Scannez d&apos;abord votre QR code A2F pour activer votre clé.</span>
                 <button
                   type="button"
-                  onClick={onOpenAdminUnlock}
-                  className="px-2.5 py-1 rounded-lg bg-[#facc15] text-black font-bold shrink-0"
+                  onClick={() => {
+                    setAdminDrawerOpen(false);
+                    onOpenAdminUnlock();
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-[#facc15] text-black text-[11px] font-bold shrink-0 cursor-pointer"
                 >
-                  Ouvrir QR
+                  QR Code
                 </button>
               </div>
             )}
@@ -248,14 +336,15 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
                 e.preventDefault();
                 verifyInline(inlineCode);
               }}
-              className="flex flex-col sm:flex-row gap-2"
+              className="space-y-3"
             >
-              <div className="relative flex-1">
+              <div className="relative">
                 <input
                   type="text"
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   maxLength={6}
+                  autoFocus
                   value={inlineCode}
                   onChange={(e) => {
                     const cleaned = e.target.value.replace(/\D/g, '').slice(0, 6);
@@ -266,41 +355,44 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
                     }
                   }}
                   placeholder="Code à 6 chiffres..."
-                  className="w-full rounded-xl border border-neutral-800 bg-[#0b0e14] pl-9 pr-3 py-2.5 text-sm font-mono font-bold tracking-[0.35em] text-[#facc15] placeholder:tracking-normal placeholder:font-sans placeholder:text-xs placeholder:text-neutral-500 focus:border-[#facc15] focus:outline-none"
+                  className="w-full rounded-xl border border-neutral-800 bg-[#07090e] pl-10 pr-3 py-3 text-base font-mono font-bold tracking-[0.35em] text-[#facc15] placeholder:tracking-normal placeholder:font-sans placeholder:text-xs placeholder:text-neutral-500 focus:border-[#facc15] focus:outline-none"
                 />
-                <KeyRound className="h-4 w-4 text-neutral-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <KeyRound className="h-4 w-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
-              <button
-                type="submit"
-                disabled={isVerifyingInline || inlineCode.length !== 6}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#facc15] hover:bg-[#eab308] text-black text-xs font-extrabold transition-colors disabled:opacity-40 shrink-0"
-              >
-                <Unlock className="h-3.5 w-3.5" />
-                <span>{isVerifyingInline ? 'Vérification...' : 'Débloquer'}</span>
-              </button>
+
+              {inlineError && (
+                <div className="flex items-start gap-1.5 text-xs text-[#ef4444] font-medium">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{inlineError}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminDrawerOpen(false);
+                    onOpenAdminUnlock();
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-300 hover:text-[#facc15] cursor-pointer"
+                >
+                  <QrCode className="h-3.5 w-3.5 text-[#facc15]" />
+                  <span>{enrolled ? 'Afficher QR / Changer A2F' : 'Configurer l’A2F'}</span>
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={isVerifyingInline || inlineCode.length !== 6}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#facc15] hover:bg-[#eab308] text-black text-xs font-extrabold transition-colors disabled:opacity-40 shrink-0 cursor-pointer"
+                >
+                  <Unlock className="h-3.5 w-3.5" />
+                  <span>{isVerifyingInline ? 'Vérification...' : 'Débloquer'}</span>
+                </button>
+              </div>
             </form>
-
-            {inlineError && (
-              <div className="flex items-start gap-1.5 text-[11px] text-[#ef4444] font-medium">
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                <span>{inlineError}</span>
-              </div>
-            )}
           </div>
-        )}
-
-        {/* Refresh Action */}
-        <div className="flex flex-wrap items-center justify-center gap-3 pt-2 border-t border-neutral-800/80">
-          <button
-            type="button"
-            onClick={onRefreshStatus}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-neutral-800 bg-neutral-950 hover:bg-neutral-900 text-xs font-bold text-neutral-200 transition-colors"
-          >
-            <RefreshCw className="h-3.5 w-3.5 text-[#facc15]" />
-            <span>Vérifier l'état</span>
-          </button>
         </div>
-      </div>
+      )}
     </div>
   );
 };
