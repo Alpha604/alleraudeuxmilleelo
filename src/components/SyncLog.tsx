@@ -207,7 +207,11 @@ export const SyncLog: React.FC<SyncLogProps> = ({
     } else if (filterMode === 'synced') {
       list = list.filter((d) => d.status === 'synced');
     } else if (filterMode === 'puzzles_pending') {
-      list = list.filter((d) => d.record && !d.hasPuzzles);
+      list = list.filter(
+        (d) =>
+          d.record &&
+          (!d.hasPuzzles || (!d.isToday && d.record.puzzlesConfirmed !== true))
+      );
     }
 
     if (sortOrder === 'desc') {
@@ -225,7 +229,11 @@ export const SyncLog: React.FC<SyncLogProps> = ({
   const verifiedCloudCount = allDays.filter((d) => d.syncState === 'verified').length;
   const pendingCloudCount = allDays.filter((d) => d.syncState === 'pending').length;
   const missingDaysCount = allDays.filter((d) => d.status === 'missing').length;
-  const puzzlesPendingCount = allDays.filter((d) => d.record && !d.hasPuzzles).length;
+  const puzzlesPendingCount = allDays.filter(
+    (d) =>
+      d.record &&
+      (!d.hasPuzzles || (!d.isToday && d.record.puzzlesConfirmed !== true))
+  ).length;
 
   // Trigger manual completion of a missing date with pre-fill from the sync right above (Admin only)
   const handleOpenAddModal = (dateKey: string, index: number) => {
@@ -324,6 +332,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
     // Preserve existing record's original timestamp or use noon on that date
     const existingRecord = recordsByDateKey.get(manualDateKey);
     const timestamp = existingRecord?.timestamp || `${manualDateKey}T12:00:00.000Z`;
+    const isTodayEntry = manualDateKey === todayKey;
 
     const newRecord: SyncRecord = {
       id: existingRecord?.id || `sync_manual_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -333,6 +342,8 @@ export const SyncLog: React.FC<SyncLogProps> = ({
       blitz,
       rapid,
       puzzles,
+      puzzlesConfirmed: puzzles ? !isTodayEntry : false,
+      puzzlesUpdatedAt: puzzles ? new Date().toISOString() : null,
       bestRating,
       bestMode,
       source: existingRecord?.source || 'Saisie manuelle',
@@ -354,6 +365,36 @@ export const SyncLog: React.FC<SyncLogProps> = ({
         : `Synchronisation du ${manualDateKey} enregistrée avec succès !`,
       'success'
     );
+  };
+
+  // Next-day 1-click confirmation for Puzzle Elo entered the day before
+  const handleConfirmPuzzles = (day: DayEntry) => {
+    if (isIframe || !day.record) return;
+    if (!isAdmin) {
+      if (onOpenSecurityModal) {
+        onOpenSecurityModal('Confirmer le ELO Problèmes du lendemain (2FA requis)');
+      }
+      return;
+    }
+
+    const updatedRecord: SyncRecord = {
+      ...day.record,
+      puzzlesConfirmed: true,
+      puzzlesUpdatedAt: new Date().toISOString(),
+    };
+
+    const updated = [
+      updatedRecord,
+      ...history.filter((r) => {
+        const rd = new Date(r.timestamp);
+        const k = `${rd.getFullYear()}-${String(rd.getMonth() + 1).padStart(2, '0')}-${String(rd.getDate()).padStart(2, '0')}`;
+        return k !== day.dateKey;
+      }),
+    ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    saveStoredSyncHistory(updated, username);
+    onHistoryUpdate(updated);
+    onShowMessage(`Score Problèmes du ${day.dateKey} confirmé (${updatedRecord.puzzles} Elo).`, 'success');
   };
 
   const handleExportJSON = () => {
@@ -466,45 +507,47 @@ export const SyncLog: React.FC<SyncLogProps> = ({
           <p className="text-xs text-neutral-400 mt-1">
             Suivi exhaustif (1 sync / jour). Les journées manquantes apparaissent en <span className="text-[#ef4444] font-bold">rouge</span> et peuvent être complétées par l'administrateur.
           </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={onOpenNetworkModal}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-mono transition-colors ${
-                jsonBinStatus === 'error'
-                  ? 'border-[#ef4444]/40 bg-[#ef4444]/10 text-[#ef4444]'
-                  : jsonBinStatus === 'syncing' || isVerifyingJsonBin
-                  ? 'border-[#facc15]/40 bg-[#facc15]/10 text-[#facc15]'
-                  : pendingCloudCount > 0
-                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
-                  : 'border-[#10b981]/30 bg-[#10b981]/10 text-[#10b981] hover:bg-[#10b981]/20'
-              }`}
-            >
-              <Clock className="h-3 w-3 shrink-0" />
-              <span>
-                {jsonBinStatus === 'syncing' || isVerifyingJsonBin
-                  ? 'Vérification JSONBin en cours...'
-                  : jsonBinStatus === 'error'
-                  ? 'Erreur JSONBin (cliquez pour vérifier)'
-                  : pendingCloudCount > 0
-                  ? `${pendingCloudCount} relevé(s) en attente de confirmation · MàJ : ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`
-                  : `Confirmé JSONBin (${verifiedCloudCount}/${syncedDaysCount}) · ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`}
-              </span>
-            </button>
-
-            {onVerifyJsonBinSync && !isIframe && (
+          {isAdmin && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => onVerifyJsonBinSync()}
-                disabled={isVerifyingJsonBin || jsonBinStatus === 'syncing'}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-neutral-700 bg-neutral-900 hover:border-[#facc15] text-[11px] font-bold text-neutral-200 hover:text-white transition-colors disabled:opacity-50"
-                title="Contrôler en direct sur JSONBin que chaque relevé correspond exactement"
+                onClick={onOpenNetworkModal}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-mono transition-colors ${
+                  jsonBinStatus === 'error'
+                    ? 'border-[#ef4444]/40 bg-[#ef4444]/10 text-[#ef4444]'
+                    : jsonBinStatus === 'syncing' || isVerifyingJsonBin
+                    ? 'border-[#facc15]/40 bg-[#facc15]/10 text-[#facc15]'
+                    : pendingCloudCount > 0
+                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+                    : 'border-[#10b981]/30 bg-[#10b981]/10 text-[#10b981] hover:bg-[#10b981]/20'
+                }`}
               >
-                <Zap className={`h-3 w-3 text-[#facc15] ${isVerifyingJsonBin ? 'animate-pulse' : ''}`} />
-                <span>{isVerifyingJsonBin ? 'Vérification...' : 'Vérifier JSONBin'}</span>
+                <Clock className="h-3 w-3 shrink-0" />
+                <span>
+                  {jsonBinStatus === 'syncing' || isVerifyingJsonBin
+                    ? 'Vérification JSONBin en cours...'
+                    : jsonBinStatus === 'error'
+                    ? 'Erreur JSONBin (cliquez pour vérifier)'
+                    : pendingCloudCount > 0
+                    ? `${pendingCloudCount} relevé(s) en attente de confirmation · MàJ : ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`
+                    : `Confirmé JSONBin (${verifiedCloudCount}/${syncedDaysCount}) · ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`}
+                </span>
               </button>
-            )}
-          </div>
+
+              {onVerifyJsonBinSync && !isIframe && (
+                <button
+                  type="button"
+                  onClick={() => onVerifyJsonBinSync()}
+                  disabled={isVerifyingJsonBin || jsonBinStatus === 'syncing'}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-neutral-700 bg-neutral-900 hover:border-[#facc15] text-[11px] font-bold text-neutral-200 hover:text-white transition-colors disabled:opacity-50"
+                  title="Contrôler en direct sur JSONBin que chaque relevé correspond exactement"
+                >
+                  <Zap className={`h-3 w-3 text-[#facc15] ${isVerifyingJsonBin ? 'animate-pulse' : ''}`} />
+                  <span>{isVerifyingJsonBin ? 'Vérification...' : 'Vérifier JSONBin'}</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Action buttons — single line on mobile */}
@@ -717,7 +760,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
       </div>
 
       {/* Main Table: Shows EVERY Day with Green (Done) and Red (Missing) Rows */}
-      <div className="overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0c1019]/90 shadow-[0_8px_30px_rgba(0,0,0,0.4)] backdrop-blur-xl">
+      <div className="liquid-glass-card overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0c1019]/90 shadow-[0_8px_30px_rgba(0,0,0,0.4)] backdrop-blur-xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
@@ -838,26 +881,56 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                         )}
                       </td>
 
-                      {/* Problèmes (saisie manuelle du lendemain — hors cadence) */}
+                      {/* Problèmes (saisie le jour même ou lendemain, confirmation le lendemain) */}
                       <td className="py-3 px-4 text-right tabular-nums">
                         {!rec ? (
                           <span className="text-neutral-600">—</span>
                         ) : typeof rec.puzzles === 'number' && rec.puzzles > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => !isIframe && handleOpenEditModal(day, true)}
-                            className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 font-semibold transition-colors"
-                            title="Score Problèmes saisi manuellement (cliquez pour modifier)"
-                          >
-                            <span>{rec.puzzles}</span>
-                          </button>
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => !isIframe && handleOpenEditModal(day, true)}
+                              className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 font-semibold transition-colors"
+                              title="Modifier le score Problèmes"
+                            >
+                              <span>{rec.puzzles}</span>
+                              {rec.puzzlesConfirmed === true && (
+                                <CheckCircle2
+                                  className="h-3.5 w-3.5 text-[#10b981]"
+                                  aria-label="Confirmé"
+                                />
+                              )}
+                            </button>
+
+                            {day.isToday && rec.puzzlesConfirmed !== true && (
+                              <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/35 text-[9px] font-sans font-bold text-amber-400">
+                                À confirmer demain
+                              </span>
+                            )}
+
+                            {!day.isToday && rec.puzzlesConfirmed !== true && !isIframe && (
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmPuzzles(day)}
+                                title={
+                                  isAdmin
+                                    ? 'Confirmer ce score Problèmes du lendemain en 1 clic'
+                                    : 'Confirmer (2FA requis)'
+                                }
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#10b981]/20 border border-[#10b981]/45 text-[#10b981] hover:bg-[#10b981]/30 text-[10px] font-sans font-extrabold transition-colors active:scale-95"
+                              >
+                                <CheckCircle2 className="h-3 w-3" />
+                                <span>Confirmer</span>
+                              </button>
+                            )}
+                          </div>
                         ) : (
                           <button
                             type="button"
                             onClick={() => !isIframe && handleOpenEditModal(day, true)}
                             title={
                               isAdmin
-                                ? 'À compléter — Saisir manuellement le ELO Problèmes du lendemain'
+                                ? 'À compléter — Saisir le ELO Problèmes (jour même ou lendemain)'
                                 : 'À compléter — Cliquez pour saisir le ELO Problèmes (2FA requis)'
                             }
                             className="inline-flex items-center justify-center gap-1.5 p-1.5 sm:px-2.5 sm:py-0.5 rounded-full bg-orange-500/20 border border-orange-500/50 text-orange-400 hover:bg-orange-500/30 text-[10px] font-sans font-bold uppercase tracking-wider transition-all active:scale-95"
@@ -1017,7 +1090,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-orange-400 font-sans mb-1">
-                    Problèmes / Tactique (saisie manuelle du lendemain — hors cadence)
+                    Problèmes / Tactique (saisie le jour même ou lendemain — confirmation le lendemain)
                   </label>
                   <input
                     ref={puzzlesInputRef}

@@ -169,8 +169,53 @@ function runDirtyDozenSuite() {
   assertAdversarialRejected('13. Catégorie release invalide', () =>
     evaluatePlayerCreateInvariant(validOwner, 'alpharomeo1500', { ...basePayload, siteVersionCategory: 'unknown' }, true)
   );
+  // 14. Oversized release history
   assertAdversarialRejected('14. Historique release JSON trop volumineux (>32000)', () =>
     evaluatePlayerCreateInvariant(validOwner, 'alpharomeo1500', { ...basePayload, siteVersionHistoryJson: 'x'.repeat(32001) }, true)
+  );
+
+  // 15. BroadcastMessage email/oversized check
+  const evaluateBroadcastCreateInvariant = (
+    auth: MockAuthContext | null,
+    msgId: string,
+    payload: Record<string, any>
+  ): boolean => {
+    if (!auth || !auth.emailVerified || auth.email !== 'romeo.brawlstars59@gmail.com') return false;
+    if (!VALID_ID_RE.test(msgId)) return false;
+    if (payload.messageId !== msgId || payload.ownerUid !== auth.uid) return false;
+    if (typeof payload.title !== 'string' || payload.title.length < 1 || payload.title.length > 140) return false;
+    if (typeof payload.content !== 'string' || payload.content.length < 1 || payload.content.length > 4000) return false;
+    if (!['info', 'important'].includes(payload.priority)) return false;
+    if (typeof payload.senderLabel !== 'string' || payload.senderLabel.length < 1 || payload.senderLabel.length > 40) return false;
+    if (typeof payload.active !== 'boolean') return false;
+    return true;
+  };
+
+  assertAdversarialRejected('15. Message officiel sans rôle admin refusé', () =>
+    evaluateBroadcastCreateInvariant(
+      { uid: 'uid_visitor', email: 'visitor@example.com', emailVerified: true },
+      'msg_1',
+      {
+        messageId: 'msg_1',
+        ownerUid: 'uid_visitor',
+        title: 'Test',
+        content: 'Contenu',
+        priority: 'info',
+        senderLabel: 'Administration',
+        active: true,
+      }
+    )
+  );
+  assertAdversarialRejected('16. Message officiel trop long (>4000 chars)', () =>
+    evaluateBroadcastCreateInvariant(validOwner, 'msg_2', {
+      messageId: 'msg_2',
+      ownerUid: validOwner.uid,
+      title: 'Test',
+      content: 'x'.repeat(4001),
+      priority: 'important',
+      senderLabel: 'Administration',
+      active: true,
+    })
   );
 
   console.log('--- TOUS LES TESTS DE SÉCURITÉ FIRESTORE SONT VALIDÉS ! ---');

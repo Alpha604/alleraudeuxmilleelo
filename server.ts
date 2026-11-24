@@ -197,10 +197,82 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
+function resolveServerPort(): number {
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--port' && argv[i + 1]) {
+      const parsed = parseInt(argv[i + 1], 10);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+    if (argv[i].startsWith('--port=')) {
+      const parsed = parseInt(argv[i].slice('--port='.length), 10);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+  }
+
+  const isProd = process.env.NODE_ENV === 'production';
+  const nginxPort = process.env.NGINX_PORT ? parseInt(process.env.NGINX_PORT, 10) : NaN;
+  const defaultAppPort = process.env.DEFAULT_APP_PORT ? parseInt(process.env.DEFAULT_APP_PORT, 10) : 3000;
+  const envPort = process.env.PORT ? parseInt(process.env.PORT, 10) : NaN;
+
+  if (Number.isFinite(envPort) && envPort > 0) {
+    // Avoid colliding with the reverse proxy when PORT inherits NGINX_PORT (e.g. 8080).
+    if (Number.isFinite(nginxPort) && envPort === nginxPort) {
+      return Number.isFinite(defaultAppPort) && defaultAppPort > 0 ? defaultAppPort : 3000;
+    }
+    return envPort;
+  }
+
+  if (!isProd && process.env.npm_config_port) {
+    const npmPort = parseInt(process.env.npm_config_port, 10);
+    if (Number.isFinite(npmPort) && npmPort > 0 && npmPort !== nginxPort) {
+      return npmPort;
+    }
+  }
+
+  return Number.isFinite(defaultAppPort) && defaultAppPort > 0 ? defaultAppPort : 3000;
+}
+
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  app.set('trust proxy', true);
+  const PORT = resolveServerPort();
   const HOST = '0.0.0.0';
+  const isProd = process.env.NODE_ENV === 'production';
+  const isAiStudioProxy = Boolean(process.env.NGINX_PORT || process.env.CONTROL_PLANE_PORT);
+
+  // Enforce HTTPS + HSTS on direct production public deployments (skip dev & local nginx proxies)
+  app.use((req, res, next) => {
+    const rawHost = String(req.headers.host || '').split(':')[0].toLowerCase();
+    const isLocalHost =
+      !rawHost ||
+      rawHost === 'localhost' ||
+      rawHost === '127.0.0.1' ||
+      rawHost === '::1' ||
+      rawHost === '0.0.0.0' ||
+      rawHost.endsWith('.local') ||
+      /^192\.168\.\d+\.\d+$/.test(rawHost) ||
+      /^10\.\d+\.\d+\.\d+$/.test(rawHost) ||
+      /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(rawHost);
+
+    const forwardedProtoHeader = String(req.headers['x-forwarded-proto'] || '')
+      .split(',')[0]
+      .trim()
+      .toLowerCase();
+    const effectiveProto = forwardedProtoHeader || (req.secure ? 'https' : req.protocol);
+
+    if (isProd && !isAiStudioProxy && !isLocalHost && effectiveProto === 'http' && req.headers.host) {
+      res.redirect(301, `https://${req.headers.host}${req.originalUrl}`);
+      return;
+    }
+
+    if (!isLocalHost && effectiveProto === 'https') {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+    }
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+  });
 
   app.use(express.json());
 
@@ -612,7 +684,77 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
     res.json({ success: true, cloudSynced, ...next });
   });
 
+  // Anti-spam / brute-force progressive lockout for 2FA TOTP & session code endpoints
+  const totpAttemptTracker = new Map<
+    string,
+    { consecutiveFailures: number; lockedUntil: number; lastFailureAt: number }
+  >();
+  const TOTP_RESET_WINDOW_MS = 15 * 60 * 1000;
+
+  function getTotpRateLimitKey(req: Request): string {
+    const ip = extractClientIp(req);
+    return ip && ip.length >= 3 ? ip : 'global_client';
+  }
+
+  function checkTotpRateLimit(req: Request): { locked: boolean; remainingSeconds: number } {
+    const key = getTotpRateLimitKey(req);
+    const entry = totpAttemptTracker.get(key);
+    if (!entry) return { locked: false, remainingSeconds: 0 };
+    const now = Date.now();
+    if (entry.lockedUntil > now) {
+      return {
+        locked: true,
+        remainingSeconds: Math.max(1, Math.ceil((entry.lockedUntil - now) / 1000)),
+      };
+    }
+    if (now - entry.lastFailureAt > TOTP_RESET_WINDOW_MS) {
+      totpAttemptTracker.delete(key);
+    }
+    return { locked: false, remainingSeconds: 0 };
+  }
+
+  function recordTotpFailureServer(req: Request): { locked: boolean; remainingSeconds: number } {
+    const key = getTotpRateLimitKey(req);
+    const now = Date.now();
+    const prev = totpAttemptTracker.get(key);
+    const baseFailures =
+      prev && now - prev.lastFailureAt <= TOTP_RESET_WINDOW_MS ? prev.consecutiveFailures : 0;
+    const nextFailures = baseFailures + 1;
+    let lockoutSeconds = 0;
+    if (nextFailures === 4) lockoutSeconds = 30;
+    else if (nextFailures === 5) lockoutSeconds = 60;
+    else if (nextFailures === 6) lockoutSeconds = 120;
+    else if (nextFailures >= 7) lockoutSeconds = 300;
+
+    const lockedUntil = lockoutSeconds > 0 ? now + lockoutSeconds * 1000 : 0;
+    totpAttemptTracker.set(key, {
+      consecutiveFailures: nextFailures,
+      lockedUntil,
+      lastFailureAt: now,
+    });
+    return {
+      locked: lockoutSeconds > 0,
+      remainingSeconds: lockoutSeconds,
+    };
+  }
+
+  function clearTotpFailuresServer(req: Request): void {
+    totpAttemptTracker.delete(getTotpRateLimitKey(req));
+  }
+
   app.post('/api/auth/totp/verify', async (req: Request, res: Response) => {
+    const limit = checkTotpRateLimit(req);
+    if (limit.locked) {
+      res.status(429).json({
+        valid: false,
+        locked: true,
+        remainingSeconds: limit.remainingSeconds,
+        error: `Trop de tentatives A2F. Patientez ${limit.remainingSeconds}s avant de réessayer.`,
+        serverTime: Date.now(),
+      });
+      return;
+    }
+
     const { code, secret: clientSecret } = req.body || {};
     const cleanCode = String(code || '').trim().replace(/\D/g, '');
     if (cleanCode.length !== 6) {
@@ -622,6 +764,7 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
 
     const cfg = await pullTotpConfigFromCloud(false);
     if (verifyServerTotpCode(cleanCode, cfg.secret)) {
+      clearTotpFailuresServer(req);
       res.json({ valid: true, activeSecret: cfg.secret, serverTime: Date.now() });
       return;
     }
@@ -630,12 +773,26 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
       ? clientSecret.trim().toUpperCase().replace(/[^A-Z2-7]/g, '')
       : '';
     if (cleanClient.length >= 16 && verifyServerTotpCode(cleanCode, cleanClient)) {
+      clearTotpFailuresServer(req);
       res.json({ valid: true, activeSecret: cleanClient, serverTime: Date.now() });
       return;
     }
 
     if (!cfg.isCustom && verifyServerTotpCode(cleanCode, DEFAULT_TOTP_SECRET)) {
+      clearTotpFailuresServer(req);
       res.json({ valid: true, activeSecret: DEFAULT_TOTP_SECRET, serverTime: Date.now() });
+      return;
+    }
+
+    const penalty = recordTotpFailureServer(req);
+    if (penalty.locked) {
+      res.status(429).json({
+        valid: false,
+        locked: true,
+        remainingSeconds: penalty.remainingSeconds,
+        error: `Trop de tentatives A2F incorrectes. Blocage temporaire de ${penalty.remainingSeconds}s.`,
+        serverTime: Date.now(),
+      });
       return;
     }
 
@@ -644,6 +801,17 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
 
   // 6b. Verify 6-digit activation code or TOTP code submitted from desktop or phone
   app.post('/api/auth/session/verify-code', (req: Request, res: Response) => {
+    const limit = checkTotpRateLimit(req);
+    if (limit.locked) {
+      res.status(429).json({
+        success: false,
+        locked: true,
+        remainingSeconds: limit.remainingSeconds,
+        error: `Trop de tentatives A2F. Patientez ${limit.remainingSeconds}s avant de réessayer.`,
+      });
+      return;
+    }
+
     const { sessionId, code } = req.body || {};
     if (!sessionId || typeof sessionId !== 'string') {
       res.status(400).json({ error: 'sessionId required' });
@@ -655,6 +823,7 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
     const isTotpValid = verifyServerTotpCode(cleanCode);
 
     if (cleanCode === expected || isTotpValid) {
+      clearTotpFailuresServer(req);
       const realClientIp = extractClientIp(req);
       const unlockReason = isTotpValid ? 'totp_authenticator' : 'activation_code';
       let session = sessions.get(sessionId);
@@ -679,6 +848,17 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
       broadcastSessionUpdate(session);
 
       res.json({ success: true, unlocked: true, reason: unlockReason });
+      return;
+    }
+
+    const penalty = recordTotpFailureServer(req);
+    if (penalty.locked) {
+      res.status(429).json({
+        success: false,
+        locked: true,
+        remainingSeconds: penalty.remainingSeconds,
+        error: `Trop de tentatives A2F incorrectes. Blocage temporaire de ${penalty.remainingSeconds}s.`,
+      });
       return;
     }
 
@@ -817,6 +997,11 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
             ...r,
             username,
             puzzles: r.puzzles ?? existing.puzzles ?? null,
+            puzzlesConfirmed:
+              typeof r.puzzlesConfirmed === 'boolean'
+                ? r.puzzlesConfirmed
+                : existing.puzzlesConfirmed,
+            puzzlesUpdatedAt: r.puzzlesUpdatedAt ?? existing.puzzlesUpdatedAt ?? null,
             note: r.note ?? existing.note,
           });
         } else {
@@ -826,6 +1011,11 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
             ...existing,
             username,
             puzzles: existing.puzzles ?? r.puzzles ?? null,
+            puzzlesConfirmed:
+              typeof existing.puzzlesConfirmed === 'boolean'
+                ? existing.puzzlesConfirmed
+                : r.puzzlesConfirmed,
+            puzzlesUpdatedAt: existing.puzzlesUpdatedAt ?? r.puzzlesUpdatedAt ?? null,
             note: existing.note ?? r.note,
           });
         }
@@ -1153,7 +1343,7 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
     const allRecordsSig = sorted
       .map(
         (r: any) =>
-          `${r.id || ''}_${r.timestamp}_${r.bullet ?? ''}_${r.blitz ?? ''}_${r.rapid ?? ''}_${r.puzzles ?? ''}_${r.bestRating}_${r.bestMode}_${r.source || ''}_${r.note || ''}`
+          `${r.id || ''}_${r.timestamp}_${r.bullet ?? ''}_${r.blitz ?? ''}_${r.rapid ?? ''}_${r.puzzles ?? ''}_${r.puzzlesConfirmed ? '1' : '0'}_${r.puzzlesUpdatedAt || ''}_${r.bestRating}_${r.bestMode}_${r.source || ''}_${r.note || ''}`
       )
       .join(';');
     const s = data.settings || {};
@@ -2048,7 +2238,8 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
         if (remoteRecord?.siteActivity && typeof remoteRecord.siteActivity === 'object') {
           const remoteCfg = normalizeSiteActivityServer(remoteRecord.siteActivity);
 
-          // Auto-resume expired remote config cleanly
+          // Auto-resume expired remote config cleanly AND push enabled=false back to JSONBin
+          let expiredRemoteReset = false;
           if (
             remoteCfg.enabled &&
             remoteCfg.autoResume &&
@@ -2057,8 +2248,15 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
             Date.now() >= remoteCfg.resumeAtTimestamp
           ) {
             remoteCfg.enabled = false;
-            remoteCfg.revision = (remoteCfg.revision || 0) + 1;
+            remoteCfg.revision = Math.max(remoteCfg.revision || 0, localCfg.revision || 0) + 1;
             remoteCfg.updatedAt = Date.now();
+            expiredRemoteReset = true;
+          }
+
+          if (expiredRemoteReset) {
+            fs.writeFileSync(SITE_ACTIVITY_FILE, JSON.stringify(remoteCfg, null, 2), 'utf-8');
+            await pushSiteActivityToCloud(remoteCfg);
+            return { config: remoteCfg, cloudSynced: true };
           }
 
           if (isNewerSiteActivity(remoteCfg, localCfg)) {
@@ -2192,12 +2390,16 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
   });
 
   // 9. Vite Dev Middleware / Production Static Server
-  const isProd = process.env.NODE_ENV === 'production';
+  const hmrDisabled =
+    process.env.DISABLE_HMR === 'true' ||
+    Boolean(process.env.CONTROL_PLANE_PORT || process.env.NGINX_PORT);
   if (!isProd) {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        hmr: process.env.DISABLE_HMR !== 'true',
+        hmr: !hmrDisabled,
+        ...(hmrDisabled ? { ws: false } : {}),
+        allowedHosts: true,
       },
       appType: 'spa',
     });
@@ -2210,8 +2412,12 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
     });
   }
 
-  app.listen(PORT, HOST, () => {
+  const httpServer = app.listen(PORT, HOST, () => {
     console.log(`[RoadTo2000] Full-Stack server running at http://${HOST}:${PORT}`);
+  });
+  httpServer.on('error', (err) => {
+    console.error(`[RoadTo2000] HTTP server error on ${HOST}:${PORT}:`, err);
+    process.exit(1);
   });
 }
 

@@ -80,6 +80,8 @@ import {
   saveJsonBinConfig,
   syncNowToJsonBin,
 } from '../utils/cloudSync';
+import { MobileNotificationPrefs } from '../utils/notifications';
+import { LiquidGlassDurationSlider } from './LiquidGlassDurationSlider';
 
 type SettingsSection = 'preferences' | 'project' | 'updates' | 'security' | 'cloud' | 'firebase';
 
@@ -96,6 +98,8 @@ interface SettingsViewProps {
   onOpenSecurityModal?: (title?: string) => void;
   onLockAdmin?: () => void;
   onPreviewReleasePopup?: () => void;
+  notifPrefs?: MobileNotificationPrefs;
+  onUpdateNotifPrefs?: (next: MobileNotificationPrefs) => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -111,6 +115,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onOpenSecurityModal,
   onLockAdmin,
   onPreviewReleasePopup,
+  notifPrefs,
+  onUpdateNotifPrefs,
 }) => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('preferences');
   const [form, setForm] = useState<AppSettings>(settings);
@@ -826,6 +832,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 />
               </label>
             </div>
+
+            {notifPrefs && onUpdateNotifPrefs && (
+              <div className="pt-2 border-t border-neutral-800/80">
+                <LiquidGlassDurationSlider
+                  value={notifPrefs.autoHideSeconds}
+                  onChange={(autoHideSeconds) =>
+                    onUpdateNotifPrefs({ ...notifPrefs, autoHideSeconds })
+                  }
+                />
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between pt-2">

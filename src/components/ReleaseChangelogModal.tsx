@@ -114,7 +114,7 @@ export const ReleaseChangelogModal: React.FC<ReleaseChangelogModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl border border-neutral-800 bg-[#0b0e14] text-neutral-100 shadow-2xl overflow-hidden"
+        className="liquid-glass-card relative w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl border border-neutral-800 bg-[#0b0e14] text-neutral-100 shadow-2xl overflow-hidden"
       >
         {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-neutral-800/90 px-5 sm:px-6 py-4 bg-[#0f131c]">

@@ -117,7 +117,7 @@ service cloud.firestore {
         data.keys().hasOnly([
           'ownerUid', 'recordId', 'username', 'dayKey', 'timestamp',
           'bestRating', 'bestMode', 'source', 'bullet', 'blitz', 'rapid',
-          'puzzles', 'note', 'createdAt', 'updatedAt'
+          'puzzles', 'puzzlesConfirmed', 'puzzlesUpdatedAt', 'note', 'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.ownerUid) &&
         data.ownerUid == request.auth.uid &&
@@ -134,6 +134,8 @@ service cloud.firestore {
         (!('blitz' in data) || isValidRatingField(data.blitz)) &&
         (!('rapid' in data) || isValidRatingField(data.rapid)) &&
         (!('puzzles' in data) || isValidRatingField(data.puzzles)) &&
+        (!('puzzlesConfirmed' in data) || data.puzzlesConfirmed is bool) &&
+        (!('puzzlesUpdatedAt' in data) || (data.puzzlesUpdatedAt is string && data.puzzlesUpdatedAt.size() <= 64)) &&
         (!('note' in data) || (data.note is string && data.note.size() <= 240)) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp &&
@@ -209,6 +211,29 @@ service cloud.firestore {
         data.updatedAt == request.time;
     }
 
+    function isValidBroadcastMessage(data, messageId) {
+      return data.keys().hasAll([
+          'messageId', 'ownerUid', 'title', 'content', 'priority',
+          'senderLabel', 'active', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'messageId', 'ownerUid', 'title', 'content', 'priority',
+          'senderLabel', 'active', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.messageId) &&
+        data.messageId == messageId &&
+        isValidId(data.ownerUid) &&
+        data.ownerUid == request.auth.uid &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+        data.content is string && data.content.size() >= 1 && data.content.size() <= 4000 &&
+        data.priority in ['info', 'important'] &&
+        data.senderLabel is string && data.senderLabel.size() >= 1 && data.senderLabel.size() <= 40 &&
+        data.active is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
     // 4. Collection Rules
     match /players/{playerId} {
       allow get: if isValidPlayerId(playerId) && isVerifiedUser() && (
@@ -268,7 +293,7 @@ service cloud.firestore {
           (isOwner(existing().ownerUid) || isAdmin()) &&
           incoming().diff(existing()).affectedKeys().hasOnly([
             'recordId', 'timestamp', 'bestRating', 'bestMode', 'source',
-            'bullet', 'blitz', 'rapid', 'puzzles', 'note', 'updatedAt'
+            'bullet', 'blitz', 'rapid', 'puzzles', 'puzzlesConfirmed', 'puzzlesUpdatedAt', 'note', 'updatedAt'
           ]);
         allow delete: if isValidPlayerId(playerId) &&
           isValidDayKey(dayKey) &&
@@ -318,6 +343,30 @@ service cloud.firestore {
           'updatedByUid', 'updatedAt'
         ]);
       allow delete: if configId == 'global' && isAdmin();
+    }
+
+    // Official Broadcast Messages ("Messages / Lettres")
+    match /broadcastMessages/{messageId} {
+      allow get: if isValidId(messageId) && isVerifiedUser() && (
+        isAdmin() || resource == null || resource.data.active == true
+      );
+      allow list: if isVerifiedUser() && (
+        isAdmin() || resource.data.active == true
+      );
+      allow create: if isValidId(messageId) &&
+        isAdmin() &&
+        isValidBroadcastMessage(incoming(), messageId) &&
+        incoming().createdAt == request.time;
+      allow update: if isValidId(messageId) &&
+        isAdmin() &&
+        isValidBroadcastMessage(incoming(), messageId) &&
+        incoming().ownerUid == existing().ownerUid &&
+        incoming().messageId == existing().messageId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'title', 'content', 'priority', 'senderLabel', 'active', 'updatedAt'
+        ]);
+      allow delete: if isValidId(messageId) && isAdmin();
     }
 
     // Read-only admins lookup collection (no client writes allowed)

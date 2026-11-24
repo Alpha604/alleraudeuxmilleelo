@@ -48,6 +48,33 @@ function safeRemove(key: string): void {
 }
 
 /**
+ * Enforce HTTPS on all non-localhost / non-LAN public deployments.
+ */
+export function enforceHttpsIfNeeded(): void {
+  try {
+    if (typeof window === 'undefined' || !window.location) return;
+    const { protocol, hostname, host, pathname, search, hash } = window.location;
+    if (protocol !== 'http:') return;
+
+    const cleanHost = (hostname || '').toLowerCase();
+    const isLocalOrLan =
+      !cleanHost ||
+      cleanHost === 'localhost' ||
+      cleanHost === '127.0.0.1' ||
+      cleanHost === '::1' ||
+      cleanHost === '0.0.0.0' ||
+      cleanHost.endsWith('.local') ||
+      /^192\.168\.\d+\.\d+$/.test(cleanHost) ||
+      /^10\.\d+\.\d+\.\d+$/.test(cleanHost) ||
+      /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(cleanHost);
+
+    if (!isLocalOrLan && host) {
+      window.location.replace(`https://${host}${pathname}${search}${hash}`);
+    }
+  } catch {}
+}
+
+/**
  * SHA-256 hashing using Web Crypto API with case-insensitive normalization
  */
 export async function hashPassword(password: string): Promise<string> {
@@ -789,19 +816,130 @@ export async function generateTotpCode(secret?: string, timestamp = Date.now()):
   return generateTotpCodeSync(secret, timestamp);
 }
 
-export async function verifyTotpCode(candidate: string, secret?: string): Promise<boolean> {
+const TOTP_RATELIMIT_KEY = 'roadto2000_totp_ratelimit_v1';
+const TOTP_RATELIMIT_RESET_MS = 15 * 60 * 1000;
+
+export interface TotpLockoutStatus {
+  locked: boolean;
+  remainingSeconds: number;
+  consecutiveFailures: number;
+  attemptsUntilLock: number;
+}
+
+export function getTotpLockoutStatus(): TotpLockoutStatus {
+  try {
+    const raw = safeGet(TOTP_RATELIMIT_KEY);
+    if (!raw) {
+      return { locked: false, remainingSeconds: 0, consecutiveFailures: 0, attemptsUntilLock: 3 };
+    }
+    const parsed = JSON.parse(raw);
+    const now = Date.now();
+    const lockedUntil = typeof parsed?.lockedUntil === 'number' ? parsed.lockedUntil : 0;
+    const lastAttemptAt = typeof parsed?.lastAttemptAt === 'number' ? parsed.lastAttemptAt : 0;
+    const consecutiveFailures =
+      typeof parsed?.consecutiveFailures === 'number' ? parsed.consecutiveFailures : 0;
+
+    if (lockedUntil > now) {
+      return {
+        locked: true,
+        remainingSeconds: Math.max(1, Math.ceil((lockedUntil - now) / 1000)),
+        consecutiveFailures,
+        attemptsUntilLock: 0,
+      };
+    }
+
+    if (now - lastAttemptAt > TOTP_RATELIMIT_RESET_MS) {
+      safeRemove(TOTP_RATELIMIT_KEY);
+      return { locked: false, remainingSeconds: 0, consecutiveFailures: 0, attemptsUntilLock: 3 };
+    }
+
+    return {
+      locked: false,
+      remainingSeconds: 0,
+      consecutiveFailures,
+      attemptsUntilLock: Math.max(0, 3 - consecutiveFailures),
+    };
+  } catch {
+    return { locked: false, remainingSeconds: 0, consecutiveFailures: 0, attemptsUntilLock: 3 };
+  }
+}
+
+export function clearTotpFailures(): void {
+  safeRemove(TOTP_RATELIMIT_KEY);
+}
+
+export function recordTotpFailure(serverRemainingSeconds?: number): TotpLockoutStatus {
+  const now = Date.now();
+  const prev = getTotpLockoutStatus();
+  const nextFailures = prev.consecutiveFailures + 1;
+
+  let lockoutSeconds = 0;
+  if (nextFailures === 4) lockoutSeconds = 30;
+  else if (nextFailures === 5) lockoutSeconds = 60;
+  else if (nextFailures === 6) lockoutSeconds = 120;
+  else if (nextFailures >= 7) lockoutSeconds = 300;
+
+  if (typeof serverRemainingSeconds === 'number' && serverRemainingSeconds > lockoutSeconds) {
+    lockoutSeconds = Math.ceil(serverRemainingSeconds);
+  }
+
+  const lockedUntil = lockoutSeconds > 0 ? now + lockoutSeconds * 1000 : 0;
+  safeSet(
+    TOTP_RATELIMIT_KEY,
+    JSON.stringify({
+      consecutiveFailures: nextFailures,
+      lockedUntil,
+      lastAttemptAt: now,
+    })
+  );
+
+  return {
+    locked: lockoutSeconds > 0,
+    remainingSeconds: lockoutSeconds,
+    consecutiveFailures: nextFailures,
+    attemptsUntilLock: Math.max(0, 3 - nextFailures),
+  };
+}
+
+export async function verifyTotpCodeDetailed(
+  candidate: string,
+  secret?: string
+): Promise<{
+  valid: boolean;
+  locked?: boolean;
+  remainingSeconds?: number;
+  attemptsUntilLock?: number;
+  error?: string;
+}> {
+  const lockStatus = getTotpLockoutStatus();
+  if (lockStatus.locked) {
+    return {
+      valid: false,
+      locked: true,
+      remainingSeconds: lockStatus.remainingSeconds,
+      attemptsUntilLock: 0,
+      error: `Trop de tentatives A2F incorrectes. Patientez ${lockStatus.remainingSeconds}s avant de réessayer.`,
+    };
+  }
+
   const clean = candidate.trim().replace(/\D/g, '');
-  if (clean.length !== 6) return false;
+  if (clean.length !== 6) {
+    return { valid: false, error: 'Veuillez saisir les 6 chiffres de votre application A2F.' };
+  }
   const activeSecret = secret || getTotpSecret();
   const now = Date.now();
 
   // 1. Verify locally across +/- 90s steps with exact pure-TS RFC 6238 HMAC-SHA1
   for (const offset of [0, -30000, 30000, -60000, 60000, -90000, 90000]) {
     const expected = generateTotpCodeSync(activeSecret, now + offset);
-    if (clean === expected) return true;
+    if (clean === expected) {
+      clearTotpFailures();
+      return { valid: true };
+    }
   }
 
   // 2. Fallback: verify via backend server UTC clock & synced secret (handles browser clock drift or cross-device secret sync)
+  let serverRemainingSeconds: number | undefined;
   try {
     const res = await safeApiFetch('/api/auth/totp/verify', {
       method: 'POST',
@@ -809,18 +947,49 @@ export async function verifyTotpCode(candidate: string, secret?: string): Promis
       body: JSON.stringify({ code: clean, secret: activeSecret }),
       timeoutMs: 3000,
     });
-    if (res && res.ok) {
-      const data = await res.json();
-      if (data?.valid) {
+    if (res) {
+      const data = await res.json().catch(() => null);
+      if (res.status === 429 || data?.locked) {
+        serverRemainingSeconds =
+          typeof data?.remainingSeconds === 'number' ? data.remainingSeconds : 30;
+        const penalty = recordTotpFailure(serverRemainingSeconds);
+        return {
+          valid: false,
+          locked: true,
+          remainingSeconds: penalty.remainingSeconds,
+          attemptsUntilLock: 0,
+          error:
+            data?.error ||
+            `Trop de tentatives A2F incorrectes. Patientez ${penalty.remainingSeconds}s avant de réessayer.`,
+        };
+      }
+      if (res.ok && data?.valid) {
         if (typeof data.activeSecret === 'string' && data.activeSecret.length >= 16) {
           setTotpSecret(data.activeSecret);
         }
-        return true;
+        clearTotpFailures();
+        return { valid: true };
       }
     }
   } catch {}
 
-  return false;
+  const penalty = recordTotpFailure(serverRemainingSeconds);
+  return {
+    valid: false,
+    locked: penalty.locked,
+    remainingSeconds: penalty.remainingSeconds,
+    attemptsUntilLock: penalty.attemptsUntilLock,
+    error: penalty.locked
+      ? `Trop de tentatives A2F incorrectes. Blocage de sécurité de ${penalty.remainingSeconds}s.`
+      : penalty.attemptsUntilLock > 0
+      ? `Code A2F invalide (${penalty.attemptsUntilLock} essai${penalty.attemptsUntilLock > 1 ? 's' : ''} restant${penalty.attemptsUntilLock > 1 ? 's' : ''} avant blocage).`
+      : 'Code A2F invalide ou expiré. Prochaine erreur déclenchera un délai de sécurité.',
+  };
+}
+
+export async function verifyTotpCode(candidate: string, secret?: string): Promise<boolean> {
+  const res = await verifyTotpCodeDetailed(candidate, secret);
+  return res.valid;
 }
 
 export function getTotpUri(account = 'Romeo', issuer = 'RoadTo2000Elo', secret?: string): string {
@@ -1062,7 +1231,13 @@ export async function createManagedAccount(params: CreateAccountParams): Promise
 export async function authenticateWithTotpOnly(
   username: string,
   totpCode: string
-): Promise<{ success: boolean; error?: string; isAdmin?: boolean }> {
+): Promise<{
+  success: boolean;
+  error?: string;
+  isAdmin?: boolean;
+  locked?: boolean;
+  remainingSeconds?: number;
+}> {
   const cleanUser = username.trim().toLowerCase();
   const cleanCode = totpCode.trim().replace(/\D/g, '');
 
@@ -1085,6 +1260,16 @@ export async function authenticateWithTotpOnly(
     return { success: false, error: "Ce compte est actuellement suspendu par l'administrateur." };
   }
 
+  const lockCheck = getTotpLockoutStatus();
+  if (lockCheck.locked) {
+    return {
+      success: false,
+      locked: true,
+      remainingSeconds: lockCheck.remainingSeconds,
+      error: `Trop de tentatives A2F incorrectes. Patientez ${lockCheck.remainingSeconds}s avant de réessayer.`,
+    };
+  }
+
   if (cleanCode.length !== 6) {
     return {
       success: false,
@@ -1092,11 +1277,11 @@ export async function authenticateWithTotpOnly(
     };
   }
 
-  // Verify against the SINGLE active principal 2FA secret
+  // Verify against the SINGLE active principal 2FA secret with brute-force protection
   const principalSecret = getTotpSecret();
-  const isPrincipalValid = await verifyTotpCode(cleanCode, principalSecret);
+  const verification = await verifyTotpCodeDetailed(cleanCode, principalSecret);
 
-  if (isPrincipalValid) {
+  if (verification.valid) {
     const isAdminAccount = cleanUser === 'alpharomeo1500' || cleanUser === 'alpharomeo';
     if (isAdminAccount) {
       setAdminSession();
@@ -1106,7 +1291,11 @@ export async function authenticateWithTotpOnly(
 
   return {
     success: false,
-    error: 'Code A2F invalide ou expiré. Vérifiez les 6 chiffres affichés sur votre application Authenticator.',
+    locked: verification.locked,
+    remainingSeconds: verification.remainingSeconds,
+    error:
+      verification.error ||
+      'Code A2F invalide ou expiré. Vérifiez les 6 chiffres affichés sur votre application Authenticator.',
   };
 }
 

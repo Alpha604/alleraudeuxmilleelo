@@ -417,6 +417,11 @@ export function mergeSyncHistories(
           ...r,
           username: cleanUser,
           puzzles: r.puzzles ?? existing.puzzles ?? null,
+          puzzlesConfirmed:
+            typeof r.puzzlesConfirmed === 'boolean'
+              ? r.puzzlesConfirmed
+              : existing.puzzlesConfirmed,
+          puzzlesUpdatedAt: r.puzzlesUpdatedAt ?? existing.puzzlesUpdatedAt ?? null,
           note: r.note ?? existing.note,
         });
       } else {
@@ -425,6 +430,11 @@ export function mergeSyncHistories(
           ...existing,
           username: cleanUser,
           puzzles: existing.puzzles ?? r.puzzles ?? null,
+          puzzlesConfirmed:
+            typeof existing.puzzlesConfirmed === 'boolean'
+              ? existing.puzzlesConfirmed
+              : r.puzzlesConfirmed,
+          puzzlesUpdatedAt: existing.puzzlesUpdatedAt ?? r.puzzlesUpdatedAt ?? null,
           note: existing.note ?? r.note,
         });
       }
@@ -629,6 +639,14 @@ export function addSyncRecord(
       ? data.puzzles
       : existingSameDay?.puzzles ?? null;
 
+  const resolvedPuzzlesConfirmed =
+    typeof data.puzzlesConfirmed === 'boolean'
+      ? data.puzzlesConfirmed
+      : existingSameDay?.puzzlesConfirmed;
+
+  const resolvedPuzzlesUpdatedAt =
+    data.puzzlesUpdatedAt ?? existingSameDay?.puzzlesUpdatedAt ?? null;
+
   const nowMs = syncDate.getTime();
   const TEN_MINUTES_MS = 10 * 60 * 1000;
 
@@ -653,6 +671,10 @@ export function addSyncRecord(
   const newRecord: SyncRecord = {
     ...data,
     puzzles: resolvedPuzzles,
+    ...(typeof resolvedPuzzlesConfirmed === 'boolean'
+      ? { puzzlesConfirmed: resolvedPuzzlesConfirmed }
+      : {}),
+    ...(resolvedPuzzlesUpdatedAt ? { puzzlesUpdatedAt: resolvedPuzzlesUpdatedAt } : {}),
     username: targetUser,
     id: `sync_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
   };

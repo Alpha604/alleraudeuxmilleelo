@@ -236,6 +236,15 @@
           "type": "number",
           "description": "Optional Puzzles rating."
         },
+        "puzzlesConfirmed": {
+          "type": "boolean",
+          "description": "Whether the puzzles rating has been explicitly confirmed."
+        },
+        "puzzlesUpdatedAt": {
+          "type": "string",
+          "description": "ISO timestamp when puzzles rating was entered or confirmed.",
+          "maxLength": 64
+        },
         "note": {
           "type": "string",
           "description": "Optional daily annotation.",
@@ -385,6 +394,75 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "BroadcastMessage": {
+      "title": "BroadcastMessage",
+      "description": "Official administrative letter broadcast to users inside Notification Center Messages filter.",
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "description": "Unique message identifier matching document ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of publishing admin.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Short letter subject title.",
+          "minLength": 1,
+          "maxLength": 140
+        },
+        "content": {
+          "type": "string",
+          "description": "Full formatted message body.",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "priority": {
+          "type": "string",
+          "description": "Visual urgency level.",
+          "enum": ["info", "important"]
+        },
+        "senderLabel": {
+          "type": "string",
+          "description": "Non-PII sender label.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether the message is published to users."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "messageId",
+        "ownerUid",
+        "title",
+        "content",
+        "priority",
+        "senderLabel",
+        "active",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -403,6 +481,10 @@
     "/siteActivity/{configId}": {
       "schema": { "$ref": "#/entities/SiteActivityState" },
       "description": "Real-time global site activity / maintenance block state for instant cross-device updates."
+    },
+    "/broadcastMessages/{messageId}": {
+      "schema": { "$ref": "#/entities/BroadcastMessage" },
+      "description": "Official administrative messages displayed in the Notifications Messages filter."
     }
   }
 }

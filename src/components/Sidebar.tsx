@@ -261,8 +261,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         )}
 
-        {/* 2. JSONBin & Network Status (Hidden in spectator mode) */}
-        {!isSpectator && (
+        {/* 2. JSONBin & Network Status (Strictly Admin 2FA Only) */}
+        {isAdmin && !isSpectator && (
           <button
             type="button"
             onClick={onOpenNetworkModal}
@@ -321,8 +321,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         )}
 
-        {/* 2b. Firebase Cloud & Diagnostics Status (Hidden in spectator mode) */}
-        {!isSpectator && onOpenFirebaseModal && (
+        {/* 2b. Firebase Cloud & Diagnostics Status (Strictly Admin 2FA Only) */}
+        {isAdmin && !isSpectator && onOpenFirebaseModal && (
           <button
             type="button"
             onClick={onOpenFirebaseModal}

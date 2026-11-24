@@ -13,6 +13,7 @@ import { HistoryChart } from './components/HistoryChart';
 import { IframeEmbedGuide } from './components/IframeEmbedGuide';
 import { KpiSummaryRow } from './components/KpiSummaryRow';
 import { MilestoneCalendar } from './components/MilestoneCalendar';
+import { MobileCloudMenuModal } from './components/MobileCloudMenuModal';
 import { MobileLiquidGlassDock } from './components/MobileLiquidGlassDock';
 import { MobileMoreSheet } from './components/MobileMoreSheet';
 import { MobileNotificationCenter } from './components/MobileNotificationCenter';
@@ -30,6 +31,7 @@ import { TestRunner } from './components/TestRunner';
 import {
   AppSettings,
   AppTheme,
+  BroadcastMessageRecord,
   ChessComProfileResponse,
   ChessComStatsResponse,
   GameMode,
@@ -37,7 +39,12 @@ import {
 } from './types/chess';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, isAuthorizedOwnerUser, signOutFirebase } from './firebase';
-import { FirebaseMirrorStatus, getFirebaseMirrorStatus, mirrorDataToFirestore } from './utils/firebaseMirror';
+import {
+  FirebaseMirrorStatus,
+  getFirebaseMirrorStatus,
+  mirrorDataToFirestore,
+  subscribeBroadcastMessagesFirestore,
+} from './utils/firebaseMirror';
 import {
   deriveFirebaseIndicatorStatus,
   getSyncDiagnosticsSnapshot,
@@ -74,6 +81,7 @@ import {
   fetchSiteActivity,
   formatRemainingDuration,
   getLocalSiteActivityConfig,
+  saveSiteActivity,
   setLocalSiteActivityConfig,
   SITE_PAUSE_MODE_META,
   SiteActivityConfig,
@@ -107,9 +115,14 @@ import {
 } from './utils/storage';
 import {
   AppNotificationItem,
+  getBroadcastHiddenIds,
+  getBroadcastReadIds,
   getNotificationPrefs,
   getStoredNotifications,
+  hideBroadcastMessageLocal,
   inferNotificationMeta,
+  markAllStandardNotificationsRead,
+  markBroadcastMessageRead,
   MobileNotificationPrefs,
   saveNotificationPrefs,
   saveStoredNotifications,
@@ -169,6 +182,11 @@ export default function App() {
   const [notificationHistory, setNotificationHistory] = useState<AppNotificationItem[]>(() =>
     getStoredNotifications()
   );
+  const [broadcastMessages, setBroadcastMessages] = useState<BroadcastMessageRecord[]>([]);
+  const [broadcastReadIds, setBroadcastReadIds] = useState<string[]>(() => getBroadcastReadIds());
+  const [broadcastHiddenIds, setBroadcastHiddenIds] = useState<string[]>(() =>
+    getBroadcastHiddenIds()
+  );
   const [notifPrefs, setNotifPrefs] = useState<MobileNotificationPrefs>(() => getNotificationPrefs());
   const [notificationCenterOpen, setNotificationCenterOpen] = useState<boolean>(false);
   const [moreSheetOpen, setMoreSheetOpen] = useState<boolean>(false);
@@ -180,6 +198,7 @@ export default function App() {
   // Network, JSONBin & Firebase online status states
   const [networkModalOpen, setNetworkModalOpen] = useState(false);
   const [firebaseModalOpen, setFirebaseModalOpen] = useState(false);
+  const [mobileCloudMenuOpen, setMobileCloudMenuOpen] = useState(false);
   const [syncDiagnostics, setSyncDiagnostics] = useState<SyncDiagnosticsSnapshot>(() =>
     getSyncDiagnosticsSnapshot()
   );
@@ -206,6 +225,7 @@ export default function App() {
   const [serverClockOffsetMs, setServerClockOffsetMs] = useState<number>(0);
   const [pauseAdminOverride, setPauseAdminOverride] = useState<boolean>(false);
   const [activityNowTick, setActivityNowTick] = useState<number>(() => Date.now());
+  const autoClearedRevRef = useRef<number>(-1);
 
   // Desktop Right Sidebar collapse/expand state with persistence
   const [isSidebarExpanded, setIsSidebarExpanded] = useState<boolean>(() => {
@@ -510,10 +530,43 @@ export default function App() {
   }, [siteActivityConfig, isAdmin, isIframe, deviceType, clientIp, activityNowTick, serverClockOffsetMs, pauseAdminOverride]);
 
   useEffect(() => {
-    if (siteActivityEvaluation.autoResumedExpired) {
+    if (!siteActivityEvaluation.autoResumedExpired) return;
+    // Immediately clear local & UI maintenance banners when auto-resume time is reached
+    const clearedConfig: SiteActivityConfig = {
+      ...siteActivityConfig,
+      enabled: false,
+      updatedAt: Date.now(),
+    };
+    setLocalSiteActivityConfig(clearedConfig);
+    setSiteActivityConfig(clearedConfig);
+
+    if (isAdmin && autoClearedRevRef.current !== siteActivityConfig.revision) {
+      autoClearedRevRef.current = siteActivityConfig.revision;
+      saveSiteActivity({
+        ...siteActivityConfig,
+        enabled: false,
+        revision: (siteActivityConfig.revision || 0) + 1,
+        updatedAt: Date.now(),
+      })
+        .catch(() => {})
+        .finally(() => refreshSiteActivity(true));
+    } else {
       refreshSiteActivity(true);
     }
-  }, [siteActivityEvaluation.autoResumedExpired, refreshSiteActivity]);
+  }, [siteActivityEvaluation.autoResumedExpired, siteActivityConfig, isAdmin, refreshSiteActivity]);
+
+  // Subscribe to Official Admin Broadcast Letters (/broadcastMessages)
+  useEffect(() => {
+    const canListen =
+      isExplicitReadOnlyEmbed() || (googleAuthState.ready && googleAuthState.authorized);
+    if (!canListen) return;
+
+    const unsub = subscribeBroadcastMessagesFirestore({
+      isAdmin,
+      onUpdate: setBroadcastMessages,
+    });
+    return () => unsub();
+  }, [googleAuthState.ready, googleAuthState.authorized, isAdmin]);
 
   // Periodic check for admin session validity & BroadcastChannel synchronization
   useEffect(() => {
@@ -729,33 +782,79 @@ export default function App() {
   }, []);
 
   const handleMarkAllNotificationsRead = useCallback(() => {
+    // Only mark standard notifications read; official letters MUST be opened individually
     setNotificationHistory((prev) => {
-      const next = prev.map((item) => ({ ...item, read: true }));
+      const next = markAllStandardNotificationsRead(prev);
       saveStoredNotifications(next);
       return next;
     });
   }, []);
 
-  const handleMarkOneNotificationRead = useCallback((id: string) => {
-    setNotificationHistory((prev) => {
-      const next = prev.map((item) => (item.id === id ? { ...item, read: true } : item));
-      saveStoredNotifications(next);
-      return next;
-    });
-  }, []);
+  const handleMarkOneNotificationRead = useCallback(
+    (id: string) => {
+      if (broadcastMessages.some((m) => m.id === id)) {
+        setBroadcastReadIds(markBroadcastMessageRead(id));
+        return;
+      }
+      setNotificationHistory((prev) => {
+        const next = prev.map((item) => (item.id === id ? { ...item, read: true } : item));
+        saveStoredNotifications(next);
+        return next;
+      });
+    },
+    [broadcastMessages]
+  );
 
-  const handleDeleteOneNotification = useCallback((id: string) => {
-    setNotificationHistory((prev) => {
-      const next = prev.filter((item) => item.id !== id);
-      saveStoredNotifications(next);
-      return next;
-    });
-  }, []);
+  const handleDeleteOneNotification = useCallback(
+    (id: string) => {
+      if (broadcastMessages.some((m) => m.id === id)) {
+        setBroadcastHiddenIds(hideBroadcastMessageLocal(id));
+        return;
+      }
+      setNotificationHistory((prev) => {
+        const next = prev.filter((item) => item.id !== id);
+        saveStoredNotifications(next);
+        return next;
+      });
+    },
+    [broadcastMessages]
+  );
 
   const handleClearAllNotifications = useCallback(() => {
     setNotificationHistory([]);
     saveStoredNotifications([]);
   }, []);
+
+  // Merge standard notifications & Official Admin Broadcast Letters
+  const combinedNotifications = useMemo<AppNotificationItem[]>(() => {
+    const hiddenSet = new Set(broadcastHiddenIds);
+    const readSet = new Set(broadcastReadIds);
+    const letterItems: AppNotificationItem[] = broadcastMessages
+      .filter((m) => !hiddenSet.has(m.id))
+      .map((m) => {
+        const ts = typeof m.createdAt === 'number' ? m.createdAt : Date.parse(String(m.createdAt));
+        return {
+          id: m.id,
+          title: m.title,
+          message: m.content.length > 140 ? `${m.content.slice(0, 140)}…` : m.content,
+          fullContent: m.content,
+          senderLabel: m.senderLabel || 'Administration Road to 2000',
+          priority: m.priority,
+          isOfficialLetter: true,
+          type: m.priority === 'important' ? 'warning' : 'info',
+          category: 'message',
+          createdAt: Number.isFinite(ts) ? ts : Date.now(),
+          read: readSet.has(m.id),
+        };
+      });
+
+    return [...letterItems, ...notificationHistory].sort((a, b) => b.createdAt - a.createdAt);
+  }, [broadcastMessages, broadcastHiddenIds, broadcastReadIds, notificationHistory]);
+
+  const totalUnreadNotifications = useMemo(
+    () => combinedNotifications.filter((n) => !n.read).length,
+    [combinedNotifications]
+  );
 
   // Unified Cloud + JSONBin save helper that updates timestamps and always reports real save status
   const persistToCloudAndNotify = useCallback(
@@ -903,6 +1002,9 @@ export default function App() {
     revokeAdminSession();
     setIsAdmin(false);
     setPauseAdminOverride(false);
+    setNetworkModalOpen(false);
+    setFirebaseModalOpen(false);
+    setMobileCloudMenuOpen(false);
     if (currentTab === 'settings' || currentTab === 'tests' || currentTab === 'admin') {
       setCurrentTab('dashboard');
     }
@@ -1482,9 +1584,13 @@ export default function App() {
         isSpectator={isSpectator}
         onOpenSecurityModal={handleOpenSecurityModal}
         onLockAdmin={handleLockAdmin}
-        onOpenNetworkModal={() => setNetworkModalOpen(true)}
+        onOpenNetworkModal={() => {
+          if (isAdmin) setNetworkModalOpen(true);
+        }}
         jsonBinStatus={jsonBinStatus}
-        onOpenFirebaseModal={() => setFirebaseModalOpen(true)}
+        onOpenFirebaseModal={() => {
+          if (isAdmin) setFirebaseModalOpen(true);
+        }}
         firebaseStatus={firebaseIndicatorStatus}
         lastFirebaseSyncTime={lastFirebaseSyncTime}
         firebaseIssuesCount={firebaseIssuesCount}
@@ -1516,9 +1622,14 @@ export default function App() {
         isSpectator={isSpectator}
         onOpenSecurityModal={handleOpenSecurityModal}
         onLockAdmin={handleLockAdmin}
-        onOpenNetworkModal={() => setNetworkModalOpen(true)}
+        onOpenNetworkModal={() => {
+          if (isAdmin) setNetworkModalOpen(true);
+        }}
         jsonBinStatus={jsonBinStatus}
-        onOpenFirebaseModal={() => setFirebaseModalOpen(true)}
+        onOpenFirebaseModal={() => {
+          if (isAdmin) setFirebaseModalOpen(true);
+        }}
+        onOpenMobileCloudMenu={isAdmin ? () => setMobileCloudMenuOpen(true) : undefined}
         firebaseStatus={firebaseIndicatorStatus}
         lastFirebaseSyncTime={lastFirebaseSyncTime}
         firebaseIssuesCount={firebaseIssuesCount}
@@ -1527,7 +1638,7 @@ export default function App() {
         sessionExpiresAt={effectiveSessionExpiresAt}
         hasAdminAccess={hasAdminAccess}
         onQuickSwitchAccount={handleQuickSwitchAccount}
-        unreadNotificationsCount={notificationHistory.filter((n) => !n.read).length}
+        unreadNotificationsCount={totalUnreadNotifications}
         onOpenNotificationCenter={() => setNotificationCenterOpen(true)}
         onOpenProfileSheet={() => setProfileSheetOpen(true)}
       />
@@ -1669,9 +1780,9 @@ export default function App() {
             lastJsonBinSyncTime={lastJsonBinSyncTime}
             jsonBinStatus={jsonBinStatus}
             confirmedDayHashes={confirmedDayHashes}
-            onVerifyJsonBinSync={handleVerifyJsonBinSync}
+            onVerifyJsonBinSync={isAdmin ? handleVerifyJsonBinSync : undefined}
             isVerifyingJsonBin={isVerifyingJsonBin}
-            onOpenNetworkModal={() => setNetworkModalOpen(true)}
+            onOpenNetworkModal={isAdmin ? () => setNetworkModalOpen(true) : undefined}
           />
         )}
 
@@ -1707,6 +1818,8 @@ export default function App() {
             isIframe={isIframe}
             onOpenSecurityModal={handleOpenSecurityModal}
             onLockAdmin={handleLockAdmin}
+            notifPrefs={notifPrefs}
+            onUpdateNotifPrefs={handleUpdateNotifPrefs}
             onPreviewReleasePopup={() => {
               setReleaseIsFirstVisit(false);
               setReleaseModalTab('latest');
@@ -1767,7 +1880,7 @@ export default function App() {
       <MobileNotificationCenter
         isOpen={notificationCenterOpen}
         onClose={() => setNotificationCenterOpen(false)}
-        notifications={notificationHistory}
+        notifications={combinedNotifications}
         prefs={notifPrefs}
         onUpdatePrefs={handleUpdateNotifPrefs}
         onMarkAllRead={handleMarkAllNotificationsRead}
@@ -1804,8 +1917,8 @@ export default function App() {
         />
       )}
 
-      {/* Network & JSONBin Status and Configuration Modal */}
-      {networkModalOpen && (
+      {/* Network & JSONBin Status and Configuration Modal (Strictly Admin A2F Only) */}
+      {isAdmin && networkModalOpen && (
         <NetworkAndJsonBinModal
           isOpen={networkModalOpen}
           onClose={() => setNetworkModalOpen(false)}
@@ -1828,8 +1941,8 @@ export default function App() {
         />
       )}
 
-      {/* Firebase Live Sync & Reported Issues Diagnostics Modal */}
-      {firebaseModalOpen && (
+      {/* Firebase Live Sync & Reported Issues Diagnostics Modal (Strictly Admin A2F Only) */}
+      {isAdmin && firebaseModalOpen && (
         <FirebaseSyncModal
           isOpen={firebaseModalOpen}
           onClose={() => setFirebaseModalOpen(false)}
@@ -1955,6 +2068,60 @@ export default function App() {
         onLogout={handleLogout}
       />
 
+      {/* Unified Mobile Cloud Menu Modal (Firebase + JSONBin — Strictly Admin A2F Only) */}
+      {isAdmin && mobileCloudMenuOpen && (
+        <MobileCloudMenuModal
+          isOpen={mobileCloudMenuOpen}
+          onClose={() => setMobileCloudMenuOpen(false)}
+          username={settings.username}
+          jsonBinStatus={jsonBinStatus}
+          jsonBinLastSync={lastJsonBinSyncTime}
+          onReconcileNow={async () => {
+            const activeUser = settings.username.trim().toLowerCase();
+            const res = await reconcileCloudSync(
+              activeUser,
+              getStoredSyncHistory(activeUser),
+              settings,
+              { isSpectator: Boolean(userSession?.isSpectator), forcePull: true }
+            );
+            if (res.didUpdate) {
+              setSyncHistory(res.history);
+              if (res.history.length > 0) setLastSyncTime(res.history[0].timestamp);
+              if (res.settings) setSettings({ ...res.settings, username: 'alpharomeo1500' });
+            }
+            if (res.confirmedDayHashes) setConfirmedDayHashes(res.confirmedDayHashes);
+            if (res.lastJsonBinSyncTime) setLastJsonBinSyncTime(res.lastJsonBinSyncTime);
+            showToast(
+              res.sourceUsed === 'firebase'
+                ? `${res.history.length} relevé(s) rechargés depuis Firebase Firestore.`
+                : res.sourceUsed === 'jsonbin'
+                ? `${res.history.length} relevé(s) chargés via le repli JSONBin.`
+                : 'Cache local conservé (aucune mise à jour distante).',
+              res.sourceUsed === 'firebase' ? 'success' : 'info',
+              'Rechargement Cloud'
+            );
+          }}
+          onPushToFirebase={async () => {
+            const res = await mirrorDataToFirestore({
+              username: settings.username,
+              history: syncHistory,
+              settings,
+              jsonBinSyncedAt: lastSyncTime,
+            });
+            if (!res.ok) {
+              showToast(
+                res.error || 'Connexion Google Firebase requise pour envoyer vers Firestore.',
+                'warning',
+                'Firebase'
+              );
+            }
+            return res.ok;
+          }}
+          onOpenFirebaseModal={() => setFirebaseModalOpen(true)}
+          onOpenNetworkModal={() => setNetworkModalOpen(true)}
+        />
+      )}
+
       {/* Mobile "Plus" Drawer Sheet (Paramètres, Panel Admin, Profil, Tests, Iframe) */}
       <MobileMoreSheet
         isOpen={moreSheetOpen}
@@ -1967,7 +2134,7 @@ export default function App() {
         isSpectator={isSpectator}
         hasAdminAccess={hasAdminAccess}
         isSyncing={isSyncing}
-        unreadNotificationsCount={notificationHistory.filter((n) => !n.read).length}
+        unreadNotificationsCount={totalUnreadNotifications}
         jsonBinStatus={jsonBinStatus}
         firebaseStatus={firebaseIndicatorStatus}
         firebaseIssuesCount={firebaseIssuesCount}
@@ -1975,8 +2142,12 @@ export default function App() {
         onLockAdmin={handleLockAdmin}
         onSync={() => performSync(true)}
         onOpenNotificationCenter={() => setNotificationCenterOpen(true)}
-        onOpenNetworkModal={() => setNetworkModalOpen(true)}
-        onOpenFirebaseModal={() => setFirebaseModalOpen(true)}
+        onOpenNetworkModal={() => {
+          if (isAdmin) setNetworkModalOpen(true);
+        }}
+        onOpenFirebaseModal={() => {
+          if (isAdmin) setFirebaseModalOpen(true);
+        }}
       />
 
       {/* Mobile Liquid Glass Sliding Dock (< sm) */}

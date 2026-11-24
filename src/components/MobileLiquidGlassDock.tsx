@@ -204,7 +204,7 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
       >
         {items[hoveredSlot] && (
           <div
-            className="px-3.5 py-1.5 rounded-full border border-white/25 bg-[#0c111a]/80 backdrop-blur-2xl backdrop-saturate-150 text-xs font-bold text-[#facc15] shadow-[0_8px_24px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.28)]"
+            className="liquid-glass-bubble px-3.5 py-1.5 rounded-full border border-white/25 bg-[#0c111a]/80 backdrop-blur-2xl backdrop-saturate-150 text-xs font-bold text-[#facc15] shadow-[0_8px_24px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.28)]"
             style={{
               transform: `translateX(${((hoveredSlot - (items.length - 1) / 2) / items.length) * 200}px)`,
               transition: 'transform 140ms cubic-bezier(0.22, 1, 0.36, 1)',
@@ -216,7 +216,7 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
       </div>
 
       {/* Outer Liquid Glass Dock Container */}
-      <div className="relative rounded-[28px] p-1 border border-white/[0.16] bg-[#0a0e16]/65 backdrop-blur-2xl backdrop-saturate-[180%] shadow-[0_14px_40px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.24),inset_0_-1px_0_rgba(255,255,255,0.06)] overflow-hidden">
+      <div className="liquid-glass-dock relative rounded-[28px] p-1 border border-white/[0.16] bg-[#0a0e16]/65 backdrop-blur-2xl backdrop-saturate-[180%] shadow-[0_14px_40px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.24),inset_0_-1px_0_rgba(255,255,255,0.06)] overflow-hidden">
         {/* Top Specular Glass Rim Sheen */}
         <div
           className="pointer-events-none absolute inset-x-4 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/45 to-transparent"
@@ -246,7 +246,7 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
                 : 'transform 340ms cubic-bezier(0.22, 1.28, 0.36, 1)',
             }}
           >
-            <div className="h-full w-full rounded-[22px] border border-white/25 bg-gradient-to-b from-white/[0.22] via-[#facc15]/[0.16] to-white/[0.05] backdrop-blur-md shadow-[inset_0_1px_1px_rgba(255,255,255,0.5),inset_0_-2px_6px_rgba(250,204,21,0.16),0_4px_16px_rgba(250,204,21,0.18)] relative overflow-hidden">
+            <div className="liquid-glass-droplet h-full w-full rounded-[22px] border border-white/25 bg-gradient-to-b from-white/[0.22] via-[#facc15]/[0.16] to-white/[0.05] backdrop-blur-md shadow-[inset_0_1px_1px_rgba(255,255,255,0.5),inset_0_-2px_6px_rgba(250,204,21,0.16),0_4px_16px_rgba(250,204,21,0.18)] relative overflow-hidden">
               <div className="absolute inset-x-2 top-0.5 h-2 rounded-full bg-gradient-to-b from-white/35 to-transparent" />
             </div>
           </div>
@@ -289,7 +289,7 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
                   )}
                 </div>
                 <span
-                  className={`mt-0.5 text-[10px] leading-none tracking-tight whitespace-nowrap truncate max-w-full ${
+                  className={`liquid-glass-dock-label mt-0.5 text-[10px] leading-none tracking-tight whitespace-nowrap truncate max-w-full ${
                     isHighlighted ? 'font-bold text-white' : 'font-medium text-neutral-400'
                   }`}
                 >

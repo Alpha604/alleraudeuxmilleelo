@@ -26,7 +26,7 @@ export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
       {/* 1. Peak Elo (Jaune #facc15) */}
-      <div className="group rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-5 shadow-lg transition-all hover:border-[#facc15]/50">
+      <div className="liquid-glass-card group rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-5 shadow-lg transition-all hover:border-[#facc15]/50">
         <div className="flex items-center justify-between text-neutral-400 text-[11px] sm:text-xs">
           <span className="font-bold uppercase tracking-wider">Record</span>
           <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-xl bg-[#facc15]/10 text-[#facc15] border border-[#facc15]/30">
@@ -45,7 +45,7 @@ export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({
       </div>
 
       {/* 2. Cumulative project gain (Vert #10b981) */}
-      <div className="group rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-5 shadow-lg transition-all hover:border-[#10b981]/50">
+      <div className="liquid-glass-card group rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-5 shadow-lg transition-all hover:border-[#10b981]/50">
         <div className="flex items-center justify-between text-neutral-400 text-[11px] sm:text-xs">
           <span className="font-bold uppercase tracking-wider">Gain Cumulé</span>
           <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-xl bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/30">
@@ -66,7 +66,7 @@ export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({
       </div>
 
       {/* 3. Recent delta (Vert si > 0, Rouge si < 0) */}
-      <div className="group rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-5 shadow-lg transition-all hover:border-neutral-700">
+      <div className="liquid-glass-card group rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-5 shadow-lg transition-all hover:border-neutral-700">
         <div className="flex items-center justify-between text-neutral-400 text-[11px] sm:text-xs">
           <span className="font-bold uppercase tracking-wider">Variation</span>
           <div
@@ -107,7 +107,7 @@ export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({
       </div>
 
       {/* 4. Next Intermediate Milestone (Jaune / Blanc) */}
-      <div className="group rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-5 shadow-lg transition-all hover:border-[#facc15]/50">
+      <div className="liquid-glass-card group rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-5 shadow-lg transition-all hover:border-[#facc15]/50">
         <div className="flex items-center justify-between text-neutral-400 text-[11px] sm:text-xs">
           <span className="font-bold uppercase tracking-wider">Prochain Jalon</span>
           <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-xl bg-[#facc15]/10 text-[#facc15] border border-[#facc15]/30">

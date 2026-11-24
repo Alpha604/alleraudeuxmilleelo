@@ -21,6 +21,7 @@ import {
   Globe,
   KeyRound,
   Lock,
+  Mail,
   PauseCircle,
   PlayCircle,
   Plus,
@@ -28,6 +29,7 @@ import {
   QrCode,
   RefreshCw,
   Search,
+  Send,
   ShieldAlert,
   ShieldCheck,
   Sliders,
@@ -70,8 +72,13 @@ import {
   scheduleAccountsRegistryPush,
 } from '../utils/accountsRegistryCloud';
 import { getStoredSyncHistory, saveStoredSyncHistory } from '../utils/storage';
-import { AppSettings, GameMode, TrajectoryModel } from '../types/chess';
+import { AppSettings, BroadcastMessageRecord, GameMode, TrajectoryModel } from '../types/chess';
 import { getLocalSiteActivityConfig, SiteActivityConfig } from '../utils/siteActivity';
+import {
+  deleteBroadcastMessageFromFirestore,
+  publishBroadcastMessageToFirestore,
+  subscribeBroadcastMessagesFirestore,
+} from '../utils/firebaseMirror';
 import { NavTab } from './Navbar';
 import { SiteActivityPanel } from './SiteActivityPanel';
 
@@ -89,7 +96,7 @@ interface AdminPanelViewProps {
   onSiteActivityUpdated?: (updated: SiteActivityConfig) => void;
 }
 
-type AdminWorkspaceTab = 'activity' | 'players' | 'jsonbin' | 'security';
+type AdminWorkspaceTab = 'activity' | 'messages' | 'players' | 'jsonbin' | 'security';
 
 interface EnrichedAccount {
   username: string;
@@ -166,6 +173,64 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [isTestingRegistry, setIsTestingRegistry] = useState(false);
   const [isSyncingRegistry, setIsSyncingRegistry] = useState(false);
   const [copiedRegistryJson, setCopiedRegistryJson] = useState(false);
+
+  // Official Broadcast Letters state
+  const [broadcastMessages, setBroadcastMessages] = useState<BroadcastMessageRecord[]>([]);
+  const [msgTitle, setMsgTitle] = useState('');
+  const [msgContent, setMsgContent] = useState('');
+  const [msgPriority, setMsgPriority] = useState<'info' | 'important'>('info');
+  const [msgSenderLabel, setMsgSenderLabel] = useState('Administration Road to 2000');
+  const [isSendingMsg, setIsSendingMsg] = useState(false);
+  const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const unsub = subscribeBroadcastMessagesFirestore({
+      isAdmin: true,
+      onUpdate: setBroadcastMessages,
+    });
+    return () => unsub();
+  }, [isAdmin]);
+
+  const handlePublishBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!msgTitle.trim() || !msgContent.trim()) {
+      onShowMessage('Renseignez un titre et un message complet.', 'warning');
+      return;
+    }
+    setIsSendingMsg(true);
+    try {
+      const res = await publishBroadcastMessageToFirestore({
+        title: msgTitle,
+        content: msgContent,
+        priority: msgPriority,
+        senderLabel: msgSenderLabel,
+      });
+      if (res.ok) {
+        setMsgTitle('');
+        setMsgContent('');
+        onShowMessage('Lettre officielle envoyée aux utilisateurs dans Notifications → Messages.', 'success');
+      } else {
+        onShowMessage(res.error || 'Erreur lors de la publication du message.', 'warning');
+      }
+    } finally {
+      setIsSendingMsg(false);
+    }
+  };
+
+  const handleDeleteBroadcast = async (id: string) => {
+    setDeletingMsgId(id);
+    try {
+      const res = await deleteBroadcastMessageFromFirestore(id);
+      if (res.ok) {
+        onShowMessage('Lettre officielle supprimée.', 'info');
+      } else {
+        onShowMessage(res.error || 'Suppression impossible.', 'warning');
+      }
+    } finally {
+      setDeletingMsgId(null);
+    }
+  };
 
   const refreshAccounts = () => {
     setAccounts(getPublicAuthorizedAccounts());
@@ -671,6 +736,19 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
           <button
             type="button"
+            onClick={() => setWorkspace('messages')}
+            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+              workspace === 'messages'
+                ? 'bg-[#facc15] text-black font-bold'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Mail className="h-3.5 w-3.5" />
+            <span>Messages ({broadcastMessages.length})</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setWorkspace('players')}
             className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
               workspace === 'players'
@@ -744,6 +822,150 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           }}
           onShowMessage={onShowMessage}
         />
+      )}
+
+      {/* ===================================================================== */}
+      {/* WORKSPACE 0B: OFFICIAL ADMIN BROADCAST LETTERS                        */}
+      {/* ===================================================================== */}
+      {workspace === 'messages' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Composer */}
+          <form
+            onSubmit={handlePublishBroadcast}
+            className="liquid-glass-card lg:col-span-5 rounded-2xl border border-neutral-800/90 bg-[#0b0e14] p-5 sm:p-6 space-y-4 text-xs"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800/80">
+              <div className="flex items-center gap-2">
+                <Mail className="h-4 w-4 text-[#facc15]" />
+                <h2 className="text-sm font-bold text-white">Envoyer une Lettre Officielle</h2>
+              </div>
+              <span className="px-2 py-0.5 rounded bg-sky-500/15 border border-sky-500/35 text-[10px] font-bold text-sky-400">
+                Filtre : Messages
+              </span>
+            </div>
+
+            <p className="text-[11px] text-neutral-400 leading-relaxed">
+              Ce message apparaît dans l&apos;onglet <strong>Notifications → Messages</strong> de chaque utilisateur. Le bouton <em>« Tout marquer lu »</em> ne peut pas l&apos;effacer : il faut cliquer pour l&apos;ouvrir.
+            </p>
+
+            <div>
+              <label className="block font-semibold text-neutral-300 mb-1">Titre de la lettre</label>
+              <input
+                type="text"
+                required
+                maxLength={120}
+                value={msgTitle}
+                onChange={(e) => setMsgTitle(e.target.value)}
+                placeholder="Ex : Nouvelle saison Road to 2000"
+                className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-2.5 text-white focus:border-[#facc15] focus:outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block font-semibold text-neutral-300 mb-1">Priorité</label>
+                <select
+                  value={msgPriority}
+                  onChange={(e) => setMsgPriority(e.target.value as 'info' | 'important')}
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-white focus:border-[#facc15] focus:outline-none"
+                >
+                  <option value="info">Information</option>
+                  <option value="important">Important</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-semibold text-neutral-300 mb-1">Expéditeur</label>
+                <input
+                  type="text"
+                  maxLength={60}
+                  value={msgSenderLabel}
+                  onChange={(e) => setMsgSenderLabel(e.target.value)}
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-white focus:border-[#facc15] focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-semibold text-neutral-300 mb-1">Contenu complet de la lettre</label>
+              <textarea
+                required
+                rows={5}
+                maxLength={4000}
+                value={msgContent}
+                onChange={(e) => setMsgContent(e.target.value)}
+                placeholder="Rédigez le texte complet qui se déploiera lorsque l'utilisateur cliquera sur la notification..."
+                className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-2.5 text-white focus:border-[#facc15] focus:outline-none resize-y leading-relaxed"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSendingMsg || !msgTitle.trim() || !msgContent.trim()}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#facc15] hover:bg-[#eab308] text-black font-extrabold transition-colors disabled:opacity-45"
+            >
+              <Send className="h-4 w-4" />
+              <span>{isSendingMsg ? 'Envoi en cours...' : 'Publier la lettre aux utilisateurs'}</span>
+            </button>
+          </form>
+
+          {/* Sent Messages Archive */}
+          <section className="liquid-glass-card lg:col-span-7 rounded-2xl border border-neutral-800/90 bg-[#0b0e14] p-5 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800/80">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Mail className="h-4 w-4 text-sky-400" />
+                <span>Lettres publiées ({broadcastMessages.length})</span>
+              </h3>
+              <span className="text-[11px] font-mono text-neutral-400">Synchronisé Firestore</span>
+            </div>
+
+            {broadcastMessages.length === 0 ? (
+              <div className="py-10 text-center text-xs text-neutral-400 space-y-2">
+                <Mail className="h-7 w-7 mx-auto text-neutral-600" />
+                <p>Aucune lettre officielle envoyée pour le moment.</p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+                {broadcastMessages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className="rounded-xl border border-neutral-800 bg-neutral-950/70 p-4 space-y-2"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-white">{msg.title}</span>
+                          {msg.priority === 'important' && (
+                            <span className="px-1.5 py-0.5 rounded bg-[#ef4444]/20 border border-[#ef4444]/40 text-[#ef4444] text-[10px] font-bold uppercase">
+                              Important
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] font-mono text-neutral-400 mt-0.5">
+                          {msg.senderLabel || 'Administration'} ·{' '}
+                          {new Date(msg.createdAt).toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteBroadcast(msg.id)}
+                        disabled={deletingMsgId === msg.id}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[#ef4444]/35 bg-[#ef4444]/10 hover:bg-[#ef4444]/20 text-[#ef4444] text-[11px] font-bold shrink-0 disabled:opacity-45"
+                        title="Supprimer cette lettre"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        <span>{deletingMsgId === msg.id ? '...' : 'Supprimer'}</span>
+                      </button>
+                    </div>
+                    <p className="text-xs text-neutral-300 whitespace-pre-line leading-relaxed">
+                      {msg.content}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       )}
 
       {/* ===================================================================== */}

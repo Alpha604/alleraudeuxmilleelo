@@ -396,7 +396,7 @@ export const MobileMoreSheet: React.FC<MobileMoreSheetProps> = ({
             ? 'none'
             : 'transform 300ms cubic-bezier(0.22, 1, 0.36, 1)',
         }}
-        className="w-full sm:max-w-md max-h-[86vh] flex flex-col rounded-t-[30px] sm:rounded-3xl border border-white/[0.16] bg-[#0a0e16]/94 backdrop-blur-2xl backdrop-saturate-[180%] shadow-[0_-18px_50px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.24)] overflow-hidden text-left will-change-transform"
+        className="liquid-glass-sheet w-full sm:max-w-md max-h-[86vh] flex flex-col rounded-t-[30px] sm:rounded-3xl border border-white/[0.16] bg-[#0a0e16]/94 backdrop-blur-2xl backdrop-saturate-[180%] shadow-[0_-18px_50px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.24)] overflow-hidden text-left will-change-transform"
       >
         {/* Top Swipe Handle & Header */}
         <div
@@ -495,7 +495,7 @@ export const MobileMoreSheet: React.FC<MobileMoreSheetProps> = ({
               </div>
             </button>
 
-            {!isSpectator && (
+            {isAdmin && !isSpectator && (
               <button
                 type="button"
                 onClick={() => {
@@ -528,7 +528,7 @@ export const MobileMoreSheet: React.FC<MobileMoreSheetProps> = ({
               </button>
             )}
 
-            {!isSpectator && onOpenFirebaseModal && (
+            {isAdmin && !isSpectator && onOpenFirebaseModal && (
               <button
                 type="button"
                 onClick={() => {

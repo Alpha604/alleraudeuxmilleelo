@@ -10,8 +10,8 @@ import {
   Bell,
   Calendar,
   CheckCircle2,
+  Cloud,
   Code2,
-  Crown,
   Database,
   Eye,
   Flame,
@@ -24,6 +24,7 @@ import {
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
 import { formatJsonBinShortTime, formatJsonBinTimestamp } from '../utils/cloudSync';
 import { FirebaseIndicatorStatus } from '../utils/syncDiagnostics';
+import { BrandLogo } from './BrandLogo';
 import { UserDropdown } from './UserDropdown';
 
 export type NavTab = 'dashboard' | 'charts' | 'calendar' | 'history' | 'tests' | 'iframe' | 'settings' | 'profile' | 'admin';
@@ -59,6 +60,7 @@ interface NavbarProps {
   unreadNotificationsCount?: number;
   onOpenNotificationCenter?: () => void;
   onOpenProfileSheet?: () => void;
+  onOpenMobileCloudMenu?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -88,6 +90,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   unreadNotificationsCount = 0,
   onOpenNotificationCenter,
   onOpenProfileSheet,
+  onOpenMobileCloudMenu,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -133,25 +136,16 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="sticky top-0 z-30 w-full border-b border-neutral-800 bg-[#07090e]/95 backdrop-blur-xl transition-all overflow-x-clip">
       <div className="w-full flex h-14 sm:h-16 items-center justify-between gap-1.5 sm:gap-4 px-2 sm:px-6 lg:px-8">
-        {/* Brand identity: White, Black & Yellow Crown (comme avant) */}
+        {/* Brand identity: Minimalist King Crown + Rising Elo Arrow */}
         <button
           onClick={() => onSelectTab('dashboard')}
-          className="group flex items-center gap-1.5 sm:gap-3 text-left transition-opacity hover:opacity-90 min-w-0 shrink"
+          className="group flex items-center text-left transition-opacity hover:opacity-90 min-w-0 shrink"
         >
-          <div className="relative flex h-7 w-7 sm:h-10 sm:w-10 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-br from-[#facc15] via-[#eab308] to-[#ca8a04] p-0.5 shadow-[0_0_15px_rgba(250,204,21,0.3)] shrink-0">
-            <div className="flex h-full w-full items-center justify-center rounded-[10px] sm:rounded-[14px] bg-[#07090e]">
-              <Crown className="h-3.5 w-3.5 sm:h-5 sm:w-5 text-[#facc15] transition-transform group-hover:scale-110" />
-            </div>
-          </div>
-          <div className="flex flex-col min-w-0">
-            <div className="flex items-center gap-1 font-display text-[11px] sm:text-base font-black tracking-wide sm:tracking-wider text-white whitespace-nowrap">
-              <span>ROAD TO 2000</span>
-              <span className="text-[#facc15]">ELO</span>
-            </div>
-            <span className="text-[9px] sm:text-[10px] font-mono tracking-wider uppercase text-neutral-400 hidden sm:block">
-              Chess Performance Tracker
-            </span>
-          </div>
+          <BrandLogo
+            size="sm"
+            showSubtitle
+            subtitle="Suivi Performance Elo"
+          />
         </button>
 
         {/* Action Controls pushed to the right extremity */}
@@ -195,11 +189,56 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {/* Live Network & JSONBin Status Button (Completely HIDDEN in spectator mode to protect bin ID & credentials) */}
-          {!isSpectator && (
+          {/* Unified Mobile Cloud Button (< sm, Admin 2FA ONLY) */}
+          {isAdmin && !isSpectator && onOpenMobileCloudMenu && (() => {
+            const hasCloudError =
+              !isNetworkOnline ||
+              jsonBinStatus === 'error' ||
+              firebaseStatus === 'error' ||
+              firebaseStatus === 'offline';
+            const allCloudGreen =
+              isNetworkOnline &&
+              jsonBinStatus === 'synced' &&
+              firebaseStatus === 'synced' &&
+              firebaseIssuesCount === 0;
+            return (
+              <button
+                type="button"
+                onClick={onOpenMobileCloudMenu}
+                className={`relative sm:hidden flex h-8 items-center justify-center gap-1.5 rounded-xl border px-2 py-1.5 text-xs font-bold transition-all active:scale-95 ${
+                  hasCloudError
+                    ? 'border-[#ef4444]/40 bg-[#ef4444]/15 text-[#ef4444]'
+                    : allCloudGreen
+                    ? 'border-[#10b981]/40 bg-[#10b981]/15 text-[#10b981]'
+                    : 'border-amber-500/40 bg-amber-500/12 text-amber-300'
+                }`}
+                aria-label="Ouvrir le menu Cloud unifié (Firebase et JSONBin)"
+                title="Cloud unifié : Firebase + JSONBin"
+              >
+                <Cloud className="h-4 w-4 shrink-0" />
+                <span
+                  className={`h-2 w-2 rounded-full shrink-0 ${
+                    hasCloudError
+                      ? 'bg-[#ef4444]'
+                      : allCloudGreen
+                      ? 'bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.7)]'
+                      : 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.7)]'
+                  }`}
+                />
+                {firebaseIssuesCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-amber-500 text-black text-[9px] font-black leading-none flex items-center justify-center tabular-nums shadow">
+                    {firebaseIssuesCount > 9 ? '9+' : firebaseIssuesCount}
+                  </span>
+                )}
+              </button>
+            );
+          })()}
+
+          {/* Live Network & JSONBin Status Button (Desktop/Tablet + Strictly Admin 2FA Only) */}
+          {isAdmin && !isSpectator && (
             <button
               onClick={onOpenNetworkModal}
-              className={`flex h-8 sm:h-9 items-center justify-center gap-1.5 rounded-xl border px-2 sm:px-2.5 py-1.5 text-xs font-bold transition-all ${
+              className={`hidden sm:flex h-9 items-center justify-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition-all ${
                 !isNetworkOnline
                   ? 'border-[#ef4444]/40 bg-[#ef4444]/15 text-[#ef4444] hover:bg-[#ef4444]/25'
                   : jsonBinStatus === 'error'
@@ -234,12 +273,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {/* Live Firebase Sync & Diagnostics Indicator Button (Same style as JSONBin) */}
-          {!isSpectator && onOpenFirebaseModal && (
+          {/* Live Firebase Sync & Diagnostics Indicator Button (Desktop/Tablet + Strictly Admin 2FA Only) */}
+          {isAdmin && !isSpectator && onOpenFirebaseModal && (
             <button
               type="button"
               onClick={onOpenFirebaseModal}
-              className={`relative flex h-8 sm:h-9 items-center justify-center gap-1 sm:gap-1.5 rounded-xl border px-1.5 sm:px-2.5 py-1.5 text-xs font-bold transition-all ${
+              className={`relative hidden sm:flex h-9 items-center justify-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition-all ${
                 firebaseStatus === 'error' || firebaseStatus === 'offline'
                   ? 'border-[#ef4444]/40 bg-[#ef4444]/15 text-[#ef4444] hover:bg-[#ef4444]/25'
                   : firebaseStatus === 'synced'

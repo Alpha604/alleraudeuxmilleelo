@@ -39,11 +39,13 @@ const STORAGE_KEYS = {
   lastPullPrefix: 'roadto2000_jsonbin_lastpull_',
 };
 
+export type JsonBinSyncState = 'synced' | 'pending_keys' | 'error' | 'syncing';
+
 export interface JsonBinUpdateEventDetail {
   username: string;
   lastSyncTime: number | null;
   remoteUpdatedAt?: string | null;
-  lastStatus: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  lastStatus: JsonBinSyncState;
   lastError?: string | null;
   pushed?: boolean;
   skipped?: boolean;
@@ -252,7 +254,7 @@ export function computeClientDataSignature(
   const allRecordsSig = sorted
     .map(
       (r) =>
-        `${r.id || ''}_${r.timestamp}_${r.bullet ?? ''}_${r.blitz ?? ''}_${r.rapid ?? ''}_${r.puzzles ?? ''}_${r.bestRating}_${r.bestMode}_${r.source || ''}_${r.note || ''}`
+        `${r.id || ''}_${r.timestamp}_${r.bullet ?? ''}_${r.blitz ?? ''}_${r.rapid ?? ''}_${r.puzzles ?? ''}_${r.puzzlesConfirmed ? '1' : '0'}_${r.puzzlesUpdatedAt || ''}_${r.bestRating}_${r.bestMode}_${r.source || ''}_${r.note || ''}`
     )
     .join(';');
   const s = settings || {};

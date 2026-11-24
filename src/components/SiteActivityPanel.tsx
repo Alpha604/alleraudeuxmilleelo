@@ -300,14 +300,23 @@ export const SiteActivityPanel: React.FC<SiteActivityPanelProps> = ({
     mise_a_jour: <RefreshCw className="h-4 w-4 text-sky-400" />,
   };
 
+  const isAutoResumeExpired = Boolean(
+    currentConfig.enabled &&
+      currentConfig.autoResume &&
+      currentConfig.resumeAtTimestamp &&
+      nowTick >= currentConfig.resumeAtTimestamp
+  );
+
   const isCurrentlyPaused =
     currentConfig.enabled &&
+    !isAutoResumeExpired &&
     (currentConfig.scheduleType === 'immediate' ||
       !currentConfig.pauseAtTimestamp ||
       nowTick >= currentConfig.pauseAtTimestamp);
 
   const isCountdownRunning =
     currentConfig.enabled &&
+    !isAutoResumeExpired &&
     currentConfig.scheduleType !== 'immediate' &&
     Boolean(currentConfig.pauseAtTimestamp && currentConfig.pauseAtTimestamp > nowTick);
 
@@ -445,7 +454,7 @@ export const SiteActivityPanel: React.FC<SiteActivityPanelProps> = ({
               <span>Aperçu visiteur</span>
             </button>
 
-            {currentConfig.enabled && (
+            {currentConfig.enabled && !isAutoResumeExpired && (
               <button
                 type="button"
                 onClick={() => handleSaveAndApply(false)}

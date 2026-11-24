@@ -72,7 +72,7 @@ export const GameModesBreakdown: React.FC<GameModesBreakdownProps> = ({ stats, b
           return (
             <div
               key={mode.key}
-              className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${
+              className={`liquid-glass-card flex items-center justify-between p-3 rounded-2xl border transition-all ${
                 isCurrentBest
                   ? 'border-[#facc15]/40 bg-[#0c1019] shadow-[0_0_15px_rgba(250,204,21,0.08)]'
                   : 'border-neutral-800 bg-[#0c1019]'
@@ -125,7 +125,7 @@ export const GameModesBreakdown: React.FC<GameModesBreakdownProps> = ({ stats, b
           return (
             <div
               key={mode.key}
-              className={`relative overflow-hidden rounded-3xl border p-6 transition-all ${
+              className={`liquid-glass-card relative overflow-hidden rounded-3xl border p-6 transition-all ${
                 isCurrentBest
                   ? 'border-[#facc15]/50 bg-[#0c0f14] shadow-[0_0_25px_rgba(250,204,21,0.12)]'
                   : 'border-neutral-800 bg-[#0c0f14] shadow-lg hover:border-neutral-700'

@@ -55,7 +55,7 @@ export const DailyObjectiveCard: React.FC<DailyObjectiveCardProps> = ({ objectiv
   });
 
   return (
-    <div className="relative flex flex-col justify-between overflow-hidden rounded-3xl border border-neutral-800 bg-[#0c0f14] p-4 sm:p-6 lg:p-7 shadow-xl">
+    <div className="liquid-glass-card relative flex flex-col justify-between overflow-hidden rounded-3xl border border-neutral-800 bg-[#0c0f14] p-4 sm:p-6 lg:p-7 shadow-xl">
       <div>
         <div className="flex items-center justify-between gap-2.5 sm:gap-3 border-b border-neutral-800 pb-3.5 sm:pb-4">
           <div className="flex items-center gap-2 sm:gap-2.5">

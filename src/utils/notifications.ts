@@ -5,7 +5,7 @@
 
 import type { NavTab } from '../components/Navbar';
 
-export type NotificationCategory = 'elo' | 'sync' | 'security' | 'system';
+export type NotificationCategory = 'elo' | 'sync' | 'security' | 'system' | 'message';
 
 export interface AppNotificationItem {
   id: string;
@@ -16,6 +16,10 @@ export interface AppNotificationItem {
   createdAt: number;
   read: boolean;
   targetTab?: NavTab;
+  isOfficialLetter?: boolean;
+  fullContent?: string;
+  senderLabel?: string;
+  priority?: 'info' | 'important';
 }
 
 export interface MobileNotificationPrefs {
@@ -27,6 +31,8 @@ export interface MobileNotificationPrefs {
 
 const NOTIF_HISTORY_KEY = 'roadto2000_notif_history_v1';
 const NOTIF_PREFS_KEY = 'roadto2000_notif_prefs_v1';
+const BROADCAST_READ_IDS_KEY = 'roadto2000_broadcast_read_ids_v1';
+const BROADCAST_HIDDEN_IDS_KEY = 'roadto2000_broadcast_hidden_ids_v1';
 const MAX_STORED_NOTIFS = 40;
 
 export const DEFAULT_MOBILE_NOTIF_PREFS: MobileNotificationPrefs = {
@@ -38,6 +44,7 @@ export const DEFAULT_MOBILE_NOTIF_PREFS: MobileNotificationPrefs = {
     sync: true,
     security: true,
     system: true,
+    message: true,
   },
 };
 
@@ -62,6 +69,7 @@ export function getNotificationPrefs(): MobileNotificationPrefs {
             sync: parsed?.categories?.sync !== false,
             security: parsed?.categories?.security !== false,
             system: parsed?.categories?.system !== false,
+            message: parsed?.categories?.message !== false,
           },
         };
       }
@@ -71,7 +79,7 @@ export function getNotificationPrefs(): MobileNotificationPrefs {
     dnd: false,
     haptic: true,
     autoHideSeconds: 6,
-    categories: { elo: true, sync: true, security: true, system: true },
+    categories: { elo: true, sync: true, security: true, system: true, message: true },
   };
 }
 
@@ -101,12 +109,73 @@ export function getStoredNotifications(): AppNotificationItem[] {
 export function saveStoredNotifications(items: AppNotificationItem[]): void {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
+      const nonMessages = items.filter((item) => !item.isOfficialLetter && item.category !== 'message');
       window.localStorage.setItem(
         NOTIF_HISTORY_KEY,
-        JSON.stringify(items.slice(0, MAX_STORED_NOTIFS))
+        JSON.stringify(nonMessages.slice(0, MAX_STORED_NOTIFS))
       );
     }
   } catch {}
+}
+
+export function getBroadcastReadIds(): string[] {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = window.localStorage.getItem(BROADCAST_READ_IDS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.map((id) => String(id));
+      }
+    }
+  } catch {}
+  return [];
+}
+
+export function markBroadcastMessageRead(id: string): string[] {
+  const current = getBroadcastReadIds();
+  if (current.includes(id)) return current;
+  const next = Array.from(new Set([...current, id])).slice(-200);
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(BROADCAST_READ_IDS_KEY, JSON.stringify(next));
+    }
+  } catch {}
+  return next;
+}
+
+export function getBroadcastHiddenIds(): string[] {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = window.localStorage.getItem(BROADCAST_HIDDEN_IDS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.map((id) => String(id));
+      }
+    }
+  } catch {}
+  return [];
+}
+
+export function hideBroadcastMessageLocal(id: string): string[] {
+  const current = getBroadcastHiddenIds();
+  if (current.includes(id)) return current;
+  const next = Array.from(new Set([...current, id])).slice(-200);
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(BROADCAST_HIDDEN_IDS_KEY, JSON.stringify(next));
+    }
+  } catch {}
+  return next;
+}
+
+/**
+ * Batch "Tout marquer lu" ONLY marks standard alerts read.
+ * Official Broadcast Letters MUST be opened and read individually.
+ */
+export function markAllStandardNotificationsRead(items: AppNotificationItem[]): AppNotificationItem[] {
+  return items.map((item) =>
+    item.isOfficialLetter || item.category === 'message' ? item : { ...item, read: true }
+  );
 }
 
 export function inferNotificationMeta(
@@ -198,4 +267,5 @@ export const NOTIFICATION_CATEGORY_LABEL: Record<NotificationCategory, string> =
   sync: 'Sync & JSONBin',
   security: 'Sécurité & Site',
   system: 'Système',
+  message: 'Messages',
 };

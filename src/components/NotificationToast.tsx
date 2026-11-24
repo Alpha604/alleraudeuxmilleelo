@@ -179,7 +179,7 @@ const SwipeableToastCard: React.FC<ToastCardProps> = ({
             ? 'none'
             : 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease',
         }}
-        className={`pointer-events-auto relative overflow-hidden rounded-[22px] border ${borderTint[type]} bg-[#0a0e16]/88 backdrop-blur-2xl backdrop-saturate-[180%] shadow-[0_14px_34px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.22)] touch-pan-y cursor-pointer`}
+        className={`liquid-glass-toast pointer-events-auto relative overflow-hidden rounded-[22px] border ${borderTint[type]} bg-[#0a0e16]/88 backdrop-blur-2xl backdrop-saturate-[180%] shadow-[0_14px_34px_rgba(0,0,0,0.68),inset_0_1px_0_rgba(255,255,255,0.22)] touch-pan-y cursor-pointer`}
       >
         <div className="p-3.5 flex items-start gap-3">
           <div

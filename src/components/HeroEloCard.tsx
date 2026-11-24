@@ -109,17 +109,17 @@ export const HeroEloCard: React.FC<HeroEloCardProps> = ({
   });
 
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-[#0c0f14] shadow-2xl transition-all">
+    <div className="liquid-glass-card relative overflow-hidden rounded-3xl border border-neutral-800 bg-[#0c0f14] shadow-2xl transition-all">
       {/* Cinematic Knight Visual Backdrop with high-end ambient mask */}
       <div className="absolute inset-0 z-0 pointer-events-none select-none overflow-hidden">
         <img
           src={heroKnightImg}
           alt="Grandmaster Chess Knight"
           referrerPolicy="no-referrer"
-          className="h-full w-full object-cover object-right-top opacity-25 transform scale-105"
+          className="hero-knight-img h-full w-full object-cover object-right-top opacity-25 transform scale-105"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#0c0f14] via-[#0c0f14]/90 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0c0f14] via-transparent to-transparent" />
+        <div className="hero-backdrop-gradient-left absolute inset-0 bg-gradient-to-r from-[#0c0f14] via-[#0c0f14]/90 to-transparent" />
+        <div className="hero-backdrop-gradient-bottom absolute inset-0 bg-gradient-to-t from-[#0c0f14] via-transparent to-transparent" />
       </div>
 
       <div className="relative z-10 p-4 sm:p-8 lg:p-10 space-y-6 sm:space-y-8">
@@ -257,7 +257,7 @@ export const HeroEloCard: React.FC<HeroEloCardProps> = ({
             <div className="relative h-4 sm:h-5 w-full rounded-full bg-neutral-950 p-0.5 border border-neutral-800 shadow-inner overflow-hidden">
               {/* Glowing Progress Fill */}
               <div
-                className="h-full rounded-full bg-gradient-to-r from-[#facc15] via-[#fde047] to-white transition-all duration-700 ease-out shadow-[0_0_15px_rgba(250,204,21,0.6)]"
+                className="hero-progress-fill h-full rounded-full bg-gradient-to-r from-[#facc15] via-[#fde047] to-white transition-all duration-700 ease-out shadow-[0_0_15px_rgba(250,204,21,0.6)]"
                 style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}
               />
 

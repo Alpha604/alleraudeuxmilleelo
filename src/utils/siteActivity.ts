@@ -193,8 +193,17 @@ export function normalizeSiteActivityConfig(
     ? (raw.mode as SitePauseMode)
     : def.mode;
 
+  const autoResume = Boolean(raw.autoResume);
+  const resumeAtTimestamp =
+    typeof raw.resumeAtTimestamp === 'number' && raw.resumeAtTimestamp > 0
+      ? raw.resumeAtTimestamp
+      : null;
+  const expiredAutoResume = Boolean(
+    raw.enabled && autoResume && resumeAtTimestamp && Date.now() >= resumeAtTimestamp
+  );
+
   return {
-    enabled: Boolean(raw.enabled),
+    enabled: expiredAutoResume ? false : Boolean(raw.enabled),
     mode,
     customTitle:
       typeof raw.customTitle === 'string' && raw.customTitle.trim()

@@ -7,7 +7,6 @@ import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   Clock,
-  Crown,
   FileText,
   KeyRound,
   Lock,
@@ -35,14 +34,16 @@ import {
 import { formatJsonBinTimestamp } from '../utils/cloudSync';
 import {
   fetchTotpConfigFromServer,
+  getTotpLockoutStatus,
   getTotpSecret,
   isExplicitReadOnlyEmbed,
   isTotpEnrolled,
   setAdminSession,
   setTotpEnrolled,
   syncTotpSecretToServer,
-  verifyTotpCode,
+  verifyTotpCodeDetailed,
 } from '../utils/security';
+import { BrandLogo } from './BrandLogo';
 
 interface SitePauseOverlayProps {
   config: SiteActivityConfig;
@@ -81,6 +82,7 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
   const [inlineError, setInlineError] = useState('');
   const [isVerifyingInline, setIsVerifyingInline] = useState(false);
   const [enrolled, setEnrolled] = useState<boolean>(() => isTotpEnrolled());
+  const [lockoutSeconds, setLockoutSeconds] = useState<number>(() => getTotpLockoutStatus().remainingSeconds);
 
   useEffect(() => {
     fetchTotpConfigFromServer().then((cfg) => {
@@ -91,7 +93,16 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
   }, []);
 
   useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutSeconds((prev) => (prev <= 1 ? getTotpLockoutStatus().remainingSeconds : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutSeconds]);
+
+  useEffect(() => {
     if (!adminDrawerOpen) return;
+    setLockoutSeconds(getTotpLockoutStatus().remainingSeconds);
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setAdminDrawerOpen(false);
@@ -108,6 +119,13 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
     deviceType === 'mobile' ? Smartphone : deviceType === 'tablet' ? Tablet : Monitor;
 
   const verifyInline = async (candidate: string) => {
+    const lockStatus = getTotpLockoutStatus();
+    if (lockStatus.locked) {
+      setLockoutSeconds(lockStatus.remainingSeconds);
+      setInlineError(`Blocage anti-spam actif : réessayez dans ${lockStatus.remainingSeconds}s.`);
+      return;
+    }
+
     const clean = candidate.replace(/\D/g, '').slice(0, 6);
     if (clean.length !== 6) {
       setInlineError('Entrez le code A2F à 6 chiffres.');
@@ -117,8 +135,9 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
     setInlineError('');
     try {
       const secret = getTotpSecret();
-      const ok = await verifyTotpCode(clean, secret);
-      if (ok) {
+      const result = await verifyTotpCodeDetailed(clean, secret);
+      if (result.valid) {
+        setLockoutSeconds(0);
         setTotpEnrolled(true);
         setEnrolled(true);
         syncTotpSecretToServer(secret, true).catch(() => {});
@@ -128,8 +147,13 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
           onAdminUnlocked();
         }
       } else {
+        if (result.locked && result.remainingSeconds) {
+          setLockoutSeconds(result.remainingSeconds);
+        }
+        setInlineCode('');
         setInlineError(
-          'Code incorrect ou expiré. Cliquez sur « Afficher QR / Changer l’A2F » pour scanner le QR Code.'
+          result.error ||
+            'Code incorrect ou expiré. Cliquez sur « Afficher QR / Changer l’A2F » pour scanner le QR Code.'
         );
       }
     } catch {
@@ -156,13 +180,20 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
       <div className="h-4 shrink-0" aria-hidden="true" />
 
       {/* Main Centered Visitor Notice Card */}
-      <div className="relative z-10 mx-auto w-full max-w-xl rounded-3xl border border-neutral-800 bg-[#0b0e14]/95 backdrop-blur-2xl p-6 sm:p-10 shadow-2xl space-y-5 text-center">
+      <div className="liquid-glass-card relative z-10 mx-auto w-full max-w-xl rounded-3xl border border-neutral-800 bg-[#0b0e14]/95 backdrop-blur-2xl p-6 sm:p-10 shadow-2xl space-y-5 text-center">
         {/* Brand Header */}
-        <div className="flex items-center justify-center gap-2 text-xs font-display font-bold tracking-wider text-neutral-400">
-          <Crown className="h-4 w-4 text-[#facc15]" />
-          <span>ROAD TO 2000 ELO</span>
-          <span aria-hidden="true">·</span>
-          <span style={{ color: meta.accentHex }}>{meta.label}</span>
+        <div className="flex flex-wrap items-center justify-center gap-2.5 text-xs font-display font-bold tracking-wider">
+          <BrandLogo size="sm" />
+          <span
+            className="inline-flex items-center px-2.5 py-0.5 rounded-lg border text-[11px] font-bold"
+            style={{
+              color: meta.accentHex,
+              borderColor: `${meta.accentHex}40`,
+              backgroundColor: `${meta.accentHex}12`,
+            }}
+          >
+            {meta.label}
+          </span>
         </div>
 
         {/* Mode Icon Container */}
@@ -295,7 +326,7 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-md rounded-3xl border border-neutral-800 bg-[#0b0e14] p-5 sm:p-6 shadow-2xl space-y-4 text-left"
+            className="liquid-glass-card relative w-full max-w-md rounded-3xl border border-neutral-800 bg-[#0b0e14] p-5 sm:p-6 shadow-2xl space-y-4 text-left"
           >
             <div className="flex items-center justify-between gap-3 border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2 text-xs font-bold text-[#facc15]">
@@ -345,8 +376,10 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
                   autoComplete="one-time-code"
                   maxLength={6}
                   autoFocus
+                  disabled={lockoutSeconds > 0}
                   value={inlineCode}
                   onChange={(e) => {
+                    if (lockoutSeconds > 0) return;
                     const cleaned = e.target.value.replace(/\D/g, '').slice(0, 6);
                     setInlineCode(cleaned);
                     setInlineError('');
@@ -355,12 +388,19 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
                     }
                   }}
                   placeholder="Code à 6 chiffres..."
-                  className="w-full rounded-xl border border-neutral-800 bg-[#07090e] pl-10 pr-3 py-3 text-base font-mono font-bold tracking-[0.35em] text-[#facc15] placeholder:tracking-normal placeholder:font-sans placeholder:text-xs placeholder:text-neutral-500 focus:border-[#facc15] focus:outline-none"
+                  className="w-full rounded-xl border border-neutral-800 bg-[#07090e] pl-10 pr-3 py-3 text-base font-mono font-bold tracking-[0.35em] text-[#facc15] placeholder:tracking-normal placeholder:font-sans placeholder:text-xs placeholder:text-neutral-500 focus:border-[#facc15] focus:outline-none disabled:opacity-45"
                 />
                 <KeyRound className="h-4 w-4 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
 
-              {inlineError && (
+              {lockoutSeconds > 0 && (
+                <div className="flex items-center gap-2 rounded-xl border border-[#ef4444]/35 bg-[#ef4444]/10 px-3 py-2 text-xs text-[#ef4444] font-semibold">
+                  <Lock className="h-3.5 w-3.5 shrink-0" />
+                  <span>Blocage anti-spam actif : réessayez dans {lockoutSeconds}s.</span>
+                </div>
+              )}
+
+              {inlineError && lockoutSeconds === 0 && (
                 <div className="flex items-start gap-1.5 text-xs text-[#ef4444] font-medium">
                   <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
                   <span>{inlineError}</span>
@@ -382,11 +422,17 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
 
                 <button
                   type="submit"
-                  disabled={isVerifyingInline || inlineCode.length !== 6}
+                  disabled={isVerifyingInline || lockoutSeconds > 0 || inlineCode.length !== 6}
                   className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#facc15] hover:bg-[#eab308] text-black text-xs font-extrabold transition-colors disabled:opacity-40 shrink-0 cursor-pointer"
                 >
                   <Unlock className="h-3.5 w-3.5" />
-                  <span>{isVerifyingInline ? 'Vérification...' : 'Débloquer'}</span>
+                  <span>
+                    {lockoutSeconds > 0
+                      ? `Bloqué (${lockoutSeconds}s)`
+                      : isVerifyingInline
+                      ? 'Vérification...'
+                      : 'Débloquer'}
+                  </span>
                 </button>
               </div>
             </form>

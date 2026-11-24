@@ -1,0 +1,34 @@
+{
+  "enabled": false,
+  "mode": "arret",
+  "customTitle": "Site temporairement à l’arrêt",
+  "customMessage": "La plateforme Road to 2000 Elo a été volontairement mise à l’arrêt par l’administrateur.",
+  "upcomingVersion": "1.2.2",
+  "extendedDetails": "Mise en marche du système de Google Firbase Protector\nMise à jour de l'API Chess.com",
+  "scheduleType": "exact_date",
+  "countdownMinutes": 1,
+  "pauseAtTimestamp": 1795609140000,
+  "resumeType": "duration",
+  "resumeDurationMinutes": 1,
+  "resumeAtTimestamp": 1795609200000,
+  "autoResume": true,
+  "showCountdownBanner": true,
+  "devices": {
+    "all": true,
+    "desktop": true,
+    "mobile": true,
+    "tablet": true
+  },
+  "iframePolicy": "block_all",
+  "ipPolicy": {
+    "mode": "except_list",
+    "ips": [
+      "88.191.113.99"
+    ],
+    "exemptTrustedAdminIps": true
+  },
+  "allowAdminBypass": true,
+  "revision": 48,
+  "updatedAt": 1795522896143,
+  "updatedBy": "alpharomeo1500"
+}

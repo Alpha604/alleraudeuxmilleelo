@@ -12,7 +12,11 @@ import {
   Check,
   CheckCheck,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Info,
+  Mail,
+  MailOpen,
   Save,
   SlidersHorizontal,
   Trash2,
@@ -27,6 +31,7 @@ import {
   NotificationCategory,
   triggerNotificationHaptic,
 } from '../utils/notifications';
+import { LiquidGlassDurationSlider } from './LiquidGlassDurationSlider';
 import { NavTab } from './Navbar';
 
 interface MobileNotificationCenterProps {
@@ -57,7 +62,8 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
   onNavigateTab,
   onSavePreferences,
 }) => {
-  const [filter, setFilter] = useState<'all' | 'unread' | 'alerts' | 'settings'>('all');
+  const [filter, setFilter] = useState<'all' | 'unread' | 'alerts' | 'message' | 'settings'>('all');
+  const [expandedLetterIds, setExpandedLetterIds] = useState<Record<string, boolean>>({});
   const [prefsSavedFlash, setPrefsSavedFlash] = useState(false);
   const [rendered, setRendered] = useState(isOpen);
   const [entered, setEntered] = useState(false);
@@ -297,14 +303,36 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
     [notifications]
   );
 
+  const standardUnreadCount = useMemo(
+    () => notifications.filter((n) => !n.read && !n.isOfficialLetter && n.category !== 'message').length,
+    [notifications]
+  );
+
   const alertsCount = useMemo(
-    () => notifications.filter((n) => n.type === 'warning').length,
+    () => notifications.filter((n) => n.type === 'warning' && !n.isOfficialLetter && n.category !== 'message').length,
+    [notifications]
+  );
+
+  const messagesCount = useMemo(
+    () => notifications.filter((n) => n.isOfficialLetter || n.category === 'message').length,
+    [notifications]
+  );
+
+  const unreadLettersCount = useMemo(
+    () =>
+      notifications.filter((n) => !n.read && (n.isOfficialLetter || n.category === 'message'))
+        .length,
     [notifications]
   );
 
   const filteredList = useMemo(() => {
     if (filter === 'unread') return notifications.filter((n) => !n.read);
-    if (filter === 'alerts') return notifications.filter((n) => n.type === 'warning');
+    if (filter === 'alerts')
+      return notifications.filter(
+        (n) => n.type === 'warning' && !n.isOfficialLetter && n.category !== 'message'
+      );
+    if (filter === 'message')
+      return notifications.filter((n) => n.isOfficialLetter || n.category === 'message');
     return notifications;
   }, [notifications, filter]);
 
@@ -361,7 +389,7 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
             ? 'none'
             : 'transform 300ms cubic-bezier(0.22, 1, 0.36, 1)',
         }}
-        className="w-full sm:max-w-lg max-h-[86vh] flex flex-col rounded-t-[30px] sm:rounded-3xl border border-white/[0.15] bg-[#0a0e16]/95 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_-18px_50px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.22)] overflow-hidden text-left will-change-transform"
+        className="liquid-glass-sheet w-full sm:max-w-lg max-h-[86vh] flex flex-col rounded-t-[30px] sm:rounded-3xl border border-white/[0.15] bg-[#0a0e16]/95 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_-18px_50px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.22)] overflow-hidden text-left will-change-transform"
       >
         {/* Top Drag Handle & Header Zone (swipe down anywhere here to close) */}
         <div
@@ -415,18 +443,28 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
                   title: 'Toutes',
                   count: notifications.length,
                   dotClass: 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.65)]',
+                  isMail: false,
                 },
                 {
                   id: 'unread',
                   title: 'Non lues',
                   count: unreadCount,
                   dotClass: 'bg-[#facc15] shadow-[0_0_8px_rgba(250,204,21,0.75)]',
+                  isMail: false,
                 },
                 {
                   id: 'alerts',
                   title: 'Alertes',
                   count: alertsCount,
                   dotClass: 'bg-[#ef4444] shadow-[0_0_8px_rgba(239,68,68,0.75)]',
+                  isMail: false,
+                },
+                {
+                  id: 'message',
+                  title: 'Messages',
+                  count: messagesCount,
+                  dotClass: 'bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.75)]',
+                  isMail: true,
                 },
               ] as const
             ).map((tab) => (
@@ -436,13 +474,24 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
                 onClick={() => setFilter(tab.id)}
                 title={`${tab.title} (${tab.count})`}
                 aria-label={`${tab.title} (${tab.count})`}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono font-bold whitespace-nowrap transition-all ${
+                className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-mono font-bold whitespace-nowrap transition-all ${
                   filter === tab.id
                     ? 'bg-white/15 text-white ring-1 ring-[#facc15]/60 shadow-sm'
                     : 'text-neutral-300 hover:bg-white/[0.06]'
                 }`}
               >
-                <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${tab.dotClass}`} />
+                {tab.isMail ? (
+                  <>
+                    <Mail
+                      className={`h-3.5 w-3.5 shrink-0 ${
+                        unreadLettersCount > 0 ? 'text-[#facc15]' : 'text-sky-400'
+                      }`}
+                    />
+                    <span className="font-sans text-[11px]">Messages</span>
+                  </>
+                ) : (
+                  <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${tab.dotClass}`} />
+                )}
                 <span className="tabular-nums text-[11px]">{tab.count}</span>
               </button>
             ))}
@@ -513,25 +562,11 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
                   />
                 </label>
 
-                <div className="p-3.5 rounded-2xl border border-white/10 bg-white/[0.03] space-y-2">
-                  <div className="font-bold text-white">Durée d&apos;affichage des bannières</div>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {([4, 6, 8, 0] as const).map((sec) => (
-                      <button
-                        key={sec}
-                        type="button"
-                        onClick={() => onUpdatePrefs({ ...prefs, autoHideSeconds: sec })}
-                        className={`py-2 rounded-xl border text-xs font-bold transition-colors ${
-                          prefs.autoHideSeconds === sec
-                            ? 'border-[#facc15] bg-[#facc15]/20 text-[#facc15]'
-                            : 'border-white/10 bg-black/30 text-neutral-300'
-                        }`}
-                      >
-                        {sec === 0 ? 'Fixe' : `${sec} s`}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <LiquidGlassDurationSlider
+                  value={prefs.autoHideSeconds}
+                  onChange={(autoHideSeconds) => onUpdatePrefs({ ...prefs, autoHideSeconds })}
+                  compact
+                />
 
                 <div className="p-3.5 rounded-2xl border border-white/10 bg-white/[0.03] space-y-2">
                   <div className="font-bold text-white mb-1">Catégories actives sur mobile</div>
@@ -586,71 +621,146 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
               </p>
             </div>
           ) : (
-            filteredList.map((item) => (
-              <div
-                key={item.id}
-                onClick={() => onMarkOneRead(item.id)}
-                className={`rounded-2xl border p-3.5 transition-colors cursor-pointer ${
-                  item.read
-                    ? 'border-white/[0.07] bg-white/[0.02] opacity-80'
-                    : 'border-[#facc15]/30 bg-[#facc15]/[0.06]'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`h-9 w-9 rounded-xl border flex items-center justify-center shrink-0 ${iconBgForType(
-                      item.type
-                    )}`}
-                  >
-                    {iconForType(item.type)}
-                  </div>
+            filteredList.map((item) => {
+              const isLetter = Boolean(item.isOfficialLetter || item.category === 'message');
+              const isExpanded = Boolean(expandedLetterIds[item.id]);
 
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-white truncate">{item.title}</span>
-                      <span className="text-[10px] font-mono text-neutral-400 shrink-0 tabular-nums">
-                        {formatRelativeNotificationTime(item.createdAt)}
-                      </span>
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => {
+                    onMarkOneRead(item.id);
+                    if (isLetter) {
+                      triggerNotificationHaptic('tap');
+                      setExpandedLetterIds((prev) => ({
+                        ...prev,
+                        [item.id]: !prev[item.id],
+                      }));
+                    }
+                  }}
+                  className={`liquid-glass-card rounded-2xl border p-3.5 transition-all cursor-pointer ${
+                    isLetter
+                      ? item.read
+                        ? 'border-sky-500/25 bg-sky-500/[0.04]'
+                        : 'border-sky-400/50 bg-sky-500/[0.11] shadow-[0_6px_22px_rgba(56,189,248,0.12)]'
+                      : item.read
+                      ? 'border-white/[0.07] bg-white/[0.02] opacity-80'
+                      : 'border-[#facc15]/30 bg-[#facc15]/[0.06]'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`h-9 w-9 rounded-xl border flex items-center justify-center shrink-0 ${
+                        isLetter
+                          ? item.read
+                            ? 'bg-sky-500/15 border-sky-400/35 text-sky-400'
+                            : 'bg-[#facc15]/20 border-[#facc15]/45 text-[#facc15]'
+                          : iconBgForType(item.type)
+                      }`}
+                    >
+                      {isLetter ? (
+                        item.read ? (
+                          <MailOpen className="h-4 w-4" />
+                        ) : (
+                          <Mail className="h-4 w-4" />
+                        )
+                      ) : (
+                        iconForType(item.type)
+                      )}
                     </div>
 
-                    <p className="text-xs text-neutral-300 leading-snug">{item.message}</p>
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-xs font-bold text-white truncate">{item.title}</span>
+                          {isLetter && !item.read && (
+                            <span className="px-1.5 py-0.5 rounded bg-[#facc15] text-black text-[9px] font-black uppercase shrink-0">
+                              Non lue
+                            </span>
+                          )}
+                          {isLetter && item.priority === 'important' && (
+                            <span className="px-1.5 py-0.5 rounded bg-[#ef4444]/20 border border-[#ef4444]/40 text-[#ef4444] text-[9px] font-bold uppercase shrink-0">
+                              Important
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-mono text-neutral-400 shrink-0 tabular-nums">
+                          {formatRelativeNotificationTime(item.createdAt)}
+                        </span>
+                      </div>
 
-                    <div className="flex items-center justify-between gap-2 pt-1 text-[10px] text-neutral-400">
-                      <span>{NOTIFICATION_CATEGORY_LABEL[item.category]}</span>
+                      {isLetter ? (
+                        isExpanded ? (
+                          <div className="rounded-xl border border-white/10 bg-black/25 p-3 space-y-2 animate-in fade-in duration-150">
+                            <p className="text-xs text-neutral-200 leading-relaxed whitespace-pre-line">
+                              {item.fullContent || item.message}
+                            </p>
+                            <div className="flex items-center justify-between text-[10px] text-neutral-400 pt-1 border-t border-white/10">
+                              <span className="font-semibold text-sky-400">
+                                {item.senderLabel || 'Administration Road to 2000'}
+                              </span>
+                              <span className="inline-flex items-center gap-1 font-bold text-neutral-300">
+                                <ChevronUp className="h-3 w-3" />
+                                <span>Réduire</span>
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs text-neutral-300 leading-snug line-clamp-2">
+                              {item.message}
+                            </p>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-400 shrink-0">
+                              <span>Lire</span>
+                              <ChevronDown className="h-3 w-3" />
+                            </span>
+                          </div>
+                        )
+                      ) : (
+                        <p className="text-xs text-neutral-300 leading-snug">{item.message}</p>
+                      )}
 
-                      <div className="flex items-center gap-3">
-                        {item.targetTab && (
+                      <div className="flex items-center justify-between gap-2 pt-0.5 text-[10px] text-neutral-400">
+                        <span>
+                          {isLetter
+                            ? item.senderLabel || 'Lettre officielle'
+                            : NOTIFICATION_CATEGORY_LABEL[item.category]}
+                        </span>
+
+                        <div className="flex items-center gap-3">
+                          {item.targetTab && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onMarkOneRead(item.id);
+                                onNavigateTab(item.targetTab!);
+                                requestAnimatedClose();
+                              }}
+                              className="inline-flex items-center gap-1 font-bold text-[#facc15] hover:underline"
+                            >
+                              <span>Ouvrir</span>
+                              <ArrowRight className="h-3 w-3" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              onMarkOneRead(item.id);
-                              onNavigateTab(item.targetTab!);
-                              requestAnimatedClose();
+                              onDeleteOne(item.id);
                             }}
-                            className="inline-flex items-center gap-1 font-bold text-[#facc15] hover:underline"
+                            className="text-neutral-500 hover:text-[#ef4444] p-1"
+                            aria-label="Supprimer cette notification"
                           >
-                            <span>Ouvrir</span>
-                            <ArrowRight className="h-3 w-3" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteOne(item.id);
-                          }}
-                          className="text-neutral-500 hover:text-[#ef4444] p-1"
-                          aria-label="Supprimer cette notification"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 
@@ -660,7 +770,12 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
             <button
               type="button"
               onClick={onMarkAllRead}
-              disabled={unreadCount === 0}
+              disabled={standardUnreadCount === 0}
+              title={
+                unreadLettersCount > 0 && standardUnreadCount === 0
+                  ? 'Les lettres officielles doivent être ouvertes individuellement pour être marquées lues'
+                  : 'Marquer toutes les alertes standard comme lues'
+              }
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] text-xs font-semibold text-neutral-200 disabled:opacity-40"
             >
               <CheckCheck className="h-3.5 w-3.5 text-[#10b981]" />

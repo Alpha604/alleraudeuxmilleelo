@@ -61,10 +61,25 @@ export interface SyncRecord {
   rapid: number | null;
   bullet: number | null;
   puzzles?: number | null; // Rating Problèmes (Tactique) — suivi graphique uniquement, hors cadence
+  puzzlesConfirmed?: boolean;
+  puzzlesUpdatedAt?: string | null;
   bestRating: number;
   bestMode: GameMode;
   source: 'API Chess.com directe' | 'Proxy API' | 'Import fichier' | 'Saisie manuelle';
   note?: string;
+}
+
+export interface BroadcastMessageRecord {
+  id: string;
+  messageId: string;
+  ownerUid: string;
+  title: string;
+  content: string;
+  priority: 'info' | 'important';
+  senderLabel: string;
+  active: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export type TrajectoryModel = 'linear' | 'milestones' | 'custom';

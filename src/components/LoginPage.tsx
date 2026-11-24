@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
-  Crown,
   KeyRound,
   Lock,
   LogOut,
@@ -22,6 +21,7 @@ import {
   authenticateWithTotpOnly,
   fetchTotpConfigFromServer,
   generateQrCodeDataUrl,
+  getTotpLockoutStatus,
   getTotpSecret,
   getTotpUri,
   isTotpEnrolled,
@@ -30,6 +30,7 @@ import {
   syncTotpSecretToServer,
 } from '../utils/security';
 import { normalizeSiteVersion } from '../utils/storage';
+import { BrandLogo } from './BrandLogo';
 import { TwoFactorUnlockLoader } from './SecurityModal';
 
 interface LoginPageProps {
@@ -56,6 +57,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [qrUrl, setQrUrl] = useState<string>('');
   const [unlockStep, setUnlockStep] = useState<number | null>(null);
   const [isUnlockComplete, setIsUnlockComplete] = useState(false);
+  const [lockoutSeconds, setLockoutSeconds] = useState<number>(() => getTotpLockoutStatus().remainingSeconds);
   const codeInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -66,6 +68,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutSeconds((prev) => (prev <= 1 ? getTotpLockoutStatus().remainingSeconds : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutSeconds]);
 
   useEffect(() => {
     if (!isGoogleAuthorized) return;
@@ -121,6 +131,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
   const submitTotpCode = async (codeToVerify: string) => {
     if (!isGoogleAuthorized || isLoading || unlockStep !== null) return;
+    const lockStatus = getTotpLockoutStatus();
+    if (lockStatus.locked) {
+      setLockoutSeconds(lockStatus.remainingSeconds);
+      setLocalError(`Blocage anti-spam actif : réessayez dans ${lockStatus.remainingSeconds}s.`);
+      return;
+    }
+
     setLocalError(null);
     const cleaned = codeToVerify.replace(/\D/g, '').slice(0, 6);
 
@@ -133,6 +150,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     try {
       const res = await authenticateWithTotpOnly('alpharomeo1500', cleaned);
       if (res.success) {
+        setLockoutSeconds(0);
         setTotpEnrolled(true);
         setEnrolled(true);
         syncTotpSecretToServer(secretKey, true).catch(() => {});
@@ -147,6 +165,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           onLoginSuccess('alpharomeo1500', true, false);
         }, 1250);
       } else {
+        if (res.locked && res.remainingSeconds) {
+          setLockoutSeconds(res.remainingSeconds);
+        }
+        setTotpCode('');
         setLocalError(res.error || 'Code A2F invalide ou expiré.');
       }
     } catch {
@@ -162,6 +184,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   };
 
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (lockoutSeconds > 0) return;
     const cleaned = e.target.value.replace(/\D/g, '').slice(0, 6);
     setTotpCode(cleaned);
     setLocalError(null);
@@ -184,21 +207,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       {/* Top Header Bar */}
       <header className="relative z-10 w-full border-b border-neutral-800/80 bg-[#07090e]/90 backdrop-blur-xl">
         <div className="w-full px-4 sm:px-8 lg:px-12 xl:px-16 h-16 sm:h-20 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="relative flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#facc15] via-[#eab308] to-[#ca8a04] p-0.5 shadow-[0_0_25px_rgba(250,204,21,0.35)]">
-              <div className="flex h-full w-full items-center justify-center rounded-[14px] bg-[#07090e]">
-                <Crown className="h-5 w-5 sm:h-6 sm:w-6 text-[#facc15]" />
-              </div>
-            </div>
-            <div>
-              <h1 className="text-lg sm:text-2xl font-black tracking-tight text-white font-display leading-none">
-                ROAD TO 2000 <span className="text-[#facc15]">ELO</span>
-              </h1>
-              <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-neutral-400">
-                Espace Privé Chess.com · @alpharomeo1500
-              </span>
-            </div>
-          </div>
+          <BrandLogo size="md" showSubtitle subtitle="Espace Privé Chess.com · @alpharomeo1500" />
 
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#facc15]/10 border border-[#facc15]/30 text-[#facc15] text-xs font-bold shrink-0">
             <Shield className="h-4 w-4" />
@@ -210,7 +219,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
       {/* Main Centered Login Card */}
       <main className="relative z-10 w-full flex-1 flex items-center justify-center px-4 sm:px-8 py-8 sm:py-12">
-        <div className="w-full max-w-xl rounded-3xl border border-neutral-800 bg-[#0c0f14]/95 backdrop-blur-xl p-5 sm:p-8 shadow-2xl space-y-6">
+        <div className="liquid-glass-card w-full max-w-xl rounded-3xl border border-neutral-800 bg-[#0c0f14]/95 backdrop-blur-xl p-5 sm:p-8 shadow-2xl space-y-6">
           {/* Account Header (Zero Email Exposed) */}
           <div className="flex items-center justify-between gap-3 pb-5 border-b border-neutral-800/80">
             <div className="flex items-center gap-3.5 min-w-0">
@@ -397,13 +406,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   pattern="[0-9]*"
                   autoComplete="one-time-code"
                   maxLength={6}
+                  disabled={lockoutSeconds > 0}
                   value={totpCode}
                   onChange={handleCodeChange}
                   placeholder="••••••"
-                  className="w-full rounded-2xl border border-neutral-700 bg-neutral-950 px-4 py-3.5 text-2xl sm:text-3xl text-[#facc15] placeholder-neutral-700 focus:border-[#facc15] focus:outline-none focus:ring-1 focus:ring-[#facc15] font-mono font-black tracking-[0.45em] text-center transition-all shadow-inner"
+                  className="w-full rounded-2xl border border-neutral-700 bg-neutral-950 px-4 py-3.5 text-2xl sm:text-3xl text-[#facc15] placeholder-neutral-700 focus:border-[#facc15] focus:outline-none focus:ring-1 focus:ring-[#facc15] font-mono font-black tracking-[0.45em] text-center transition-all shadow-inner disabled:opacity-45"
                 />
 
-                {displayError && (
+                {lockoutSeconds > 0 && (
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-[#ef4444]/10 border border-[#ef4444]/35 text-[#ef4444] text-xs font-semibold">
+                    <Lock className="h-4 w-4 shrink-0" />
+                    <span>Blocage anti-spam actif : réessayez dans {lockoutSeconds}s.</span>
+                  </div>
+                )}
+
+                {displayError && lockoutSeconds === 0 && (
                   <div className="flex items-start gap-2 p-3 rounded-xl bg-[#ef4444]/10 border border-[#ef4444]/30 text-[#ef4444] text-xs">
                     <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
                     <span>{displayError}</span>
@@ -412,11 +429,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
                 <button
                   type="submit"
-                  disabled={isLoading || totpCode.length !== 6}
+                  disabled={isLoading || lockoutSeconds > 0 || totpCode.length !== 6}
                   className="w-full flex items-center justify-center gap-2 py-3.5 px-5 rounded-2xl bg-[#facc15] hover:bg-[#eab308] text-black text-xs sm:text-sm font-black transition-all shadow-[0_0_20px_rgba(250,204,21,0.25)] active:scale-95 disabled:opacity-40"
                 >
                   <ShieldCheck className="h-4 w-4" />
-                  <span>{isLoading ? 'Vérification...' : 'Déverrouiller tous les droits (Admin A2F)'}</span>
+                  <span>
+                    {lockoutSeconds > 0
+                      ? `Bloqué (${lockoutSeconds}s)`
+                      : isLoading
+                      ? 'Vérification...'
+                      : 'Déverrouiller tous les droits (Admin A2F)'}
+                  </span>
                 </button>
               </form>
 

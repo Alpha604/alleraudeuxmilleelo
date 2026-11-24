@@ -5,6 +5,7 @@
 
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocFromServer,
@@ -17,6 +18,7 @@ import {
   setDoc,
   Timestamp,
   Unsubscribe,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 import {
@@ -26,7 +28,14 @@ import {
   OperationType,
   waitForFirebaseAuthReady,
 } from '../firebase';
-import { AppSettings, AppTheme, GameMode, SyncRecord, TrajectoryModel } from '../types/chess';
+import {
+  AppSettings,
+  AppTheme,
+  BroadcastMessageRecord,
+  GameMode,
+  SyncRecord,
+  TrajectoryModel,
+} from '../types/chess';
 import type { SiteActivityConfig } from './siteActivity';
 import {
   normalizeParisDayKey,
@@ -94,6 +103,8 @@ export interface FirestoreDailyRecordDoc {
   blitz?: number;
   rapid?: number;
   puzzles?: number;
+  puzzlesConfirmed?: boolean;
+  puzzlesUpdatedAt?: string | null;
   note?: string;
   createdAt?: string | null;
   updatedAt?: string | null;
@@ -398,6 +409,12 @@ export async function mirrorDataToFirestore(params: {
       if (blitz !== undefined) recordPayload.blitz = blitz;
       if (rapid !== undefined) recordPayload.rapid = rapid;
       if (puzzles !== undefined) recordPayload.puzzles = puzzles;
+      if (typeof rec.puzzlesConfirmed === 'boolean') {
+        recordPayload.puzzlesConfirmed = rec.puzzlesConfirmed;
+      }
+      if (typeof rec.puzzlesUpdatedAt === 'string' && rec.puzzlesUpdatedAt.trim().length > 0) {
+        recordPayload.puzzlesUpdatedAt = rec.puzzlesUpdatedAt.trim().slice(0, 64);
+      }
       if (typeof rec.note === 'string' && rec.note.trim().length > 0) {
         recordPayload.note = rec.note.trim().slice(0, 240);
       }
@@ -589,6 +606,8 @@ export function subscribePlayerFirestoreExplorer(
           blitz: d.blitz,
           rapid: d.rapid,
           puzzles: d.puzzles,
+          puzzlesConfirmed: typeof d.puzzlesConfirmed === 'boolean' ? d.puzzlesConfirmed : undefined,
+          puzzlesUpdatedAt: typeof d.puzzlesUpdatedAt === 'string' ? d.puzzlesUpdatedAt : null,
           note: d.note,
           createdAt: formatFirestoreTimestamp(d.createdAt),
           updatedAt: formatFirestoreTimestamp(d.updatedAt),
@@ -681,6 +700,8 @@ export async function fetchPlayerDataFromFirestore(username: string): Promise<{
           blitz: typeof d.blitz === 'number' ? d.blitz : null,
           rapid: typeof d.rapid === 'number' ? d.rapid : null,
           puzzles: typeof d.puzzles === 'number' ? d.puzzles : null,
+          ...(typeof d.puzzlesConfirmed === 'boolean' ? { puzzlesConfirmed: d.puzzlesConfirmed } : {}),
+          ...(typeof d.puzzlesUpdatedAt === 'string' ? { puzzlesUpdatedAt: d.puzzlesUpdatedAt } : {}),
           bestRating: typeof d.bestRating === 'number' ? d.bestRating : 1500,
           bestMode: isValidMode(d.bestMode),
           source,
@@ -785,8 +806,13 @@ export async function fetchPlayerDataFromFirestore(username: string): Promise<{
 }
 
 function mapFirestoreSiteActivityDoc(d: Record<string, any>): SiteActivityConfig {
+  const autoResume = Boolean(d.autoResume);
+  const resumeAtTimestamp = typeof d.resumeAtTimestamp === 'number' ? d.resumeAtTimestamp : null;
+  const isExpiredAutoResume = Boolean(
+    d.enabled && autoResume && resumeAtTimestamp && Date.now() >= resumeAtTimestamp
+  );
   return {
-    enabled: Boolean(d.enabled),
+    enabled: isExpiredAutoResume ? false : Boolean(d.enabled),
     mode:
       d.mode === 'arret' ||
       d.mode === 'maintenance' ||
@@ -1005,3 +1031,227 @@ export function subscribeSiteActivityFirestore(
     }
   );
 }
+
+// ==========================================
+// OFFICIAL ADMIN BROADCAST LETTERS (/broadcastMessages)
+// ==========================================
+const BROADCAST_CACHE_KEY = 'roadto2000_broadcast_cache_v1';
+
+function parseBroadcastTsMs(val: unknown, fallback: number): number {
+  if (typeof val === 'number' && Number.isFinite(val)) return val;
+  if (val && typeof (val as { toMillis?: () => number }).toMillis === 'function') {
+    const ms = (val as { toMillis: () => number }).toMillis();
+    if (Number.isFinite(ms)) return ms;
+  }
+  if (typeof val === 'string') {
+    const ms = Date.parse(val);
+    if (Number.isFinite(ms)) return ms;
+  }
+  return fallback;
+}
+
+export function getCachedBroadcastMessages(): BroadcastMessageRecord[] {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = window.localStorage.getItem(BROADCAST_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const now = Date.now();
+          return parsed.map((item) => {
+            const msgId = String(item?.messageId || item?.id || '');
+            const createdAtMs = parseBroadcastTsMs(item?.createdAt, now);
+            const updatedAtMs = parseBroadcastTsMs(item?.updatedAt, createdAtMs);
+            return {
+              id: msgId,
+              messageId: msgId,
+              ownerUid: String(item?.ownerUid || item?.authorUid || ''),
+              title: String(item?.title || 'Message officiel'),
+              content: String(item?.content || ''),
+              priority: item?.priority === 'important' ? 'important' : 'info',
+              senderLabel: String(item?.senderLabel || 'Administration Road to 2000'),
+              active: item?.active !== false,
+              createdAt: createdAtMs,
+              updatedAt: updatedAtMs,
+            };
+          });
+        }
+      }
+    }
+  } catch {}
+  return [];
+}
+
+export function saveCachedBroadcastMessages(list: BroadcastMessageRecord[]): void {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(BROADCAST_CACHE_KEY, JSON.stringify(list.slice(0, 60)));
+    }
+  } catch {}
+}
+
+export async function publishBroadcastMessageToFirestore(params: {
+  title: string;
+  content: string;
+  priority: 'info' | 'important';
+  senderLabel?: string;
+}): Promise<{ ok: boolean; id?: string; error?: string }> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) {
+    return {
+      ok: false,
+      error: 'Connexion Google Firebase requise pour publier un message officiel.',
+    };
+  }
+
+  const cleanTitle = params.title.trim().slice(0, 140);
+  const cleanContent = params.content.trim().slice(0, 4000);
+  if (!cleanTitle || !cleanContent) {
+    return { ok: false, error: 'Le titre et le message complet sont obligatoires.' };
+  }
+
+  const id = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const docPath = `broadcastMessages/${id}`;
+  const docRef = doc(db, 'broadcastMessages', id);
+  const priorityVal: 'info' | 'important' = params.priority === 'important' ? 'important' : 'info';
+  const senderLabelVal = (params.senderLabel || 'Administration Road to 2000').trim().slice(0, 40);
+
+  try {
+    const payload = {
+      messageId: id,
+      ownerUid: user.uid,
+      title: cleanTitle,
+      content: cleanContent,
+      priority: priorityVal,
+      senderLabel: senderLabelVal,
+      active: true,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    await setDoc(docRef, payload);
+
+    const nowMs = Date.now();
+    const cached = getCachedBroadcastMessages();
+    const record: BroadcastMessageRecord = {
+      id,
+      messageId: id,
+      ownerUid: user.uid,
+      title: payload.title,
+      content: payload.content,
+      priority: priorityVal,
+      senderLabel: senderLabelVal,
+      active: true,
+      createdAt: nowMs,
+      updatedAt: nowMs,
+    };
+    saveCachedBroadcastMessages([record, ...cached.filter((m) => m.id !== id)]);
+    return { ok: true, id };
+  } catch (err) {
+    try {
+      handleFirestoreError(err, OperationType.CREATE, docPath);
+    } catch (wrapped) {
+      return {
+        ok: false,
+        error: wrapped instanceof Error ? wrapped.message : String(wrapped),
+      };
+    }
+  }
+}
+
+export async function deleteBroadcastMessageFromFirestore(
+  messageId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) {
+    return { ok: false, error: 'Connexion Google Firebase requise.' };
+  }
+  const cleanId = messageId.trim();
+  if (!cleanId) return { ok: false, error: 'ID invalide' };
+
+  try {
+    await deleteDoc(doc(db, 'broadcastMessages', cleanId));
+    const cached = getCachedBroadcastMessages().filter((m) => m.id !== cleanId);
+    saveCachedBroadcastMessages(cached);
+    return { ok: true };
+  } catch (err) {
+    try {
+      handleFirestoreError(err, OperationType.DELETE, `broadcastMessages/${cleanId}`);
+    } catch (wrapped) {
+      return {
+        ok: false,
+        error: wrapped instanceof Error ? wrapped.message : String(wrapped),
+      };
+    }
+  }
+}
+
+export function subscribeBroadcastMessagesFirestore(options: {
+  isAdmin?: boolean;
+  onUpdate: (messages: BroadcastMessageRecord[]) => void;
+  onError?: (err: Error) => void;
+}): Unsubscribe {
+  const cached = getCachedBroadcastMessages();
+  if (cached.length > 0) {
+    options.onUpdate(cached.filter((m) => options.isAdmin || m.active));
+  }
+
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) {
+    return () => {};
+  }
+
+  const colRef = collection(db, 'broadcastMessages');
+  // Avoid composite index dependency: non-admins filter active == true and sort client-side
+  const q = options.isAdmin ? query(colRef) : query(colRef, where('active', '==', true));
+
+  return onSnapshot(
+    q,
+    (snap) => {
+      const nowFallback = Date.now();
+      const list: BroadcastMessageRecord[] = snap.docs
+        .map((docSnap) => {
+          const d = docSnap.data();
+          const msgId =
+            typeof d.messageId === 'string' && d.messageId
+              ? d.messageId
+              : typeof d.id === 'string' && d.id
+              ? d.id
+              : docSnap.id;
+          const createdAtMs = parseBroadcastTsMs(d.createdAt, nowFallback);
+          const updatedAtMs = parseBroadcastTsMs(d.updatedAt, createdAtMs);
+          const priorityVal: 'info' | 'important' =
+            d.priority === 'important' ? 'important' : 'info';
+          return {
+            id: msgId,
+            messageId: msgId,
+            ownerUid:
+              typeof d.ownerUid === 'string'
+                ? d.ownerUid
+                : typeof d.authorUid === 'string'
+                ? d.authorUid
+                : '',
+            title: typeof d.title === 'string' ? d.title : 'Message officiel',
+            content: typeof d.content === 'string' ? d.content : '',
+            priority: priorityVal,
+            senderLabel:
+              typeof d.senderLabel === 'string' && d.senderLabel
+                ? d.senderLabel
+                : 'Administration Road to 2000',
+            active: d.active !== false,
+            createdAt: createdAtMs,
+            updatedAt: updatedAtMs,
+          };
+        })
+        .sort((a, b) => b.createdAt - a.createdAt);
+
+      saveCachedBroadcastMessages(list);
+      options.onUpdate(list);
+    },
+    (error) => {
+      if (options.onError) {
+        options.onError(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+  );
+}
+

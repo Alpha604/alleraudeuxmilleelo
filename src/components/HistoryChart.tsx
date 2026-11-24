@@ -129,6 +129,25 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   React.useEffect(() => {
     setSelectedMode(defaultMode);
   }, [defaultMode, username]);
+
+  const [isLightTheme, setIsLightTheme] = useState<boolean>(() => {
+    if (typeof document === 'undefined') return false;
+    return document.documentElement.getAttribute('data-theme') === 'light';
+  });
+
+  React.useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const syncTheme = () => {
+      setIsLightTheme(document.documentElement.getAttribute('data-theme') === 'light');
+    };
+    syncTheme();
+    const observer = new MutationObserver(syncTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+    return () => observer.disconnect();
+  }, []);
   
   // Visual layer toggles
   const [showPuzzlesLine, setShowPuzzlesLine] = useState<boolean>(true);
@@ -777,7 +796,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     });
 
     return (
-      <div className="rounded-xl sm:rounded-2xl border border-neutral-800 bg-[#0c0f14]/95 p-2.5 sm:p-4 text-[11px] sm:text-xs shadow-2xl space-y-1.5 sm:space-y-3 backdrop-blur-md min-w-[180px] max-w-[230px] sm:min-w-[260px] sm:max-w-none pointer-events-none">
+      <div className="liquid-glass-card rounded-xl sm:rounded-2xl border border-neutral-800 bg-[#0c0f14]/95 p-2.5 sm:p-4 text-[11px] sm:text-xs shadow-2xl space-y-1.5 sm:space-y-3 backdrop-blur-md min-w-[180px] max-w-[230px] sm:min-w-[260px] sm:max-w-none pointer-events-none">
         {/* Header with date and status badge */}
         <div className="font-bold text-white capitalize border-b border-neutral-800/80 pb-1.5 sm:pb-2 flex items-center justify-between gap-2">
           <span className="truncate">{fullDate}</span>
@@ -796,7 +815,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
         <div className="space-y-2 font-mono">
           <div className="flex items-center justify-between gap-4">
             <span className="text-neutral-400 flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-white" />
+              <span className={`h-2 w-2 rounded-full ${isLightTheme ? 'bg-slate-900' : 'bg-white'}`} />
               <span>Cible Théorique :</span>
             </span>
             <span className="font-bold text-white">{targetVal} Elo</span>
@@ -886,7 +905,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   return (
     <div className="space-y-6">
       {/* 1. TOP HEADER & MAIN STATUS ROW */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 sm:gap-4 bg-[#0d1117] border border-neutral-800 p-3 sm:p-5 rounded-2xl sm:rounded-3xl shadow-xl">
+      <div className="liquid-glass-card flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 sm:gap-4 bg-[#0d1117] border border-neutral-800 p-3 sm:p-5 rounded-2xl sm:rounded-3xl shadow-xl">
         <div className="hidden sm:block">
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <h2 className="text-sm sm:text-lg font-black text-white flex items-center gap-1.5 sm:gap-2">
@@ -1128,7 +1147,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
       )}
 
       {/* 3. MULTI-LEVEL FILTER & ZOOM TOOLBAR - Touch & Mobile Optimized */}
-      <div className="bg-[#0d1117] border border-neutral-800 p-3 sm:p-4 rounded-2xl sm:rounded-3xl space-y-3">
+      <div className="liquid-glass-card bg-[#0d1117] border border-neutral-800 p-3 sm:p-4 rounded-2xl sm:rounded-3xl space-y-3">
         {/* Row 1: Mode selector + Timeframe presets */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2.5 sm:gap-3">
           {/* Mode Selector + Non-cadence Problèmes toggle */}
@@ -1370,7 +1389,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
       </div>
 
       {/* 4. MAIN RECHARTS COMPOSED CHART WITH BRUSH ZOOM */}
-      <div className="rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3 sm:p-6 shadow-2xl space-y-3 sm:space-y-4">
+      <div className="liquid-glass-card rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3 sm:p-6 shadow-2xl space-y-3 sm:space-y-4">
         {/* Chart Title & Legend */}
         <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 pb-2 border-b border-neutral-800/80">
           <div className="flex items-center gap-1.5 sm:gap-2">
@@ -1397,7 +1416,11 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
             )}
             {showTargetLine && (
               <div className="flex items-center gap-1.5 sm:gap-2">
-                <span className="h-1 sm:h-1.5 w-4 sm:w-5 border-b-2 border-dashed border-white" />
+                <span
+                  className={`h-1 sm:h-1.5 w-4 sm:w-5 border-b-2 border-dashed ${
+                    isLightTheme ? 'border-slate-900' : 'border-white'
+                  }`}
+                />
                 <span className="text-white">Cible Linéaire</span>
               </div>
             )}
@@ -1439,7 +1462,11 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
 
               {/* Grid */}
               {showGrid && (
-                <CartesianGrid stroke="#1c2430" strokeDasharray="3 3" vertical={false} />
+                <CartesianGrid
+                  stroke={isLightTheme ? '#e2e8f0' : '#1c2430'}
+                  strokeDasharray="3 3"
+                  vertical={false}
+                />
               )}
 
               {/* X Axis */}
@@ -1455,8 +1482,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                   });
                 }}
                 stroke="#64748b"
-                tick={{ fill: '#94a3b8', fontSize: 10, fontFamily: 'monospace' }}
-                tickLine={{ stroke: '#334155' }}
+                tick={{ fill: isLightTheme ? '#475569' : '#94a3b8', fontSize: 10, fontFamily: 'monospace' }}
+                tickLine={{ stroke: isLightTheme ? '#cbd5e1' : '#334155' }}
                 dy={6}
               />
 
@@ -1466,8 +1493,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 ticks={yTicks}
                 width={36}
                 stroke="#64748b"
-                tick={{ fill: '#94a3b8', fontSize: 10, fontFamily: 'monospace' }}
-                tickLine={{ stroke: '#334155' }}
+                tick={{ fill: isLightTheme ? '#475569' : '#94a3b8', fontSize: 10, fontFamily: 'monospace' }}
+                tickLine={{ stroke: isLightTheme ? '#cbd5e1' : '#334155' }}
                 dx={-2}
               />
 
@@ -1475,12 +1502,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               {showTodayMarker && visiblePoints.some((p) => p.dayKey === todayKey) && (
                 <ReferenceLine
                   x={todayKey}
-                  stroke="#facc15"
+                  stroke={isLightTheme ? '#b45309' : '#facc15'}
                   strokeDasharray="4 4"
                   strokeWidth={1.5}
                   label={{
                     value: "Aujourd'hui",
-                    fill: '#facc15',
+                    fill: isLightTheme ? '#b45309' : '#facc15',
                     fontSize: 10,
                     position: 'insideTopRight',
                     fontWeight: 'bold',
@@ -1498,7 +1525,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                     strokeWidth={2.5}
                     label={{
                       value: `Avance +${advanceMetric.advanceDays} j (${advanceMetric.equivalentDateLabel})`,
-                      fill: '#10b981',
+                      fill: isLightTheme ? '#059669' : '#10b981',
                       fontSize: 10,
                       fontWeight: 'bold',
                       position: 'insideTopLeft',
@@ -1512,7 +1539,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                     strokeWidth={2.5}
                     label={{
                       value: `Retard ${advanceMetric.advanceDays} j (${advanceMetric.equivalentDateLabel})`,
-                      fill: '#ef4444',
+                      fill: isLightTheme ? '#dc2626' : '#ef4444',
                       fontSize: 10,
                       fontWeight: 'bold',
                       position: 'insideTopRight',
@@ -1524,12 +1551,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               {/* Departure Line (Mode specific: Blitz 1458, Rapid 1289, Bullet 1500) */}
               <ReferenceLine
                 y={effectiveStartElo}
-                stroke="#ffffff"
+                stroke={isLightTheme ? '#0f172a' : '#ffffff'}
                 strokeDasharray="4 4"
-                strokeOpacity={0.4}
+                strokeOpacity={isLightTheme ? 0.35 : 0.4}
                 label={{
                   value: `Départ ${effectiveStartElo} Elo`,
-                  fill: '#ffffff',
+                  fill: isLightTheme ? '#0f172a' : '#ffffff',
                   fontSize: 10,
                   position: 'insideTopLeft',
                 }}
@@ -1538,12 +1565,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
               {/* Target 2000 Line */}
               <ReferenceLine
                 y={targetElo}
-                stroke="#facc15"
+                stroke={isLightTheme ? '#b45309' : '#facc15'}
                 strokeDasharray="5 5"
                 strokeWidth={1.5}
                 label={{
                   value: `Objectif ${targetElo} Elo 🏆`,
-                  fill: '#facc15',
+                  fill: isLightTheme ? '#b45309' : '#facc15',
                   fontSize: 10,
                   fontWeight: 'bold',
                   position: 'insideTopLeft',
@@ -1556,7 +1583,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                   <ReferenceLine
                     key={m}
                     y={m}
-                    stroke="#334155"
+                    stroke={isLightTheme ? '#cbd5e1' : '#334155'}
                     strokeDasharray="2 4"
                     label={{
                       value: `${m}`,
@@ -1590,7 +1617,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                   type="linear"
                   dataKey="targetElo"
                   name="Cible Théorique"
-                  stroke="#ffffff"
+                  stroke={isLightTheme ? '#0f172a' : '#ffffff'}
+                  strokeOpacity={isLightTheme ? 0.65 : 0.9}
                   strokeWidth={1.8}
                   strokeDasharray="6 6"
                   dot={false}
@@ -1604,7 +1632,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                 type="monotone"
                 dataKey="realElo"
                 name="Votre Elo Réel"
-                stroke="#facc15"
+                stroke={isLightTheme ? '#d97706' : '#facc15'}
                 strokeWidth={3}
                 connectNulls={true}
                 /* Custom dot renderer: distinct style for direct sync vs carryover */
@@ -1619,6 +1647,9 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                     return null;
                   }
 
+                  const dotFill = isLightTheme ? '#d97706' : '#facc15';
+                  const dotStroke = isLightTheme ? '#ffffff' : '#0c0f14';
+
                   // Direct sync day: larger prominent dot
                   if (payload.isDirectSync) {
                     return (
@@ -1627,8 +1658,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                         cx={cx}
                         cy={cy}
                         r={3.5}
-                        fill="#facc15"
-                        stroke="#0c0f14"
+                        fill={dotFill}
+                        stroke={dotStroke}
                         strokeWidth={1.5}
                       />
                     );
@@ -1641,17 +1672,17 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                       cx={cx}
                       cy={cy}
                       r={2}
-                      fill="#facc15"
+                      fill={dotFill}
                       fillOpacity={0.7}
-                      stroke="#0c0f14"
+                      stroke={dotStroke}
                       strokeWidth={1}
                     />
                   );
                 }}
                 activeDot={{
                   r: 6,
-                  fill: '#facc15',
-                  stroke: '#ffffff',
+                  fill: isLightTheme ? '#d97706' : '#facc15',
+                  stroke: isLightTheme ? '#0f172a' : '#ffffff',
                   strokeWidth: 2,
                 }}
                 isAnimationActive={false}
@@ -1663,7 +1694,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                   type="monotone"
                   dataKey="puzzlesElo"
                   name="Problèmes (hors cadence)"
-                  stroke="#38bdf8"
+                  stroke={isLightTheme ? '#0284c7' : '#38bdf8'}
                   strokeWidth={2.2}
                   strokeDasharray="4 3"
                   connectNulls={true}
@@ -1675,6 +1706,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                     if (!showAllDots && !payload.isDirectPuzzleSync) {
                       return null;
                     }
+                    const puzFill = isLightTheme ? '#0284c7' : '#38bdf8';
+                    const puzStroke = isLightTheme ? '#ffffff' : '#0c0f14';
                     if (payload.isDirectPuzzleSync) {
                       return (
                         <circle
@@ -1682,8 +1715,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                           cx={cx}
                           cy={cy}
                           r={3.5}
-                          fill="#38bdf8"
-                          stroke="#0c0f14"
+                          fill={puzFill}
+                          stroke={puzStroke}
                           strokeWidth={1.5}
                         />
                       );
@@ -1694,17 +1727,17 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                         cx={cx}
                         cy={cy}
                         r={2}
-                        fill="#38bdf8"
+                        fill={puzFill}
                         fillOpacity={0.65}
-                        stroke="#0c0f14"
+                        stroke={puzStroke}
                         strokeWidth={1}
                       />
                     );
                   }}
                   activeDot={{
                     r: 5.5,
-                    fill: '#38bdf8',
-                    stroke: '#ffffff',
+                    fill: isLightTheme ? '#0284c7' : '#38bdf8',
+                    stroke: isLightTheme ? '#0f172a' : '#ffffff',
                     strokeWidth: 2,
                   }}
                   isAnimationActive={false}
@@ -1719,8 +1752,8 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
                   height={40}
                   travellerWidth={18}
                   padding={{ top: 4, bottom: 4, left: 4, right: 4 }}
-                  stroke="#facc15"
-                  fill="#090d14"
+                  stroke={isLightTheme ? '#b45309' : '#facc15'}
+                  fill={isLightTheme ? '#f1f5f9' : '#090d14'}
                   tickFormatter={(key: string) => {
                     const [y, m, d] = key.split('-').map(Number);
                     const dt = new Date(y, m - 1, d);

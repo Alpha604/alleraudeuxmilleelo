@@ -18,6 +18,7 @@ import {
 import {
   fetchTotpConfigFromServer,
   generateQrCodeDataUrl,
+  getTotpLockoutStatus,
   getTotpSecret,
   getTotpUri,
   isTotpEnrolled,
@@ -25,7 +26,7 @@ import {
   setAdminSession,
   setTotpEnrolled,
   syncTotpSecretToServer,
-  verifyTotpCode,
+  verifyTotpCodeDetailed,
 } from '../utils/security';
 
 interface SecurityModalProps {
@@ -213,8 +214,9 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
   const [showQrVerifyInput, setShowQrVerifyInput] = useState<boolean>(false);
   const [qrRevealError, setQrRevealError] = useState<string>('');
 
-  // Live 30s TOTP countdown bar
+  // Live 30s TOTP countdown bar & anti-spam lockout countdown
   const [secondsLeft, setSecondsLeft] = useState<number>(() => 30 - (Math.floor(Date.now() / 1000) % 30));
+  const [lockoutSeconds, setLockoutSeconds] = useState<number>(() => getTotpLockoutStatus().remainingSeconds);
 
   // Live visual unlock animation
   const [unlockingState, setUnlockingState] = useState<{
@@ -241,6 +243,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     setQrVerifyCode('');
     setQrRevealError('');
     setShowQrVerifyInput(false);
+    setLockoutSeconds(getTotpLockoutStatus().remainingSeconds);
 
     const localSec = getTotpSecret();
     const enrolled = isTotpEnrolled();
@@ -282,11 +285,17 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     };
   }, [isOpen, secretKey]);
 
-  // 1-second timer for live 30s TOTP period indicator
+  // 1-second timer for live 30s TOTP period indicator & anti-spam lockout countdown
   useEffect(() => {
     if (!isOpen) return;
     const interval = setInterval(() => {
       setSecondsLeft(30 - (Math.floor(Date.now() / 1000) % 30));
+      setLockoutSeconds((prev) => {
+        if (prev <= 1) {
+          return getTotpLockoutStatus().remainingSeconds;
+        }
+        return prev - 1;
+      });
     }, 1000);
     return () => clearInterval(interval);
   }, [isOpen]);
@@ -319,6 +328,13 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     if (e) e.preventDefault();
     if (verifyingRef.current || unlockedRef.current || unlockingState) return;
 
+    const lockStatus = getTotpLockoutStatus();
+    if (lockStatus.locked) {
+      setLockoutSeconds(lockStatus.remainingSeconds);
+      setErrorMessage(`Blocage anti-spam actif : réessayez dans ${lockStatus.remainingSeconds}s.`);
+      return;
+    }
+
     setErrorMessage('');
     const input = (directCode !== undefined ? directCode : code).trim().replace(/\D/g, '');
 
@@ -336,9 +352,10 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     setIsVerifying(true);
 
     try {
-      const isValid = await verifyTotpCode(input, secretKey);
+      const result = await verifyTotpCodeDetailed(input, secretKey);
 
-      if (isValid) {
+      if (result.valid) {
+        setLockoutSeconds(0);
         setTotpEnrolled(true);
         setIsEnrolled(true);
         setShowPairingQr(false);
@@ -369,8 +386,13 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
         return;
       }
 
+      if (result.locked && result.remainingSeconds) {
+        setLockoutSeconds(result.remainingSeconds);
+      }
+      setCode('');
       setErrorMessage(
-        'Code incorrect ou expiré. Vérifiez que vous lisez bien « RoadTo2000Elo (Romeo) » dans Authenticator.'
+        result.error ||
+          'Code incorrect ou expiré. Vérifiez que vous lisez bien « RoadTo2000Elo (Romeo) » dans Authenticator.'
       );
     } catch {
       setErrorMessage('Une erreur est survenue lors de la vérification.');
@@ -381,6 +403,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
   };
 
   const handleCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (lockoutSeconds > 0) return;
     const cleaned = e.target.value.replace(/\D/g, '').slice(0, 6);
     setCode(cleaned);
     setErrorMessage('');
@@ -392,6 +415,12 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
   // Authorize QR code reveal with current 6-digit A2F code (no password)
   const handleAuthorizeQrReveal = async (e: React.FormEvent) => {
     e.preventDefault();
+    const lockStatus = getTotpLockoutStatus();
+    if (lockStatus.locked) {
+      setLockoutSeconds(lockStatus.remainingSeconds);
+      setQrRevealError(`Blocage anti-spam actif : réessayez dans ${lockStatus.remainingSeconds}s.`);
+      return;
+    }
     setQrRevealError('');
     const cleaned = qrVerifyCode.trim().replace(/\D/g, '');
     if (cleaned.length !== 6) {
@@ -401,13 +430,17 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     setIsAuthorizingQrReveal(true);
 
     try {
-      const isValid = await verifyTotpCode(cleaned, secretKey);
-      if (isValid) {
+      const result = await verifyTotpCodeDetailed(cleaned, secretKey);
+      if (result.valid) {
+        setLockoutSeconds(0);
         setShowPairingQr(true);
         setShowQrVerifyInput(false);
         setQrVerifyCode('');
       } else {
-        setQrRevealError('Code A2F à 6 chiffres incorrect ou expiré.');
+        if (result.locked && result.remainingSeconds) {
+          setLockoutSeconds(result.remainingSeconds);
+        }
+        setQrRevealError(result.error || 'Code A2F à 6 chiffres incorrect ou expiré.');
       }
     } catch {
       setQrRevealError('Erreur de vérification.');
@@ -427,7 +460,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-md rounded-3xl border border-white/[0.12] bg-[#0c1019]/95 p-4 sm:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.8)] backdrop-blur-2xl space-y-4 sm:space-y-6"
+        className="liquid-glass-card relative w-full max-w-md rounded-3xl border border-white/[0.12] bg-[#0c1019]/95 p-4 sm:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.8)] backdrop-blur-2xl space-y-4 sm:space-y-6"
       >
         {/* Close Button */}
         <button
@@ -599,14 +632,15 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                     type="text"
                     inputMode="numeric"
                     maxLength={6}
+                    disabled={lockoutSeconds > 0}
                     value={qrVerifyCode}
                     onChange={(e) => setQrVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     placeholder="Code A2F (6 chiffres)"
-                    className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-[#facc15] font-mono tracking-widest placeholder-neutral-500 focus:border-[#facc15] focus:outline-none"
+                    className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-[#facc15] font-mono tracking-widest placeholder-neutral-500 focus:border-[#facc15] focus:outline-none disabled:opacity-45"
                   />
                   <button
                     type="submit"
-                    disabled={isAuthorizingQrReveal || qrVerifyCode.length !== 6}
+                    disabled={isAuthorizingQrReveal || lockoutSeconds > 0 || qrVerifyCode.length !== 6}
                     className="rounded-lg bg-[#facc15] hover:bg-[#eab308] text-black px-3 py-1.5 text-xs font-bold transition-all disabled:opacity-40"
                   >
                     {isAuthorizingQrReveal ? '...' : 'Révéler'}
@@ -642,18 +676,26 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                     inputMode="numeric"
                     autoComplete="one-time-code"
                     maxLength={6}
+                    disabled={lockoutSeconds > 0}
                     value={code}
                     onChange={handleCodeChange}
                     placeholder="••••••"
                     autoFocus
-                    className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 sm:py-3.5 text-xl sm:text-2xl font-mono font-bold tracking-[0.4em] text-center text-[#facc15] placeholder-neutral-700 focus:border-[#facc15] focus:outline-none focus:ring-1 focus:ring-[#facc15] transition-all shadow-inner"
+                    className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 sm:py-3.5 text-xl sm:text-2xl font-mono font-bold tracking-[0.4em] text-center text-[#facc15] placeholder-neutral-700 focus:border-[#facc15] focus:outline-none focus:ring-1 focus:ring-[#facc15] transition-all shadow-inner disabled:opacity-45"
                   />
                   <div className="hidden sm:flex absolute inset-y-0 right-0 items-center pr-3.5 pointer-events-none text-neutral-500 pt-1">
                     <KeyRound className="h-5 w-5" />
                   </div>
                 </div>
 
-                {errorMessage && (
+                {lockoutSeconds > 0 && (
+                  <div className="flex items-center gap-2 rounded-xl border border-[#ef4444]/35 bg-[#ef4444]/10 px-3 py-2 text-xs text-[#ef4444] font-semibold">
+                    <Lock className="h-3.5 w-3.5 shrink-0" />
+                    <span>Blocage anti-spam actif : réessayez dans {lockoutSeconds}s.</span>
+                  </div>
+                )}
+
+                {errorMessage && lockoutSeconds === 0 && (
                   <div className="flex items-start gap-1.5 text-[11px] sm:text-xs text-[#ef4444] font-medium pt-1 leading-snug">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                     <span>{errorMessage}</span>
@@ -676,11 +718,13 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
                   </button>
                   <button
                     type="submit"
-                    disabled={isVerifying || code.trim().length !== 6}
+                    disabled={isVerifying || lockoutSeconds > 0 || code.trim().length !== 6}
                     className="flex items-center justify-center gap-2 rounded-xl bg-[#facc15] hover:bg-[#eab308] text-black px-4 py-2 text-xs font-bold transition-all shadow-[0_0_15px_rgba(250,204,21,0.25)] disabled:opacity-40"
                   >
                     <Lock className="h-3.5 w-3.5" />
-                    <span>{isVerifying ? '...' : 'Valider'}</span>
+                    <span>
+                      {lockoutSeconds > 0 ? `Bloqué (${lockoutSeconds}s)` : isVerifying ? '...' : 'Valider'}
+                    </span>
                   </button>
                 </div>
               </div>
