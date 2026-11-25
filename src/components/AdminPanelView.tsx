@@ -32,6 +32,7 @@ import {
   Sliders,
   Smartphone,
   Tablet,
+  Terminal,
   Trash2,
   Unlock,
   Users,
@@ -90,6 +91,8 @@ import {
 } from '../utils/visitors';
 import { NavTab } from './Navbar';
 import { SiteActivityPanel } from './SiteActivityPanel';
+import { ErrorConsolePanel } from './ErrorConsolePanel';
+import { getUnresolvedConsoleErrorsCount } from '../utils/syncDiagnostics';
 
 interface AdminPanelViewProps {
   currentUsername: string;
@@ -105,7 +108,7 @@ interface AdminPanelViewProps {
   onSiteActivityUpdated?: (updated: SiteActivityConfig) => void;
 }
 
-type AdminWorkspaceTab = 'activity' | 'visitors' | 'messages' | 'players' | 'jsonbin' | 'security';
+type AdminWorkspaceTab = 'activity' | 'visitors' | 'messages' | 'errors' | 'players' | 'jsonbin' | 'security';
 
 interface EnrichedAccount {
   username: string;
@@ -208,6 +211,17 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [blockIpDraft, setBlockIpDraft] = useState<Record<string, boolean>>({});
   const [visitorActionBusyId, setVisitorActionBusyId] = useState<string | null>(null);
   const currentAdminVisitorId = useMemo(() => getOrCreateVisitorId(), []);
+
+  // Live Error Console unresolved errors badge counter
+  const [consoleErrorsCount, setConsoleErrorsCount] = useState<number>(() =>
+    getUnresolvedConsoleErrorsCount()
+  );
+
+  useEffect(() => {
+    const syncCount = () => setConsoleErrorsCount(getUnresolvedConsoleErrorsCount());
+    window.addEventListener('roadto2000:error-console-updated', syncCount);
+    return () => window.removeEventListener('roadto2000:error-console-updated', syncCount);
+  }, []);
 
   const loadVisitors = async (silent = false) => {
     if (!isAdmin) return;
@@ -835,7 +849,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               }`}
             >
               {JSONBIN_TEMPORARILY_DISABLED
-                ? 'En pause (Test Firebase)'
+                ? 'Archivé (Firebase Actif)'
                 : registryConfig.configured
                 ? registryConfig.lastStatus === 'error'
                   ? 'Erreur de connexion'
@@ -912,6 +926,30 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
           <button
             type="button"
+            onClick={() => setWorkspace('errors')}
+            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+              workspace === 'errors'
+                ? 'bg-[#facc15] text-black font-bold'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Terminal className="h-3.5 w-3.5" />
+            <span>Console Erreurs</span>
+            {consoleErrorsCount > 0 && (
+              <span
+                className={`px-1.5 py-0.5 rounded-full text-[10px] font-black tabular-nums leading-none ${
+                  workspace === 'errors'
+                    ? 'bg-black text-[#facc15]'
+                    : 'bg-[#ef4444] text-white'
+                }`}
+              >
+                {consoleErrorsCount > 99 ? '99+' : consoleErrorsCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => setWorkspace('players')}
             className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
               workspace === 'players'
@@ -956,7 +994,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             onClick={handleManualPullRegistry}
             disabled={JSONBIN_TEMPORARILY_DISABLED || isSyncingRegistry || !registryConfig.configured}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-800 bg-[#0b0e14] hover:bg-neutral-900 text-xs font-semibold text-neutral-300 hover:text-white transition-colors disabled:opacity-40 whitespace-nowrap"
-            title={JSONBIN_TEMPORARILY_DISABLED ? 'JSONBin en pause pour test Firebase' : 'Synchroniser la liste des comptes depuis JSONBin'}
+            title={JSONBIN_TEMPORARILY_DISABLED ? 'JSONBin archivé (Firebase est la base active)' : 'Synchroniser la liste des comptes depuis JSONBin'}
           >
             <RefreshCw className={`h-3.5 w-3.5 text-[#facc15] ${isSyncingRegistry ? 'animate-spin' : ''}`} />
             <span>{JSONBIN_TEMPORARILY_DISABLED ? 'Registre en pause' : 'Sync registre'}</span>
@@ -986,6 +1024,11 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           onShowMessage={onShowMessage}
         />
       )}
+
+      {/* ===================================================================== */}
+      {/* WORKSPACE 0B: LIVE ERROR CONSOLE & DIAGNOSTICS                        */}
+      {/* ===================================================================== */}
+      {workspace === 'errors' && <ErrorConsolePanel onShowMessage={onShowMessage} />}
 
       {/* ===================================================================== */}
       {/* WORKSPACE 0A: LIVE VISITORS, ONLINE STATUS & BLOCKING                 */}
@@ -1472,7 +1515,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 }`}
               >
                 {JSONBIN_TEMPORARILY_DISABLED
-                  ? 'En pause (Test Firebase · Données préservées)'
+                  ? 'Archivé (Firebase Actif · Données préservées)'
                   : registryConfig.configured
                   ? registryConfig.lastStatus === 'error'
                     ? 'Erreur de connexion'
@@ -1482,8 +1525,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             </div>
 
             {JSONBIN_TEMPORARILY_DISABLED && (
-              <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 p-3.5 text-xs text-amber-200">
-                <strong>JSONBin temporairement désactivé :</strong> les appels réseau vers JSONBin sont suspendus pour tester Firebase. Aucune donnée ni clé JSONBin n&apos;a été supprimée.
+              <div className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-3.5 text-xs text-emerald-200">
+                <strong>Relais Firebase activé :</strong> Firebase Firestore est désormais la base principale active. Les appels sortants vers JSONBin sont archivés sans aucune suppression de vos données ou clés.
               </div>
             )}
 

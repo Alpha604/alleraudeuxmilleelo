@@ -170,7 +170,10 @@ export const SyncLog: React.FC<SyncLogProps> = ({
         } else {
           const parisKey = normalizeParisDayKey(record.timestamp) || key;
           const expectedHash = computeRecordVerificationHash(record, username);
-          if (jsonBinStatus === 'synced' && confirmedDayHashes?.[parisKey] === expectedHash) {
+          if (
+            (jsonBinStatus === 'synced' || JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled') &&
+            confirmedDayHashes?.[parisKey] === expectedHash
+          ) {
             syncState = 'verified';
           } else {
             syncState = 'pending';
@@ -518,10 +521,10 @@ export const SyncLog: React.FC<SyncLogProps> = ({
                 <button
                   type="button"
                   onClick={onOpenNetworkModal}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-sky-500/35 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 text-[11px] font-mono transition-colors"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-emerald-500/35 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 text-[11px] font-mono transition-colors"
                 >
                   <Clock className="h-3 w-3 shrink-0" />
-                  <span>JSONBin en pause (Test Firebase en direct actif)</span>
+                  <span>Synchronisé en direct via Firebase (JSONBin archivé)</span>
                 </button>
               ) : (
                 <>

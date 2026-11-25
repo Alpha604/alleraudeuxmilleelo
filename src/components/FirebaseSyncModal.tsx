@@ -132,7 +132,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
             'Canal Firebase bloqué'
           );
         } else {
-          onShowMessage('Firestore hors ligne — repli JSONBin actif.', 'warning', 'Firestore hors ligne');
+          onShowMessage('Firestore hors ligne — cache local actif (archive JSONBin préservée).', 'warning', 'Firestore hors ligne');
         }
       }
     } finally {
@@ -195,7 +195,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
       await signOutFirebase();
       setDiag(getSyncDiagnosticsSnapshot());
       if (onShowMessage) {
-        onShowMessage('Déconnecté de Firebase (repli JSONBin maintenu).', 'info', 'Firebase');
+        onShowMessage('Déconnecté de Firebase (cache local maintenu).', 'info', 'Firebase');
       }
     } finally {
       setAuthBusy(false);
@@ -331,7 +331,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
               </div>
               <p className="text-[11px] text-neutral-400 font-mono truncate">
                 {FIREBASE_META.projectId} ·{' '}
-                {hostMode === 'static' ? 'Mode Statique (Firebase + JSONBin direct)' : 'Mode Serveur Express'}
+                {hostMode === 'static' ? 'Mode Statique (Firebase Principal)' : 'Mode Serveur Express · Firebase Principal'}
               </p>
             </div>
           </div>
@@ -419,7 +419,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
                     {fb.activeReadSource === 'firebase'
                       ? 'Firebase (Principal)'
                       : fb.activeReadSource === 'jsonbin'
-                      ? 'JSONBin (Repli)'
+                      ? 'Archive JSONBin'
                       : 'Cache navigateur'}
                   </div>
                 </div>
@@ -524,7 +524,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
               </div>
               <p className="text-[11px] text-neutral-200 leading-relaxed">
                 Un bloqueur de publicités ou bouclier de confidentialité (Brave Shields, uBlock Origin, AdGuard) bloque les requêtes vers{' '}
-                <code className="text-amber-300 font-mono">firestore.googleapis.com</code>. Le site bascule automatiquement sur JSONBin en secours.
+                <code className="text-amber-300 font-mono">firestore.googleapis.com</code>. Le site utilise temporairement le cache navigateur en attendant le déblocage.
               </p>
             </div>
           )}
@@ -669,7 +669,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
                 <CheckCircle2 className="h-6 w-6 text-[#10b981] mx-auto" />
                 <div className="text-xs font-bold text-white">Aucun problème reporté</div>
                 <p className="text-[11px] text-neutral-400">
-                  La synchronisation Firebase et le repli JSONBin fonctionnent normalement.
+                  La synchronisation principale Firebase fonctionne normalement (archive JSONBin préservée).
                 </p>
               </div>
             ) : (

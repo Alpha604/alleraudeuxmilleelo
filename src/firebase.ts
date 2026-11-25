@@ -115,7 +115,7 @@ export async function isAuthorizedOwnerUser(user: User | null | undefined): Prom
 const app = initializeApp(firebaseConfig);
 export const db = initializeFirestore(
   app,
-  { experimentalAutoDetectLongPolling: true },
+  { experimentalForceLongPolling: true },
   firebaseConfig.firestoreDatabaseId
 );
 export const auth = getAuth(app);
@@ -302,7 +302,7 @@ export async function testConnection(): Promise<FirebaseConnectionState> {
         title: 'Firestore hors ligne',
         message: 'La base Firestore n’a pas répondu au test de connectivité.',
         technicalDetail: msg.slice(0, 200),
-        suggestion: 'Vérifiez votre connexion Internet ; le repli JSONBin prend le relais.',
+        suggestion: 'Vérifiez votre connexion Internet ; le cache local conserve vos données jusqu’à la reconnexion à Firebase.',
       });
       return 'offline';
     }

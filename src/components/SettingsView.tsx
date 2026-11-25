@@ -1296,7 +1296,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               ) : (
                 <span className="text-[11px] text-neutral-500">
                   {JSONBIN_TEMPORARILY_DISABLED
-                    ? 'Synchronisé en temps réel via Firebase (JSONBin en pause).'
+                    ? 'Synchronisé en temps réel via Firebase (JSONBin archivé).'
                     : 'Synchronisé en temps réel via Firebase & JSONBin.'}
                 </span>
               )}
@@ -1596,12 +1596,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
 
         {JSONBIN_TEMPORARILY_DISABLED && (
-          <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 p-3.5 flex items-start gap-2.5 text-xs text-amber-200">
-            <ShieldCheck className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-3.5 flex items-start gap-2.5 text-xs text-emerald-200">
+            <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
             <div>
-              <strong className="text-amber-300">Mode Test Firebase actif · JSONBin temporairement en pause</strong>
+              <strong className="text-emerald-300">Relais Firebase activé · JSONBin archivé (données conservées)</strong>
               <p className="text-[11px] text-neutral-300 mt-0.5 leading-relaxed">
-                Aucune requête n&apos;est envoyée à JSONBin pendant le test de prise en main de Firebase. Vos identifiants (Bin ID / clés) et toutes vos données stockées dans JSONBin sont strictement conservés sans aucune suppression.
+                Firebase Firestore assure désormais l&apos;ensemble de la synchronisation multi-appareils. Vos identifiants (Bin ID / clés) et toutes vos données stockées dans JSONBin sont strictement conservés sans aucune suppression.
               </p>
             </div>
           </div>
@@ -1621,9 +1621,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 État du Bin Cloud
               </span>
               {JSONBIN_TEMPORARILY_DISABLED || jsonBinInfo?.lastStatus === 'disabled' ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/40">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                  <span>En pause (Test Firebase)</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/40">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  <span>Archivé (Firebase Actif)</span>
                 </span>
               ) : jsonBinInfo?.configured ? (
                 jsonBinInfo.lastStatus === 'synced' ? (
@@ -1760,7 +1760,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#10b981]/40 bg-[#10b981]/15 text-xs font-bold text-[#10b981] hover:bg-[#10b981]/25 transition-all disabled:opacity-40"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${isSyncingBin ? 'animate-spin' : ''}`} />
-                <span>{JSONBIN_TEMPORARILY_DISABLED ? 'Sauvegarde en pause' : 'Sauvegarder vers JSONBin'}</span>
+                <span>{JSONBIN_TEMPORARILY_DISABLED ? 'Archive (Firebase Actif)' : 'Sauvegarder vers JSONBin'}</span>
               </button>
 
               <button
@@ -1770,7 +1770,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-700 bg-neutral-900 text-xs font-bold text-white hover:bg-neutral-800 transition-all disabled:opacity-40"
               >
                 <Server className="h-3.5 w-3.5" />
-                <span>{JSONBIN_TEMPORARILY_DISABLED ? 'Restauration en pause' : 'Restaurer depuis JSONBin'}</span>
+                <span>{JSONBIN_TEMPORARILY_DISABLED ? 'Archive conservée' : 'Restaurer depuis JSONBin'}</span>
               </button>
             </div>
 

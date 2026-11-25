@@ -227,7 +227,7 @@ export function getEffectiveReleaseHistory(settings?: Partial<AppSettings> | nul
           ? settings.siteVersionChanges.slice(0, 20)
           : [
               'Suivi temps réel de la progression Elo vers 2000 Elo.',
-              'Synchronisation sécurisée Firebase Firestore & repli JSONBin.',
+              'Synchronisation temps réel principale via Firebase Firestore (archive JSONBin préservée).',
               'Accès administrateur protégé par authentification Google & A2F.',
             ],
       publishedAt:

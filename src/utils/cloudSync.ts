@@ -40,6 +40,7 @@ const STORAGE_KEYS = {
 };
 
 export const JSONBIN_TEMPORARILY_DISABLED = true;
+export const FIREBASE_PRIMARY_MODE = true;
 
 export type JsonBinSyncState = 'synced' | 'pending_keys' | 'error' | 'syncing' | 'disabled';
 
@@ -502,7 +503,7 @@ export async function saveServerData(
     // Express unreachable -> client-side Firestore + JSONBin fallback
   }
 
-  // 2. When JSONBin is paused for Firebase test, save directly to Firestore without calling api.jsonbin.io
+  // 2. Firebase Primary Mode (JSONBin archived non-destructively): save directly to Firestore
   if (JSONBIN_TEMPORARILY_DISABLED) {
     const metrics = getLocalMetrics(clean);
     const fbRes = await mirrorDataToFirestore({
@@ -511,6 +512,14 @@ export async function saveServerData(
       settings: settings || getStoredSettings(clean),
       replaceExact,
     }).catch(() => ({ ok: false }));
+    const fbHashes = fbRes.ok ? buildConfirmedDayHashes(history, clean) : metrics.confirmedDayHashes;
+    if (fbRes.ok && fbHashes) {
+      saveLocalMetrics(clean, {
+        confirmedDayHashes: fbHashes,
+        lastStatus: 'disabled',
+        lastError: null,
+      });
+    }
     emitJsonBinUpdate({
       username: clean,
       lastSyncTime: metrics.lastSyncTime,
@@ -519,19 +528,20 @@ export async function saveServerData(
       lastError: null,
       pushed: false,
       skipped: true,
+      confirmedDayHashes: fbHashes,
     });
     return {
       ok: fbRes.ok,
       jsonBinSynced: false,
       disabledForFirebaseTest: true,
       skipped: true,
-      reason: 'JSONBin en pause (test Firebase actif — données préservées)',
+      reason: 'Firebase Principal actif (données JSONBin archivées et préservées)',
       lastSyncTime: metrics.lastSyncTime,
       remoteUpdatedAt: metrics.remoteUpdatedAt ?? null,
       status: 'disabled',
       history,
       settings: settings || null,
-      confirmedDayHashes: fbRes.ok ? buildConfirmedDayHashes(history, clean) : metrics.confirmedDayHashes,
+      confirmedDayHashes: fbHashes,
     };
   }
 
@@ -656,11 +666,12 @@ export async function reconcileCloudSync(
       fbRes.reason === 'auth_required'
         ? 'Session Google Firebase non connectée sur cet appareil'
         : fbRes.reason === 'empty'
-        ? 'Base Firestore vide : récupération depuis JSONBin'
+        ? 'Initialisation initiale de Firestore depuis les relevés locaux'
         : 'Firestore temporairement indisponible';
   } catch {
-    // Firebase unavailable -> seamless fallback to JSONBin below
-    fallbackReason = 'Erreur réseau ou blocage Firestore : repli JSONBin actif';
+    fallbackReason = JSONBIN_TEMPORARILY_DISABLED
+      ? 'Firestore temporairement indisponible : cache local actif (JSONBin archivé)'
+      : 'Erreur réseau ou blocage Firestore : cache local actif';
   }
 
   // 2. FALLBACK SOURCE: JSONBin + Express Server if Firebase is unavailable/empty
@@ -764,8 +775,37 @@ export async function reconcileCloudSync(
     saveServerData(clean, mergedHistory, nextSettings, { force: false }).catch(() => {});
   }
 
+  // Immediate Firebase takeover: seed Firestore when authenticated even if Firestore started empty
+  if (JSONBIN_TEMPORARILY_DISABLED && !isSpectator && mergedHistory.length > 0) {
+    try {
+      const seedRes = await mirrorDataToFirestore({
+        username: clean,
+        history: mergedHistory,
+        settings: nextSettings || localSettings || getStoredSettings(clean),
+      });
+      if (seedRes.ok) {
+        const fbHashes = buildConfirmedDayHashes(mergedHistory, clean);
+        saveLocalMetrics(clean, { confirmedDayHashes: fbHashes });
+        updateFirebaseDiagnostics({
+          activeReadSource: 'firebase',
+          lastFallbackReason: null,
+          lastWriteAt: Date.now(),
+          recordsCount: mergedHistory.length,
+        });
+        return {
+          history: mergedHistory,
+          settings: nextSettings,
+          didUpdate: didHistoryChange || didSettingsChange,
+          lastJsonBinSyncTime: lastJsonBinSyncTime || Date.now(),
+          confirmedDayHashes: fbHashes,
+          sourceUsed: 'firebase',
+        };
+      }
+    } catch {}
+  }
+
   updateFirebaseDiagnostics({
-    activeReadSource: 'jsonbin',
+    activeReadSource: JSONBIN_TEMPORARILY_DISABLED ? 'local' : 'jsonbin',
     lastFallbackReason: fallbackReason,
     lastReadAt: Date.now(),
     recordsCount: mergedHistory.length,
@@ -777,7 +817,7 @@ export async function reconcileCloudSync(
     didUpdate: didHistoryChange || didSettingsChange,
     lastJsonBinSyncTime,
     confirmedDayHashes,
-    sourceUsed: 'jsonbin',
+    sourceUsed: JSONBIN_TEMPORARILY_DISABLED ? 'local' : 'jsonbin',
   };
 }
 
@@ -837,7 +877,7 @@ export async function fetchJsonBinStatus(username = 'alpharomeo1500'): Promise<J
       savedRequests: metrics.savedRequests,
       quotaSaverActive: true,
       lastSkippedReason: JSONBIN_TEMPORARILY_DISABLED
-        ? 'JSONBin temporairement désactivé pour tester Firebase (données préservées)'
+        ? 'Firebase est actif en base principale (données JSONBin archivées sans suppression)'
         : metrics.lastSkippedReason || null,
     },
     template: {
@@ -995,7 +1035,7 @@ export async function syncNowToJsonBin(
     return {
       success: true,
       skipped: true,
-      reason: 'JSONBin en pause (Firebase prend la main — données conservées)',
+      reason: 'Firebase actif (JSONBin archivé — données conservées)',
       lastSyncTime: metrics.lastSyncTime,
       remoteUpdatedAt: metrics.remoteUpdatedAt,
       history: localHistory,
@@ -1328,7 +1368,7 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
   if (JSONBIN_TEMPORARILY_DISABLED) {
     return {
       success: false,
-      error: 'JSONBin en pause temporaire (Firebase actif — données JSONBin conservées).',
+      error: 'JSONBin archivé (Firebase actif — données JSONBin conservées).',
     };
   }
   const creds = getClientJsonBinCredentials(cleanUser);
@@ -1541,19 +1581,30 @@ export async function verifyJsonBinSync(
   const localRecords = localHistoryOverride ?? getStoredSyncHistory(cleanUser);
 
   if (JSONBIN_TEMPORARILY_DISABLED) {
-    emitJsonBinUpdate({
-      username: cleanUser,
-      lastSyncTime: getLocalMetrics(cleanUser).lastSyncTime,
-      lastStatus: 'disabled',
-    });
+    const fbCheck = await fetchPlayerDataFromFirestore(cleanUser);
+    const fbConfirmed = fbCheck.available
+      ? buildConfirmedDayHashes(fbCheck.history, cleanUser)
+      : getLocalMetrics(cleanUser).confirmedDayHashes || {};
+    let matchingDays = 0;
+    let pendingDays = 0;
+    for (const r of localRecords) {
+      const dayKey = normalizeParisDayKey(r.timestamp);
+      const hash = computeRecordVerificationHash(r, cleanUser);
+      if (dayKey && fbConfirmed[dayKey] === hash) {
+        matchingDays++;
+      } else {
+        pendingDays++;
+      }
+    }
+    const updatedAtMs = fbCheck.updatedAt ? new Date(fbCheck.updatedAt).getTime() : Date.now();
     return {
-      verified: false,
-      matchingDays: 0,
-      pendingDays: localRecords.length,
+      verified: fbCheck.available && pendingDays === 0,
+      matchingDays,
+      pendingDays,
       totalLocalDays: localRecords.length,
-      confirmedDayHashes: getLocalMetrics(cleanUser).confirmedDayHashes || {},
-      lastSyncTime: getLocalMetrics(cleanUser).lastSyncTime,
-      error: 'JSONBin en pause pour le test Firebase (données préservées).',
+      confirmedDayHashes: fbConfirmed,
+      lastSyncTime: Number.isFinite(updatedAtMs) ? updatedAtMs : Date.now(),
+      ...(fbCheck.available ? {} : { error: 'Connexion Google Firebase requise pour vérifier les relevés.' }),
     };
   }
 

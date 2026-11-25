@@ -54,6 +54,7 @@ import {
   SyncDiagnosticsSnapshot,
 } from './utils/syncDiagnostics';
 import {
+  buildConfirmedDayHashes,
   computeClientDataSignature,
   fetchJsonBinStatus,
   formatJsonBinTimestamp,
@@ -614,6 +615,7 @@ export default function App() {
           saveStoredSyncHistory(nextHistory, settings.username);
           setSyncHistory(nextHistory);
           setLastSyncTime(nextHistory[0]?.timestamp ?? null);
+          setConfirmedDayHashes(buildConfirmedDayHashes(nextHistory, settings.username));
         }
         if (settingsPatch) {
           saveStoredSettings(nextSettings);
@@ -2244,7 +2246,7 @@ export default function App() {
               res.sourceUsed === 'firebase'
                 ? `${res.history.length} relevé(s) rechargés depuis Firebase Firestore.`
                 : res.sourceUsed === 'jsonbin'
-                ? `${res.history.length} relevé(s) chargés via le repli JSONBin.`
+                ? `${res.history.length} relevé(s) chargés depuis le cache local (archive JSONBin préservée).`
                 : 'Cache local conservé (aucune mise à jour distante).',
               res.sourceUsed === 'firebase' ? 'success' : 'info',
               'Rechargement Cloud'
@@ -2361,7 +2363,7 @@ export default function App() {
               res.sourceUsed === 'firebase'
                 ? `${res.history.length} relevé(s) rechargés depuis Firebase Firestore.`
                 : res.sourceUsed === 'jsonbin'
-                ? `${res.history.length} relevé(s) chargés via le repli JSONBin.`
+                ? `${res.history.length} relevé(s) chargés depuis le cache local (archive JSONBin préservée).`
                 : 'Cache local conservé (aucune mise à jour distante).',
               res.sourceUsed === 'firebase' ? 'success' : 'info',
               'Rechargement Cloud'

@@ -259,7 +259,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
                 title={`Réseau : ${isNetworkOnline ? 'En ligne' : 'Déconnecté'} · JSONBin : ${
                   isJsonDisabled
-                    ? 'En pause (Test Firebase)'
+                    ? 'Archivé (Firebase Actif)'
                     : jsonBinStatus === 'synced'
                     ? 'Synchronisé'
                     : jsonBinStatus === 'syncing'
@@ -272,7 +272,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Database className="h-3.5 w-3.5 shrink-0" />
                 <span className="hidden md:inline">
                   {isJsonDisabled
-                    ? 'JSONBin (Pause)'
+                    ? 'JSONBin (Archivé)'
                     : lastJsonBinSyncTime
                     ? `JSONBin · ${formatJsonBinShortTime(lastJsonBinSyncTime)}`
                     : 'JSONBin'}
@@ -310,13 +310,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                   : firebaseStatus === 'syncing'
                   ? 'Synchro...'
                   : firebaseStatus === 'blocked'
-                  ? 'Canal bloqué par client (Repli JSONBin)'
+                  ? 'Canal bloqué par client (Cache local actif)'
                   : firebaseStatus === 'offline'
                   ? 'Hors ligne'
                   : firebaseStatus === 'error'
                   ? 'Erreur détectée'
                   : firebaseStatus === 'fallback'
-                  ? 'Repli JSONBin actif'
+                  ? 'Cache local actif'
                   : 'Connexion Google requise'
               } · Dernière synchro : ${formatJsonBinTimestamp(lastFirebaseSyncTime)}${
                 firebaseIssuesCount > 0 ? ` · ${firebaseIssuesCount} problème(s)` : ''

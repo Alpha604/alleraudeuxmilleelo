@@ -386,7 +386,7 @@ export const MobileCloudMenuModal: React.FC<MobileCloudMenuModalProps> = ({
                 </div>
                 <p className="text-[11px] font-mono text-neutral-400 truncate">
                   {isJsonBinDisabled
-                    ? `Firebase Actif · JSONBin en pause · @${username}`
+                    ? `Firebase Principal Actif · JSONBin archivé · @${username}`
                     : `Firebase Principal + Repli JSONBin · @${username}`}
                 </p>
               </div>
@@ -535,10 +535,10 @@ export const MobileCloudMenuModal: React.FC<MobileCloudMenuModalProps> = ({
                   )}
                 </div>
                 <div className="min-w-0">
-                  <div className="text-xs font-bold text-white">Cache Secours JSONBin</div>
+                  <div className="text-xs font-bold text-white">Archive JSONBin</div>
                   <div className="text-[11px] font-mono text-neutral-400 truncate">
                     {isJsonBinDisabled
-                      ? 'En pause (données préservées)'
+                      ? 'Archivé (données préservées)'
                       : `MàJ : ${formatJsonBinTimestamp(jsonBinLastSync)}`}
                   </div>
                 </div>
@@ -558,7 +558,7 @@ export const MobileCloudMenuModal: React.FC<MobileCloudMenuModalProps> = ({
                 }`}
               >
                 {isJsonBinDisabled
-                  ? 'En pause (Test Firebase)'
+                  ? 'Archivé (Firebase Actif)'
                   : jsonBinStatus === 'synced'
                   ? 'Synchronisé'
                   : jsonBinStatus === 'syncing'

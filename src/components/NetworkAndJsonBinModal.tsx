@@ -337,9 +337,9 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
 
               {/* Status Pill */}
               {JSONBIN_TEMPORARILY_DISABLED || statusInfo?.disabledForFirebaseTest ? (
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-sky-500/15 text-sky-300 border border-sky-500/40">
-                  <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
-                  <span>En pause (Test Firebase)</span>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/40">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  <span>Archivé (Firebase Actif)</span>
                 </div>
               ) : statusInfo?.configured ? (
                 statusInfo.lastStatus === 'synced' ? (
@@ -367,8 +367,8 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
             </div>
 
             {(JSONBIN_TEMPORARILY_DISABLED || statusInfo?.disabledForFirebaseTest) && (
-              <div className="p-3 rounded-xl bg-sky-500/10 border border-sky-500/35 text-xs text-sky-200 leading-relaxed">
-                <strong>Mode Test Firebase actif :</strong> les requêtes sortantes JSONBin sont temporairement suspendues pour vérifier la prise en charge complète par Firebase. Vos identifiants (Bin ID), clés et données existantes sur JSONBin sont intégralement conservés et intacts.
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/35 text-xs text-emerald-200 leading-relaxed">
+                <strong>Relais Firebase activé :</strong> Firebase Firestore assure désormais la totalité de la synchronisation temps réel. Vos identifiants (Bin ID), clés et données existantes sur JSONBin sont strictement conservés et archivés sans aucune suppression.
               </div>
             )}
 

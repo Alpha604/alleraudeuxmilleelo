@@ -522,7 +522,7 @@ export const MobileMoreSheet: React.FC<MobileMoreSheetProps> = ({
                   <div className="text-xs font-bold text-white truncate">Cloud JSONBin</div>
                   <div className="text-[10px] text-neutral-400 truncate">
                     {JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled'
-                      ? 'En pause (Firebase)'
+                      ? 'Archivé (Firebase)'
                       : jsonBinStatus === 'synced'
                       ? 'Synchronisé'
                       : jsonBinStatus === 'error'

@@ -212,7 +212,7 @@ export async function saveAccountsRegistryConfig(config: {
   if (JSONBIN_TEMPORARILY_DISABLED) {
     safeSet(REGISTRY_CONFIG_KEYS.lastStatus, 'synced');
     safeSet(REGISTRY_CONFIG_KEYS.lastError, '');
-    return { success: true, status: 'synced', error: 'JSONBin en pause (test Firebase — config sauvegardée)' };
+    return { success: true, status: 'synced', error: 'Firebase actif (JSONBin archivé — config sauvegardée)' };
   }
 
   // Test connection to JSONBin.io

@@ -273,7 +273,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={onOpenNetworkModal}
             title={`Réseau : ${isNetworkOnline ? 'En ligne' : 'Déconnecté'} · JSONBin : ${
               JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled'
-                ? 'En pause (Test Firebase)'
+                ? 'Archivé (Firebase Actif)'
                 : jsonBinStatus === 'synced'
                 ? 'Synchronisé'
                 : jsonBinStatus === 'error'
@@ -303,7 +303,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span className="text-neutral-200">Cache JSONBin</span>
                   <span className="text-[10px] font-mono text-neutral-400 truncate">
                     {JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled'
-                      ? 'Test Firebase actif'
+                      ? 'Firebase Principal'
                       : lastJsonBinSyncTime
                       ? `MàJ : ${formatJsonBinShortTime(lastJsonBinSyncTime)}`
                       : 'Jamais MàJ'}
@@ -353,13 +353,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
               firebaseStatus === 'synced'
                 ? 'Principal actif'
                 : firebaseStatus === 'blocked'
-                ? 'Bloqué par client (Repli JSONBin)'
+                ? 'Bloqué par client (Cache local)'
                 : firebaseStatus === 'offline'
                 ? 'Hors ligne'
                 : firebaseStatus === 'error'
                 ? 'Erreur détectée'
                 : firebaseStatus === 'fallback'
-                ? 'Repli JSONBin'
+                ? 'Cache local'
                 : 'Auth Google requise'
             } · Dernière MàJ : ${formatJsonBinTimestamp(lastFirebaseSyncTime)}${
               firebaseIssuesCount > 0 ? ` · ${firebaseIssuesCount} problème(s)` : ''
@@ -386,7 +386,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       ? `MàJ : ${formatJsonBinShortTime(lastFirebaseSyncTime)}`
                       : firebaseStatus === 'blocked'
                       ? 'Canal bloqué'
-                      : 'Repli prêt'}
+                      : 'Base principale'}
                   </span>
                 </div>
                 <span

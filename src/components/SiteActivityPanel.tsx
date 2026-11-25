@@ -1253,7 +1253,7 @@ export const SiteActivityPanel: React.FC<SiteActivityPanelProps> = ({
         <div className="text-xs text-neutral-400">
           {JSONBIN_TEMPORARILY_DISABLED ? (
             <>
-              Les changements sont propagés en temps réel via <strong className="text-neutral-200">Firebase</strong> (JSONBin en pause).
+              Les changements sont propagés en temps réel via <strong className="text-neutral-200">Firebase</strong> (JSONBin archivé).
             </>
           ) : (
             <>
