@@ -81,11 +81,15 @@ import {
   publishBroadcastMessageToFirestore,
   subscribeBroadcastMessagesFirestore,
 } from '../utils/firebaseMirror';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../firebase';
 import {
   blockVisitor,
   deleteVisitorRecord,
   fetchVisitorsList,
   getOrCreateVisitorId,
+  mergeVisitorLists,
+  subscribeVisitorsFirestore,
   unblockVisitor,
   VisitorRecord,
 } from '../utils/visitors';
@@ -205,12 +209,15 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [visitorsLoading, setVisitorsLoading] = useState<boolean>(false);
   const [visitorsError, setVisitorsError] = useState<string | null>(null);
   const [visitorsUnauthorized, setVisitorsUnauthorized] = useState<boolean>(false);
+  const [visitorsFirestoreLive, setVisitorsFirestoreLive] = useState<boolean>(false);
   const [visitorFilter, setVisitorFilter] = useState<'all' | 'online' | 'blocked'>('all');
   const [visitorSearch, setVisitorSearch] = useState<string>('');
   const [blockReasonDraft, setBlockReasonDraft] = useState<Record<string, string>>({});
   const [blockIpDraft, setBlockIpDraft] = useState<Record<string, boolean>>({});
   const [visitorActionBusyId, setVisitorActionBusyId] = useState<string | null>(null);
+  const [copiedVisitorId, setCopiedVisitorId] = useState<string | null>(null);
   const currentAdminVisitorId = useMemo(() => getOrCreateVisitorId(), []);
+  const latestExpressVisitorsRef = React.useRef<VisitorRecord[]>([]);
 
   // Live Error Console unresolved errors badge counter
   const [consoleErrorsCount, setConsoleErrorsCount] = useState<number>(() =>
@@ -223,26 +230,33 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     return () => window.removeEventListener('roadto2000:error-console-updated', syncCount);
   }, []);
 
+  const applyMergedVisitors = (merged: VisitorRecord[]) => {
+    setVisitors(merged);
+    setVisitorsCounts({
+      onlineCount: merged.filter((v) => v.isOnline).length,
+      totalCount: merged.length,
+      blockedCount: merged.filter((v) => v.blocked).length,
+    });
+  };
+
   const loadVisitors = async (silent = false) => {
     if (!isAdmin) return;
     if (!silent) setVisitorsLoading(true);
     try {
       const res = await fetchVisitorsList();
-      if (res.unauthorized) {
-        setVisitorsUnauthorized(true);
-        setVisitorsError(res.error || 'Authentification A2F serveur requise.');
-        return;
-      }
-      setVisitorsUnauthorized(false);
       if (res.success) {
-        setVisitors(res.visitors || []);
-        setVisitorsCounts({
-          onlineCount: res.onlineCount || 0,
-          totalCount: res.totalCount || 0,
-          blockedCount: res.blockedCount || 0,
-        });
+        if (res.expressAuthorized) {
+          latestExpressVisitorsRef.current = res.visitors.filter(
+            (v) => v.syncChannel === 'express' || v.syncChannel === 'hybrid'
+          );
+        }
+        setVisitorsFirestoreLive(Boolean(res.firestoreConnected));
+        setVisitorsUnauthorized(Boolean(!res.firestoreConnected && res.unauthorized));
+        applyMergedVisitors(res.visitors || []);
         setVisitorsError(null);
       } else {
+        setVisitorsFirestoreLive(false);
+        setVisitorsUnauthorized(Boolean(res.unauthorized));
         setVisitorsError(res.error || 'Impossible de charger les connexions.');
       }
     } finally {
@@ -253,11 +267,39 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   useEffect(() => {
     if (!isAdmin) return;
     loadVisitors(false);
+
+    let unsubFs: (() => void) | null = null;
+    const attachFirestoreStream = () => {
+      if (unsubFs) {
+        unsubFs();
+        unsubFs = null;
+      }
+      unsubFs = subscribeVisitorsFirestore({
+        onUpdate: (fsVisitors) => {
+          setVisitorsFirestoreLive(true);
+          setVisitorsUnauthorized(false);
+          setVisitorsError(null);
+          const merged = mergeVisitorLists(fsVisitors, latestExpressVisitorsRef.current);
+          applyMergedVisitors(merged);
+        },
+      });
+    };
+
+    attachFirestoreStream();
+    const unsubAuth = onAuthStateChanged(auth, () => {
+      attachFirestoreStream();
+      loadVisitors(true);
+    });
+
     const interval = setInterval(
       () => loadVisitors(true),
       workspace === 'visitors' ? 8000 : 25000
     );
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (unsubFs) unsubFs();
+      unsubAuth();
+    };
   }, [isAdmin, workspace]);
 
   const handleBlockVisitor = async (visitor: VisitorRecord) => {
@@ -271,6 +313,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         visitorId: visitor.visitorId,
         blockIp: Boolean(blockIpDraft[visitor.visitorId]),
         reason: (blockReasonDraft[visitor.visitorId] || '').trim() || undefined,
+        visitor,
       });
       if (res.success) {
         onShowMessage(`Visiteur ${visitor.ip || visitor.visitorId} bloqué.`, 'warning', 'Accès Bloqué');
@@ -289,6 +332,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       const res = await unblockVisitor({
         visitorId: visitor.visitorId,
         unblockIp: true,
+        visitor,
       });
       if (res.success) {
         onShowMessage(`Visiteur ${visitor.ip || visitor.visitorId} débloqué.`, 'success', 'Accès Rétabli');
@@ -308,7 +352,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     }
     setVisitorActionBusyId(visitor.visitorId);
     try {
-      const res = await deleteVisitorRecord(visitor.visitorId);
+      const res = await deleteVisitorRecord(visitor.visitorId, visitor);
       if (res.success) {
         onShowMessage('Entrée visiteur supprimée.', 'info');
         await loadVisitors(true);
@@ -331,7 +375,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         (v.username || '').toLowerCase().includes(q) ||
         (v.browser || '').toLowerCase().includes(q) ||
         (v.os || '').toLowerCase().includes(q) ||
-        (v.visitorId || '').toLowerCase().includes(q)
+        (v.visitorId || '').toLowerCase().includes(q) ||
+        (v.sourceOrigin || '').toLowerCase().includes(q)
       );
     });
   }, [visitors, visitorFilter, visitorSearch]);
@@ -1039,12 +1084,18 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           <section className="rounded-2xl border border-neutral-800/90 bg-[#0b0e14] p-5 sm:p-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-neutral-800/80">
               <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <h2 className="text-base font-bold text-white flex items-center gap-2 flex-wrap">
                   <Users className="h-4 w-4 text-[#facc15]" />
                   <span>Visiteurs &amp; Appareils Connectés</span>
+                  {visitorsFirestoreLive && (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/35 text-[10px] font-bold text-[#10b981]">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#10b981] animate-pulse" />
+                      <span>Firebase Temps Réel</span>
+                    </span>
+                  )}
                 </h2>
                 <p className="text-xs text-neutral-400 mt-1">
-                  Suivez en direct qui est en ligne, l&apos;historique des connexions au site, et bloquez un appareil ou une IP.
+                  Suivez en direct tous les appareils et adresses IP/ID sur toutes les URLs du site (Dev, Partagé, Mobile, PC) et bloquez un accès instantanément.
                 </p>
               </div>
               <button
@@ -1090,10 +1141,10 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               </div>
             </div>
 
-            {visitorsUnauthorized ? (
+            {visitorsUnauthorized && visitors.length === 0 ? (
               <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                 <div className="text-amber-200">
-                  <strong>Jeton Admin serveur requis :</strong> revalidez votre code A2F pour consulter la liste complète et gérer les blocages.
+                  <strong>Jeton Admin ou Google Admin requis :</strong> connectez votre compte Google Admin (onglet Synchronisation Firebase) ou revalidez votre code A2F pour afficher tous les visiteurs en direct.
                 </div>
                 <button
                   type="button"
@@ -1103,12 +1154,19 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   Valider A2F
                 </button>
               </div>
-            ) : visitorsError ? (
+            ) : visitorsError && visitors.length === 0 ? (
               <div className="rounded-xl border border-[#ef4444]/35 bg-[#ef4444]/10 p-3.5 text-xs text-[#ef4444]">
                 {visitorsError}
               </div>
             ) : (
               <>
+                {!visitorsFirestoreLive && (
+                  <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3.5 py-2.5 text-[11px] text-sky-200 flex items-center justify-between gap-2">
+                    <span>
+                      Astuce : connectez votre session Google Admin dans les réglages Firebase pour recevoir aussi en temps réel les connexions des visiteurs sur l&apos;URL partagée.
+                    </span>
+                  </div>
+                )}
                 {/* Filters */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
                   <div className="inline-flex items-center gap-1 p-1 rounded-xl border border-neutral-800 bg-neutral-950">
@@ -1140,7 +1198,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                       type="text"
                       value={visitorSearch}
                       onChange={(e) => setVisitorSearch(e.target.value)}
-                      placeholder="Rechercher IP, OS, navigateur..."
+                      placeholder="Rechercher IP, ID, OS, navigateur..."
                       className="w-full rounded-xl border border-neutral-800 bg-neutral-950 pl-8 pr-3 py-2 text-xs text-white placeholder-neutral-500 focus:border-[#facc15] focus:outline-none"
                     />
                   </div>
@@ -1195,8 +1253,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                                   <span>{v.os} · {v.browser}</span>
                                 </span>
 
-                                <span className="font-mono text-xs text-neutral-300 bg-black/50 px-2 py-0.5 rounded border border-neutral-800">
-                                  {v.ip || 'IP inconnue'}
+                                <span className="font-mono text-xs text-neutral-200 bg-black/60 px-2 py-0.5 rounded border border-neutral-800 select-all">
+                                  IP : {v.ip || 'IP inconnue'}
                                 </span>
 
                                 {isSelf && (
@@ -1207,7 +1265,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
                                 {v.isAdminActive && (
                                   <span className="px-2 py-0.5 rounded-md bg-sky-500/15 border border-sky-500/35 text-sky-300 text-[10px] font-bold">
-                                    Admin A2F
+                                    Admin
                                   </span>
                                 )}
 
@@ -1219,16 +1277,47 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                               </div>
 
                               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-neutral-400 font-mono">
-                                <span>ID: {v.visitorId.slice(0, 14)}…</span>
+                                <span className="inline-flex items-center gap-1.5 text-neutral-300">
+                                  <span>ID :</span>
+                                  <code className="select-all text-[#facc15] bg-black/50 px-1.5 py-0.5 rounded border border-neutral-800 break-all">
+                                    {v.visitorId}
+                                  </code>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator?.clipboard?.writeText(v.visitorId).catch(() => {});
+                                      setCopiedVisitorId(v.visitorId);
+                                      window.setTimeout(() => setCopiedVisitorId(null), 1500);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-[10px] text-neutral-300 hover:text-white"
+                                    title="Copier l'ID complet"
+                                  >
+                                    {copiedVisitorId === v.visitorId ? (
+                                      <>
+                                        <Check className="h-3 w-3 text-[#10b981]" />
+                                        <span className="text-[#10b981]">Copié</span>
+                                      </>
+                                    ) : (
+                                      <Copy className="h-3 w-3" />
+                                    )}
+                                  </button>
+                                </span>
                                 {v.screen && <span>Écran: {v.screen}</span>}
                                 <span>Onglet: {v.currentTab || 'dashboard'}</span>
                                 <span>Connexions: {v.connectionCount}</span>
+                                {v.sourceOrigin && <span>Hôte: {v.sourceOrigin}</span>}
                                 <span className="inline-flex items-center gap-1">
                                   <Clock className="h-3 w-3" />
                                   Vu : {formatJsonBinTimestamp(v.lastSeen)}
                                 </span>
                                 <span>1re visite : {formatJsonBinTimestamp(v.firstSeen)}</span>
                               </div>
+
+                              {Array.isArray(v.ipHistory) && v.ipHistory.length > 1 && (
+                                <div className="text-[11px] text-neutral-400 font-mono">
+                                  Historique IP : {v.ipHistory.join(' · ')}
+                                </div>
+                              )}
 
                               {v.blocked && v.blockReason && (
                                 <div className="text-[11px] text-rose-300">

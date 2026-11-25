@@ -141,7 +141,7 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
         setTotpEnrolled(true);
         setEnrolled(true);
         syncTotpSecretToServer(secret, true).catch(() => {});
-        setAdminSession();
+        setAdminSession(undefined, result.adminToken);
         setAdminDrawerOpen(false);
         if (onAdminUnlocked) {
           onAdminUnlocked();

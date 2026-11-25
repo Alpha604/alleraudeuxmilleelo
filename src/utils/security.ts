@@ -332,13 +332,17 @@ export function getAdminAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}`, 'X-Admin-Token': token } : {};
 }
 
+let pendingIssuedAdminToken: string | null = null;
+
 export function setAdminSession(durationMs = SESSION_DURATION_MS, adminToken?: string | null): void {
   const existingToken = getAdminToken();
+  const effectiveToken = adminToken || pendingIssuedAdminToken || existingToken;
+  if (adminToken) pendingIssuedAdminToken = adminToken;
   const session = {
     authenticated: true,
     startedAt: Date.now(),
     expiresAt: Date.now() + durationMs,
-    ...(adminToken ? { adminToken } : existingToken ? { adminToken: existingToken } : {}),
+    ...(effectiveToken ? { adminToken: effectiveToken } : {}),
   };
   safeSet(ADMIN_AUTH_KEY, JSON.stringify(session));
 
@@ -964,13 +968,14 @@ export async function verifyTotpCodeDetailed(
         const tokRes = await safeApiFetch('/api/auth/admin-session/issue', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code: clean }),
-          timeoutMs: 2000,
+          body: JSON.stringify({ code: clean, secret: activeSecret }),
+          timeoutMs: 2500,
         });
         if (tokRes && tokRes.ok) {
           const tokData = await tokRes.json().catch(() => null);
           if (typeof tokData?.adminToken === 'string') {
             issuedToken = tokData.adminToken;
+            pendingIssuedAdminToken = issuedToken;
             if (isAdminSessionActive()) {
               setAdminSession(SESSION_DURATION_MS, issuedToken);
             }
@@ -1011,8 +1016,11 @@ export async function verifyTotpCodeDetailed(
           setTotpSecret(data.activeSecret);
         }
         clearTotpFailures();
-        if (typeof data.adminToken === 'string' && isAdminSessionActive()) {
-          setAdminSession(SESSION_DURATION_MS, data.adminToken);
+        if (typeof data.adminToken === 'string') {
+          pendingIssuedAdminToken = data.adminToken;
+          if (isAdminSessionActive()) {
+            setAdminSession(SESSION_DURATION_MS, data.adminToken);
+          }
         }
         return { valid: true, ...(typeof data.adminToken === 'string' ? { adminToken: data.adminToken } : {}) };
       }

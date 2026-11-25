@@ -463,6 +463,152 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "VisitorPresence": {
+      "title": "VisitorPresence",
+      "description": "Cross-device real-time visitor connection record with device metadata, IP telemetry, and admin block state.",
+      "type": "object",
+      "properties": {
+        "visitorId": {
+          "type": "string",
+          "description": "Unique client visitor identifier.",
+          "minLength": 12,
+          "maxLength": 64,
+          "pattern": "^vis_[a-zA-Z0-9_\\-]+$"
+        },
+        "ip": {
+          "type": "string",
+          "description": "Resolved visitor IP address.",
+          "maxLength": 64
+        },
+        "ipPrefix": {
+          "type": "string",
+          "description": "Masked IP prefix.",
+          "maxLength": 48
+        },
+        "ipHistory": {
+          "type": "array",
+          "description": "Bounded recent IP history (max 5)."
+        },
+        "deviceType": {
+          "type": "string",
+          "enum": ["desktop", "mobile", "tablet"]
+        },
+        "browser": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "os": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "screen": {
+          "type": "string",
+          "maxLength": 24
+        },
+        "currentTab": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "isGoogleAuth": { "type": "boolean" },
+        "isAdminActive": { "type": "boolean" },
+        "firstSeen": { "type": "number" },
+        "lastSeen": { "type": "number" },
+        "connectionCount": { "type": "number" },
+        "blocked": { "type": "boolean" },
+        "blockedByIp": { "type": "boolean" },
+        "blockedAt": { "type": "number" },
+        "blockReason": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "sourceOrigin": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "visitorId",
+        "ip",
+        "ipPrefix",
+        "ipHistory",
+        "deviceType",
+        "browser",
+        "os",
+        "screen",
+        "currentTab",
+        "username",
+        "isGoogleAuth",
+        "isAdminActive",
+        "firstSeen",
+        "lastSeen",
+        "connectionCount",
+        "blocked",
+        "blockedByIp",
+        "blockedAt",
+        "blockReason",
+        "sourceOrigin",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "BlockedIpHash": {
+      "title": "BlockedIpHash",
+      "description": "SHA-256 hashed IP blocklist entry for privacy-safe cross-device IP enforcement.",
+      "type": "object",
+      "properties": {
+        "ipHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "active": { "type": "boolean" },
+        "reason": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "blockedAt": { "type": "number" },
+        "updatedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ipHash",
+        "active",
+        "reason",
+        "blockedAt",
+        "updatedByUid",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -485,6 +631,14 @@
     "/broadcastMessages/{messageId}": {
       "schema": { "$ref": "#/entities/BroadcastMessage" },
       "description": "Official administrative messages displayed in the Notifications Messages filter."
+    },
+    "/visitors/{visitorId}": {
+      "schema": { "$ref": "#/entities/VisitorPresence" },
+      "description": "Real-time cross-device visitor presence and admin blocking registry."
+    },
+    "/blockedIpHashes/{ipHash}": {
+      "schema": { "$ref": "#/entities/BlockedIpHash" },
+      "description": "Privacy-preserving SHA-256 hashed IP blocklist for cross-device enforcement."
     }
   }
 }

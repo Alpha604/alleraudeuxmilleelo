@@ -311,11 +311,11 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
   }, [isOpen, onClose]);
 
   // Complete unlock callback
-  const completeUnlock = React.useCallback(() => {
+  const completeUnlock = React.useCallback((adminToken?: string) => {
     if (unlockedRef.current) return;
     unlockedRef.current = true;
     setIsUnlocked(true);
-    setAdminSession();
+    setAdminSession(undefined, adminToken);
     onShowMessage('Authentification Microsoft Authenticator réussie ! Session active.', 'success');
     setTimeout(() => {
       onSuccess();
@@ -381,7 +381,7 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
         }, 700);
 
         setTimeout(() => {
-          completeUnlock();
+          completeUnlock(result.adminToken);
         }, 1050);
         return;
       }

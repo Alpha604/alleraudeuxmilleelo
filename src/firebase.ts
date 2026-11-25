@@ -88,7 +88,7 @@ function pureSha256Hex(input: string): string {
     .join('');
 }
 
-async function sha256Hex(input: string): Promise<string> {
+export async function sha256Hex(input: string): Promise<string> {
   try {
     if (typeof window !== 'undefined' && window.crypto?.subtle) {
       const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
