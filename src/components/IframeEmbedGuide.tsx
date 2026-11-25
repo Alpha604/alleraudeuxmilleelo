@@ -53,7 +53,7 @@ export const IframeEmbedGuide: React.FC = () => {
       </div>
 
       {/* Embed Code Snippet Card */}
-      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm dark:border-neutral-800 dark:bg-neutral-900/90 light:border-neutral-200 light:bg-white space-y-4">
+      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl space-y-4">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wider text-[#facc15]">
             Code D'Intégration Iframe Standard

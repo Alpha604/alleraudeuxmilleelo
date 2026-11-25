@@ -205,7 +205,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       </div>
 
       {/* Top Header Bar */}
-      <header className="relative z-10 w-full border-b border-neutral-800/80 bg-[#07090e]/90 backdrop-blur-xl">
+      <header className="relative z-10 w-full border-b border-neutral-800/80 bg-[#07090e]">
         <div className="w-full px-4 sm:px-8 lg:px-12 xl:px-16 h-16 sm:h-20 flex items-center justify-between gap-4">
           <BrandLogo size="md" showSubtitle subtitle="Espace Privé Chess.com · @alpharomeo1500" />
 
@@ -219,7 +219,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
       {/* Main Centered Login Card */}
       <main className="relative z-10 w-full flex-1 flex items-center justify-center px-4 sm:px-8 py-8 sm:py-12">
-        <div className="liquid-glass-card w-full max-w-xl rounded-3xl border border-neutral-800 bg-[#0c0f14]/95 backdrop-blur-xl p-5 sm:p-8 shadow-2xl space-y-6">
+        <div className="w-full max-w-xl rounded-3xl border border-neutral-800 bg-[#0c0f14] p-5 sm:p-8 shadow-2xl space-y-6">
           {/* Account Header (Zero Email Exposed) */}
           <div className="flex items-center justify-between gap-3 pb-5 border-b border-neutral-800/80">
             <div className="flex items-center gap-3.5 min-w-0">
@@ -476,7 +476,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
         </div>
       </main>
 
-      <footer className="relative z-10 w-full border-t border-neutral-800/80 bg-[#07090e]/90 backdrop-blur-md">
+      <footer className="relative z-10 w-full border-t border-neutral-800/80 bg-[#07090e]">
         <div className="w-full px-4 sm:px-8 lg:px-12 xl:px-16 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-neutral-400">
           <span>Accès restreint @alpharomeo1500 · Authentification Google &amp; A2F</span>
           <span className="font-mono font-bold text-[#facc15]">Version v{formattedVersion}</span>

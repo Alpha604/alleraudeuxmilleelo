@@ -34,7 +34,7 @@ import {
   X,
 } from 'lucide-react';
 import { getClientIp, getTrustedIps } from '../utils/security';
-import { formatJsonBinTimestamp } from '../utils/cloudSync';
+import { formatJsonBinTimestamp, JSONBIN_TEMPORARILY_DISABLED } from '../utils/cloudSync';
 import {
   detectDeviceCategory,
   formatRemainingDuration,
@@ -465,6 +465,144 @@ export const SiteActivityPanel: React.FC<SiteActivityPanelProps> = ({
                 <span>Remettre le site en ligne</span>
               </button>
             )}
+          </div>
+        </div>
+
+        {/* Complete Admin Pause & Schedule Details Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-3 border-t border-white/[0.08] text-xs">
+          {/* 1. État & Révision */}
+          <div className="rounded-xl border border-neutral-800/80 bg-[#07090e]/80 p-3 space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block">
+              État &amp; Mode
+            </span>
+            <div className="font-bold text-white flex items-center justify-between gap-2">
+              <span
+                className={
+                  isCurrentlyPaused
+                    ? 'text-[#ef4444]'
+                    : isCountdownRunning
+                    ? 'text-amber-300'
+                    : 'text-[#10b981]'
+                }
+              >
+                {isCurrentlyPaused
+                  ? 'Bloqué maintenant'
+                  : isCountdownRunning
+                  ? 'Programmé'
+                  : isAutoResumeExpired
+                  ? 'Reprise auto expirée'
+                  : 'En ligne'}
+              </span>
+              <span className="text-[10px] font-mono text-neutral-400">
+                rév. #{currentConfig.revision || 0}
+              </span>
+            </div>
+            <div className="text-[11px] text-neutral-300 truncate">
+              {SITE_PAUSE_MODE_META[currentConfig.mode]?.label || 'Maintenance'}
+              {currentConfig.upcomingVersion ? ` · v${currentConfig.upcomingVersion.replace(/^v+/i, '')}` : ''}
+            </div>
+          </div>
+
+          {/* 2. Début du blocage */}
+          <div className="rounded-xl border border-neutral-800/80 bg-[#07090e]/80 p-3 space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block">
+              Début de la pause
+            </span>
+            {currentConfig.enabled && !isAutoResumeExpired ? (
+              <>
+                <div className="font-mono text-[11px] font-bold text-white">
+                  {currentConfig.pauseAtTimestamp
+                    ? formatJsonBinTimestamp(currentConfig.pauseAtTimestamp)
+                    : 'Immédiat'}
+                </div>
+                <div className="text-[11px] font-mono text-amber-300 tabular-nums">
+                  {isCountdownRunning && secondsLeft !== null
+                    ? `Début dans ${formatRemainingDuration(secondsLeft)}`
+                    : 'Démarrée'}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="font-mono text-[11px] text-neutral-400">Aucune pause active</div>
+                <div className="text-[11px] text-neutral-500">
+                  {currentConfig.updatedAt ? `MàJ : ${formatJsonBinTimestamp(currentConfig.updatedAt)}` : 'Prêt'}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* 3. Fin / Réouverture */}
+          <div className="rounded-xl border border-neutral-800/80 bg-[#07090e]/80 p-3 space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block">
+              Fin / Réouverture
+            </span>
+            {currentConfig.enabled && !isAutoResumeExpired ? (
+              currentConfig.resumeType === 'manual' ? (
+                <>
+                  <div className="font-bold text-[11px] text-amber-300">Réouverture manuelle</div>
+                  <div className="text-[11px] text-neutral-400">Reste bloqué jusqu&apos;à action A2F</div>
+                </>
+              ) : (
+                <>
+                  <div className="font-mono text-[11px] font-bold text-white">
+                    {currentConfig.resumeAtTimestamp
+                      ? formatJsonBinTimestamp(currentConfig.resumeAtTimestamp)
+                      : 'Heure à définir'}
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-[11px]">
+                    <span className="font-mono text-[#10b981] tabular-nums">
+                      {currentConfig.resumeAtTimestamp && currentConfig.resumeAtTimestamp > nowTick
+                        ? `Fin dans ${formatRemainingDuration(Math.ceil((currentConfig.resumeAtTimestamp - nowTick) / 1000))}`
+                        : 'Imminent'}
+                    </span>
+                    <span className="text-[10px] font-bold text-neutral-300">
+                      {currentConfig.autoResume ? 'Automatique' : 'Estimatif'}
+                    </span>
+                  </div>
+                </>
+              )
+            ) : (
+              <>
+                <div className="font-mono text-[11px] text-neutral-400">—</div>
+                <div className="text-[11px] text-neutral-500">Accès visiteur normal</div>
+              </>
+            )}
+          </div>
+
+          {/* 4. Cible & Bypass */}
+          <div className="rounded-xl border border-neutral-800/80 bg-[#07090e]/80 p-3 space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 block">
+              Cible &amp; Accès Admin
+            </span>
+            <div className="text-[11px] font-bold text-white truncate">
+              {currentConfig.devices?.all
+                ? 'Tous les appareils'
+                : [
+                    currentConfig.devices?.desktop && 'PC',
+                    currentConfig.devices?.mobile && 'Mobile',
+                    currentConfig.devices?.tablet && 'Tablette',
+                  ]
+                    .filter(Boolean)
+                    .join(' + ') || 'Aucun'}
+              {' · '}
+              {currentConfig.iframePolicy === 'block_all'
+                ? 'Iframes bloqués'
+                : currentConfig.iframePolicy === 'block_only_iframes'
+                ? 'Iframes seuls'
+                : 'Iframes OK'}
+            </div>
+            <div className="text-[11px] text-neutral-400 truncate">
+              Bypass A2F :{' '}
+              <strong className={currentConfig.allowAdminBypass ? 'text-[#10b981]' : 'text-[#ef4444]'}>
+                {currentConfig.allowAdminBypass ? 'Autorisé' : 'Désactivé'}
+              </strong>
+              {' · '}
+              {currentConfig.ipPolicy?.mode === 'all'
+                ? 'Toutes IP'
+                : currentConfig.ipPolicy?.mode === 'except_list'
+                ? `Sauf ${currentConfig.ipPolicy.ips.length} IP`
+                : `Uniq. ${currentConfig.ipPolicy.ips.length} IP`}
+            </div>
           </div>
         </div>
 
@@ -1113,7 +1251,15 @@ export const SiteActivityPanel: React.FC<SiteActivityPanelProps> = ({
       {/* UNIFIED FINAL ACTION BAR */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-2xl border border-neutral-800 bg-[#0b0e14] p-4 sm:p-5">
         <div className="text-xs text-neutral-400">
-          Les changements sont propagés en temps réel via <strong className="text-neutral-200">Firebase</strong> et <strong className="text-neutral-200">JSONBin</strong>.
+          {JSONBIN_TEMPORARILY_DISABLED ? (
+            <>
+              Les changements sont propagés en temps réel via <strong className="text-neutral-200">Firebase</strong> (JSONBin en pause).
+            </>
+          ) : (
+            <>
+              Les changements sont propagés en temps réel via <strong className="text-neutral-200">Firebase</strong> et <strong className="text-neutral-200">JSONBin</strong>.
+            </>
+          )}
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
@@ -1156,7 +1302,7 @@ export const SiteActivityPanel: React.FC<SiteActivityPanelProps> = ({
           aria-modal="true"
           aria-label="Aperçu écran visiteur"
           onClick={() => setPreviewOpen(false)}
-          className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150"
+          className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/85 animate-in fade-in duration-150"
         >
           <div
             onClick={(e) => e.stopPropagation()}

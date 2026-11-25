@@ -218,7 +218,7 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Interactive Calendar Grid */}
-        <div className="liquid-glass-card lg:col-span-7 rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-6 shadow-xl">
+        <div className="lg:col-span-7 rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3.5 sm:p-6 shadow-xl">
           {/* Calendar Month Navigation */}
           <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-neutral-800">
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -397,7 +397,7 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
 
         {/* Right: Selected Date Detail Panel */}
         <div className="lg:col-span-5 space-y-4">
-          <div className="liquid-glass-card rounded-3xl border border-neutral-800 bg-[#0c0f14] p-6 shadow-xl">
+          <div className="rounded-3xl border border-neutral-800 bg-[#0c0f14] p-6 shadow-xl">
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
                 <Clock className="h-4 w-4 text-[#facc15]" />
@@ -538,7 +538,7 @@ export const MilestoneCalendar: React.FC<MilestoneCalendarProps> = ({
           </div>
 
           {/* Quick list of Project Milestones */}
-          <div className="liquid-glass-card rounded-3xl border border-neutral-800 bg-[#0c0f14] p-6 shadow-xl">
+          <div className="rounded-3xl border border-neutral-800 bg-[#0c0f14] p-6 shadow-xl">
             <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-400 border-b border-neutral-800 pb-3">
               Paliers Clés Du Projet
             </h4>

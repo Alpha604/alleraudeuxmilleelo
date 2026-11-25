@@ -316,7 +316,7 @@ export const MobileProfileSheet: React.FC<MobileProfileSheetProps> = ({
         opacity: entered ? dragOpacityFactor : 0,
         transition: isDragging ? 'none' : 'opacity 240ms cubic-bezier(0.22, 1, 0.36, 1)',
       }}
-      className="sm:hidden fixed inset-0 z-[125] flex items-end justify-center bg-black/70 backdrop-blur-md"
+      className="sm:hidden fixed inset-0 z-[125] flex items-end justify-center bg-black/80"
       onClick={requestAnimatedClose}
     >
       <div
@@ -333,21 +333,14 @@ export const MobileProfileSheet: React.FC<MobileProfileSheetProps> = ({
             ? 'none'
             : 'transform 300ms cubic-bezier(0.22, 1, 0.36, 1)',
         }}
-        className="w-full max-h-[85vh] flex flex-col rounded-t-[30px] border-t border-x border-white/[0.16] bg-[#0a0e16]/95 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_-18px_50px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.22)] overflow-hidden text-left will-change-transform"
+        className="w-full max-h-[85vh] flex flex-col rounded-t-[30px] border-t border-x border-neutral-800 bg-[#0a0e16] shadow-2xl overflow-hidden text-left will-change-transform"
       >
-        {/* Top Handle & Blurred Avatar Banner (Swipe down to close) */}
+        {/* Top Handle & Header Banner (Swipe down to close) */}
         <div
           onPointerDown={(e) => handleSheetPointerDown(e, true)}
           className="relative touch-none select-none cursor-grab active:cursor-grabbing overflow-hidden border-b border-white/[0.08]"
         >
-          {profile?.avatar ? (
-            <div
-              className="absolute inset-0 bg-cover bg-center blur-2xl scale-125 opacity-25 pointer-events-none"
-              style={{ backgroundImage: `url(${profile.avatar})` }}
-            />
-          ) : (
-            <div className="absolute inset-0 bg-gradient-to-br from-[#facc15]/15 via-transparent to-transparent pointer-events-none" />
-          )}
+          <div className="absolute inset-0 bg-gradient-to-br from-[#facc15]/12 via-transparent to-transparent pointer-events-none" />
 
           {/* Drag Handle Bar */}
           <div className="relative z-10 flex justify-center pt-2.5 pb-1">
@@ -493,7 +486,7 @@ export const MobileProfileSheet: React.FC<MobileProfileSheetProps> = ({
                   >
                     <div className="flex items-center gap-3">
                       <Settings className="h-4 w-4 text-[#facc15]" />
-                      <span className="text-xs font-semibold text-neutral-200">Paramètres & Thèmes</span>
+                      <span className="text-xs font-semibold text-neutral-200">Paramètres</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       {!isAdmin && <Lock className="h-3.5 w-3.5 text-neutral-500" />}

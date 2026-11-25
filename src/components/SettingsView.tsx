@@ -21,7 +21,6 @@ import {
   KeyRound,
   Layers,
   Lock,
-  Monitor,
   Moon,
   Palette,
   Pencil,
@@ -35,11 +34,9 @@ import {
   Sliders,
   Smartphone,
   Sparkles,
-  Sun,
   Tag,
   Trash2,
   User,
-  Waves,
   Wifi,
   Wrench,
   X,
@@ -75,6 +72,7 @@ import {
 import {
   fetchJsonBinStatus,
   formatJsonBinTimestamp,
+  JSONBIN_TEMPORARILY_DISABLED,
   JsonBinStatusInfo,
   pullFromJsonBin,
   saveJsonBinConfig,
@@ -286,7 +284,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
 
     const isNewUser = form.username.trim().toLowerCase() !== settings.username.trim().toLowerCase();
-    onSettingsUpdate(form);
+    const enforcedSettings: AppSettings = {
+      ...form,
+      theme: 'dark',
+    };
+    setForm(enforcedSettings);
+    onSettingsUpdate(enforcedSettings);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
     if (!isNewUser) {
@@ -483,8 +486,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const handleExecuteSecureAction = () => {
     if (secureModalAction === 'reset') {
-      setForm(DEFAULT_SETTINGS);
-      onSettingsUpdate(DEFAULT_SETTINGS);
+      const resetSettings: AppSettings = { ...DEFAULT_SETTINGS, theme: 'dark' };
+      setForm(resetSettings);
+      onSettingsUpdate(resetSettings);
       onShowMessage('Paramètres réinitialisés avec succès aux valeurs officielles après double validation A2F.', 'success');
     } else {
       if (onPurgeAccountData) {
@@ -590,59 +594,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     );
   }
 
-  const themeOptions: {
-    id: AppTheme;
-    label: string;
-    subtitle: string;
-    icon: React.ReactNode;
-    swatchStyle: React.CSSProperties;
-    accentColor: string;
-  }[] = [
-    {
-      id: 'dark',
-      label: 'Base',
-      subtitle: 'Carbone & Or classique',
-      icon: <Moon className="h-4 w-4 text-[#facc15]" />,
-      swatchStyle: { background: 'linear-gradient(135deg, #07090e 55%, #facc15 100%)' },
-      accentColor: '#facc15',
-    },
-    {
-      id: 'light',
-      label: 'Clair',
-      subtitle: 'Jour haute lisibilité',
-      icon: <Sun className="h-4 w-4 text-amber-500" />,
-      swatchStyle: { background: 'linear-gradient(135deg, #f8fafc 55%, #f59e0b 100%)' },
-      accentColor: '#f59e0b',
-    },
-    {
-      id: 'ocean',
-      label: 'Océan',
-      subtitle: 'Abyssal & Cyan pur',
-      icon: <Waves className="h-4 w-4 text-sky-400" />,
-      swatchStyle: { background: 'linear-gradient(135deg, #030d1a 50%, #38bdf8 100%)' },
-      accentColor: '#38bdf8',
-    },
-    {
-      id: 'colors',
-      label: 'Couleurs',
-      subtitle: 'Aurore indigo & rose',
-      icon: <Palette className="h-4 w-4 text-pink-400" />,
-      swatchStyle: { background: 'linear-gradient(135deg, #2e1065 25%, #ec4899 70%, #22d3ee 100%)' },
-      accentColor: '#f472b6',
-    },
-    {
-      id: 'system',
-      label: 'Desktop (Auto)',
-      subtitle: 'Clair ou Classique selon l’appareil',
-      icon: <Monitor className="h-4 w-4 text-neutral-300" />,
-      swatchStyle: { background: 'linear-gradient(135deg, #f8fafc 48%, #07090e 52%)' },
-      accentColor: '#94a3b8',
-    },
-  ];
-
-  const handleSelectTheme = (themeId: AppTheme) => {
-    setForm((prev) => ({ ...prev, theme: themeId }));
-    onPreviewTheme?.(themeId);
+  const handleSelectTheme = (_themeId: AppTheme) => {
+    setForm((prev) => ({ ...prev, theme: 'dark' }));
+    onPreviewTheme?.('dark');
+    onShowMessage('Le thème est verrouillé sur le thème de base (Noir & Or).', 'info');
   };
 
   const sectionTabs: {
@@ -678,7 +633,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </span>
           </h2>
           <p className="text-xs text-neutral-400 hidden sm:block">
-            Sélectionnez une catégorie ci-dessous pour configurer vos thèmes, objectifs, sécurité ou cloud.
+            Sélectionnez une catégorie ci-dessous pour configurer vos préférences, objectifs, sécurité ou cloud.
           </p>
         </div>
 
@@ -731,58 +686,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* SECTION: PRÉFÉRENCES (Thèmes + Notifications) */}
       {activeSection === 'preferences' && (
         <form onSubmit={handleSubmit} className="space-y-5 animate-in fade-in duration-150">
-          {/* Themes Picker */}
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-4 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+          {/* Locked Base Theme Card */}
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-4 sm:p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between gap-2 border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
                 <Palette className="h-4 w-4" />
-                <span>Thème Visuel De L&apos;Application</span>
+                <span>Thème Visuel Verrouillé</span>
               </div>
-              <span className="text-[11px] font-mono text-neutral-400">
-                Aperçu immédiat
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-[#facc15]/10 border border-[#facc15]/30 text-[11px] font-bold text-[#facc15]">
+                <Lock className="h-3 w-3" />
+                <span>Verrouillé</span>
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {themeOptions.map((opt) => {
-                const selected = form.theme === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => handleSelectTheme(opt.id)}
-                    className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all active:scale-[0.99] ${
-                      selected
-                        ? 'border-[#facc15] bg-[#facc15]/10 ring-1 ring-[#facc15]/40 shadow-md'
-                        : 'border-neutral-800 bg-neutral-950/70 hover:border-neutral-600'
-                    }`}
-                  >
-                    <div
-                      className="h-10 w-10 rounded-xl border border-white/15 shrink-0 shadow-inner"
-                      style={opt.swatchStyle}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        {opt.icon}
-                        <span className="text-xs font-extrabold text-white truncate">
-                          {opt.label}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-neutral-400 truncate mt-0.5">
-                        {opt.subtitle}
-                      </p>
-                    </div>
-                    {selected && (
-                      <CheckCircle2 className="h-4 w-4 text-[#facc15] shrink-0" />
-                    )}
-                  </button>
-                );
-              })}
+            <div className="flex items-center justify-between gap-4 p-3.5 rounded-2xl border border-[#facc15]/40 bg-[#facc15]/[0.06]">
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className="h-10 w-10 rounded-xl border border-white/15 shrink-0 shadow-inner"
+                  style={{ background: 'linear-gradient(135deg, #07090e 55%, #facc15 100%)' }}
+                />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <Moon className="h-4 w-4 text-[#facc15]" />
+                    <span className="text-xs font-extrabold text-white">
+                      Thème Base (Carbone &amp; Or)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-400 mt-0.5">
+                    Seul le thème de base est autorisé sur l&apos;ensemble du site. Le changement de thème est désactivé.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleSelectTheme('dark')}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#facc15]/30 bg-black/50 text-[11px] font-bold text-[#facc15]"
+              >
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>Actif</span>
+              </button>
             </div>
           </div>
 
           {/* Performance Notifications */}
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-4 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-4 sm:p-6 shadow-xl space-y-4">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15] border-b border-neutral-800 pb-3">
               <Bell className="h-4 w-4" />
               <span>Alertes & Notifications De Performance</span>
@@ -853,7 +800,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </span>
             ) : (
               <span className="text-[11px] text-neutral-500">
-                Pensez à enregistrer pour synchroniser votre thème dans le cloud.
+                Pensez à enregistrer pour appliquer vos préférences sur tous vos appareils.
               </span>
             )}
 
@@ -872,7 +819,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {activeSection === 'project' && (
         <form onSubmit={handleSubmit} className="space-y-6 animate-in fade-in duration-150">
           {/* Section 1: Profil & Objectifs Principaux */}
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl space-y-4">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15] border-b border-neutral-800 pb-3">
               <User className="h-4 w-4" />
               <span>Identité & Objectifs Du Projet</span>
@@ -970,7 +917,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
 
           {/* Section 2: Algorithme de trajectoire & Synchronisation */}
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl space-y-4">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15] border-b border-neutral-800 pb-3">
               <Sliders className="h-4 w-4" />
               <span>Moteur De Calcul & Synchronisation</span>
@@ -1038,7 +985,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {activeSection === 'updates' && (
         <div className="space-y-5 animate-in fade-in duration-150">
           {/* Current Version Overview Card */}
-          <div className="rounded-2xl border border-[#facc15]/30 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+          <div className="rounded-2xl border border-[#facc15]/30 bg-neutral-900/90 p-5 sm:p-6 shadow-xl space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
                 <Tag className="h-4 w-4" />
@@ -1096,7 +1043,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           {/* Publish / Edit Site Release Form */}
           <form
             onSubmit={handlePublishSiteUpdate}
-            className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-5"
+            className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl space-y-5"
           >
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
@@ -1348,7 +1295,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </span>
               ) : (
                 <span className="text-[11px] text-neutral-500">
-                  Synchronisé en temps réel via Firebase &amp; JSONBin.
+                  {JSONBIN_TEMPORARILY_DISABLED
+                    ? 'Synchronisé en temps réel via Firebase (JSONBin en pause).'
+                    : 'Synchronisé en temps réel via Firebase & JSONBin.'}
                 </span>
               )}
 
@@ -1365,7 +1314,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </form>
 
           {/* Release History Timeline */}
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl space-y-4">
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
                 <History className="h-4 w-4" />
@@ -1454,7 +1403,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div className="space-y-6 animate-in fade-in duration-150">
 
       {/* Section 5: Sécurité A2F Principale Unique */}
-      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm space-y-4">
+      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl space-y-4">
         <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
             <KeyRound className="h-4 w-4" />
@@ -1490,7 +1439,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       {/* Section 6: Gestion de multiples IPs de Confiance pour scan instantané */}
-      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl backdrop-blur-sm space-y-4">
+      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-6 shadow-xl space-y-4">
         <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
             <Zap className="h-4 w-4 text-[#facc15]" />
@@ -1608,7 +1557,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {activeSection === 'cloud' && (
       <div className="space-y-6 animate-in fade-in duration-150">
       {/* Zone de purge & sécurité des données */}
-      <div className="rounded-2xl border border-rose-900/40 bg-rose-950/15 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
+      <div className="rounded-2xl border border-rose-900/40 bg-rose-950/15 p-5 sm:p-6 shadow-xl space-y-4">
         <div className="flex items-center justify-between border-b border-rose-900/30 pb-3">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-400">
             <Trash2 className="h-4 w-4" />
@@ -1634,7 +1583,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       </div>
 
       {/* Section 7: Cache Cloud & Synchronisation JSONBin.io (Protégé par 2FA) */}
-      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl backdrop-blur-sm space-y-5">
+      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 sm:p-6 shadow-xl space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-neutral-800 pb-3">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#facc15]">
             <Cloud className="h-4 w-4 text-[#facc15]" />
@@ -1646,8 +1595,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </span>
         </div>
 
+        {JSONBIN_TEMPORARILY_DISABLED && (
+          <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 p-3.5 flex items-start gap-2.5 text-xs text-amber-200">
+            <ShieldCheck className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <strong className="text-amber-300">Mode Test Firebase actif · JSONBin temporairement en pause</strong>
+              <p className="text-[11px] text-neutral-300 mt-0.5 leading-relaxed">
+                Aucune requête n&apos;est envoyée à JSONBin pendant le test de prise en main de Firebase. Vos identifiants (Bin ID / clés) et toutes vos données stockées dans JSONBin sont strictement conservés sans aucune suppression.
+              </p>
+            </div>
+          </div>
+        )}
+
         <p className="text-xs text-neutral-300 leading-relaxed max-w-2xl">
-          Les modifications des identifiants et clés de votre compte JSONBin sont <strong>strictement réservées à l'administrateur déverrouillé par 2FA</strong>. En revanche, la synchronisation quotidienne de vos données (1 relevé par jour) reste <strong>entièrement libre</strong> pour vos appareils et s'effectue automatiquement en arrière-plan sans bloquer vos parties.
+          Les modifications des identifiants et clés de votre compte JSONBin sont <strong>strictement réservées à l&apos;administrateur déverrouillé par 2FA</strong>. En revanche, la synchronisation quotidienne de vos données reste <strong>entièrement gérée via Firebase</strong> entre tous vos appareils.
         </p>
 
         {/* Live Status and Quota Row */}
@@ -1659,25 +1620,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <Database className="h-3.5 w-3.5 text-[#facc15]" />
                 État du Bin Cloud
               </span>
-              {jsonBinInfo?.configured ? (
+              {JSONBIN_TEMPORARILY_DISABLED || jsonBinInfo?.lastStatus === 'disabled' ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/40">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                  <span>En pause (Test Firebase)</span>
+                </span>
+              ) : jsonBinInfo?.configured ? (
                 jsonBinInfo.lastStatus === 'synced' ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/40">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/40">
                     <span className="h-1.5 w-1.5 rounded-full bg-[#10b981]" />
                     <span>Synchronisé</span>
                   </span>
                 ) : jsonBinInfo.lastStatus === 'syncing' ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#facc15]/15 text-[#facc15] border border-[#facc15]/40">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#facc15]/15 text-[#facc15] border border-[#facc15]/40">
                     <RefreshCw className="h-3 w-3 animate-spin text-[#facc15]" />
                     <span>En cours...</span>
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#ef4444]/15 text-[#ef4444] border border-[#ef4444]/40">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#ef4444]/15 text-[#ef4444] border border-[#ef4444]/40">
                     <span className="h-1.5 w-1.5 rounded-full bg-[#ef4444]" />
                     <span>Erreur de clé</span>
                   </span>
                 )
               ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#facc15]/15 text-[#facc15] border border-[#facc15]/40">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#facc15]/15 text-[#facc15] border border-[#facc15]/40">
                   <span className="h-1.5 w-1.5 rounded-full bg-[#facc15]" />
                   <span>En attente de codes</span>
                 </span>
@@ -1689,7 +1655,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="text-[11px] font-mono text-[#facc15]">
               Dernière MàJ : {formatJsonBinTimestamp(jsonBinInfo?.lastSyncTime || jsonBinInfo?.remoteUpdatedAt)}
             </div>
-            {jsonBinInfo?.lastError && (
+            {jsonBinInfo?.lastError && !JSONBIN_TEMPORARILY_DISABLED && (
               <p className="text-[11px] text-rose-400 font-sans">{jsonBinInfo.lastError}</p>
             )}
           </div>
@@ -1790,21 +1756,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <button
                 type="button"
                 onClick={handleManualSyncToJsonBin}
-                disabled={isSyncingBin || !jsonBinInfo?.configured}
+                disabled={JSONBIN_TEMPORARILY_DISABLED || isSyncingBin || !jsonBinInfo?.configured}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#10b981]/40 bg-[#10b981]/15 text-xs font-bold text-[#10b981] hover:bg-[#10b981]/25 transition-all disabled:opacity-40"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${isSyncingBin ? 'animate-spin' : ''}`} />
-                <span>Sauvegarder vers JSONBin</span>
+                <span>{JSONBIN_TEMPORARILY_DISABLED ? 'Sauvegarde en pause' : 'Sauvegarder vers JSONBin'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handlePullFromJsonBinNow}
-                disabled={isSyncingBin || !jsonBinInfo?.configured}
+                disabled={JSONBIN_TEMPORARILY_DISABLED || isSyncingBin || !jsonBinInfo?.configured}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neutral-700 bg-neutral-900 text-xs font-bold text-white hover:bg-neutral-800 transition-all disabled:opacity-40"
               >
                 <Server className="h-3.5 w-3.5" />
-                <span>Restaurer depuis JSONBin</span>
+                <span>{JSONBIN_TEMPORARILY_DISABLED ? 'Restauration en pause' : 'Restaurer depuis JSONBin'}</span>
               </button>
             </div>
 

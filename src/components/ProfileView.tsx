@@ -106,7 +106,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     const winRate = totalGames > 0 && record ? Math.round((record.win / totalGames) * 100) : 0;
 
     return (
-      <div className="rounded-2xl border border-neutral-800 bg-[#0c0f14]/80 p-5 space-y-4 hover:border-neutral-700 transition-all shadow-lg backdrop-blur-sm">
+      <div className="rounded-2xl border border-neutral-800 bg-[#0c0f14] p-5 space-y-4 hover:border-neutral-700 transition-all shadow-lg">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className={`h-2.5 w-2.5 rounded-full ${accentColor}`} />
@@ -433,7 +433,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       {/* Extra-Large Avatar Lightbox Modal (PDP en grand) */}
       {showAvatarLightbox && profile?.avatar && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 animate-in fade-in duration-150"
           onClick={() => setShowAvatarLightbox(false)}
         >
           <div

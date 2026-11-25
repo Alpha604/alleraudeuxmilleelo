@@ -372,7 +372,7 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
         opacity: entered ? dragOpacityFactor : 0,
         transition: isDragging ? 'none' : 'opacity 240ms cubic-bezier(0.22, 1, 0.36, 1)',
       }}
-      className="fixed inset-0 z-[125] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-md sm:p-4"
+      className="fixed inset-0 z-[125] flex items-end sm:items-center justify-center bg-black/80 sm:p-4"
       onClick={requestAnimatedClose}
     >
       <div
@@ -389,7 +389,7 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
             ? 'none'
             : 'transform 300ms cubic-bezier(0.22, 1, 0.36, 1)',
         }}
-        className="liquid-glass-sheet w-full sm:max-w-lg max-h-[86vh] flex flex-col rounded-t-[30px] sm:rounded-3xl border border-white/[0.15] bg-[#0a0e16]/95 backdrop-blur-2xl backdrop-saturate-150 shadow-[0_-18px_50px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.22)] overflow-hidden text-left will-change-transform"
+        className="w-full sm:max-w-lg max-h-[86vh] flex flex-col rounded-t-[30px] sm:rounded-3xl border border-neutral-800 bg-[#0a0e16] shadow-2xl overflow-hidden text-left will-change-transform"
       >
         {/* Top Drag Handle & Header Zone (swipe down anywhere here to close) */}
         <div
@@ -638,7 +638,7 @@ export const MobileNotificationCenter: React.FC<MobileNotificationCenterProps> =
                       }));
                     }
                   }}
-                  className={`liquid-glass-card rounded-2xl border p-3.5 transition-all cursor-pointer ${
+                  className={`rounded-2xl border p-3.5 transition-all cursor-pointer ${
                     isLetter
                       ? item.read
                         ? 'border-sky-500/25 bg-sky-500/[0.04]'

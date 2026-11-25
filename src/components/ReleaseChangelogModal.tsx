@@ -110,11 +110,11 @@ export const ReleaseChangelogModal: React.FC<ReleaseChangelogModalProps> = ({
       aria-modal="true"
       aria-labelledby="release-changelog-modal-title"
       onClick={onClose}
-      className="fixed inset-0 z-[125] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-[125] flex items-center justify-center p-3 sm:p-4 bg-black/80 animate-in fade-in duration-200"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="liquid-glass-card relative w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl border border-neutral-800 bg-[#0b0e14] text-neutral-100 shadow-2xl overflow-hidden"
+        className="relative w-full max-w-xl max-h-[88vh] flex flex-col rounded-3xl border border-neutral-800 bg-[#0b0e14] text-neutral-100 shadow-2xl overflow-hidden"
       >
         {/* Header */}
         <div className="flex items-start justify-between gap-3 border-b border-neutral-800/90 px-5 sm:px-6 py-4 bg-[#0f131c]">

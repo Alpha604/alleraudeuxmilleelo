@@ -10,6 +10,7 @@
  */
 
 import { safeApiFetch } from './backendApi';
+import { JSONBIN_TEMPORARILY_DISABLED } from './cloudSync';
 
 const REGISTRY_CONFIG_KEYS = {
   binId: 'roadto2000_accounts_registry_binid',
@@ -208,6 +209,12 @@ export async function saveAccountsRegistryConfig(config: {
     return { success: true, status: 'pending_keys', error: null };
   }
 
+  if (JSONBIN_TEMPORARILY_DISABLED) {
+    safeSet(REGISTRY_CONFIG_KEYS.lastStatus, 'synced');
+    safeSet(REGISTRY_CONFIG_KEYS.lastError, '');
+    return { success: true, status: 'synced', error: 'JSONBin en pause (test Firebase — config sauvegardée)' };
+  }
+
   // Test connection to JSONBin.io
   try {
     const headers: Record<string, string> = {};
@@ -256,6 +263,10 @@ export async function pushAccountsRegistryToJsonBin(): Promise<{
       body: JSON.stringify(payload),
     }).catch(() => {});
   } catch {}
+
+  if (JSONBIN_TEMPORARILY_DISABLED) {
+    return { success: true, accountsCount: payload.accountsCount };
+  }
 
   try {
     safeSet(REGISTRY_CONFIG_KEYS.lastStatus, 'syncing');
@@ -326,6 +337,9 @@ export async function pullAccountsRegistryFromJsonBin(force = false): Promise<{
   error?: string;
 }> {
   const cfg = getAccountsRegistryConfig();
+  if (JSONBIN_TEMPORARILY_DISABLED) {
+    return { success: true, skipped: true };
+  }
   if (!cfg.enabled || !cfg.binId) {
     return { success: false, error: 'Bin du registre non configuré' };
   }
@@ -442,6 +456,7 @@ let pushDebounceTimer: ReturnType<typeof setTimeout> | null = null;
  * Debounced background push triggered automatically whenever accounts are created, edited, banned, or deleted.
  */
 export function scheduleAccountsRegistryPush(): void {
+  if (JSONBIN_TEMPORARILY_DISABLED) return;
   const cfg = getAccountsRegistryConfig();
   if (!cfg.enabled || !cfg.binId) return;
 

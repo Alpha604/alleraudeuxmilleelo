@@ -6,15 +6,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
-  ArrowRight,
-  ArrowUpRight,
   Ban,
   Check,
   CheckCircle2,
+  Clock,
   Copy,
   Database,
   Download,
-  ExternalLink,
   Eye,
   EyeOff,
   FileJson,
@@ -22,8 +20,7 @@ import {
   KeyRound,
   Lock,
   Mail,
-  PauseCircle,
-  PlayCircle,
+  Monitor,
   Plus,
   Power,
   QrCode,
@@ -33,11 +30,13 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sliders,
+  Smartphone,
+  Tablet,
   Trash2,
   Unlock,
-  UserCheck,
-  UserPlus,
   Users,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import {
   AccountStatus,
@@ -60,7 +59,9 @@ import {
 } from '../utils/security';
 import {
   buildInitialJsonBinPayload,
+  formatJsonBinTimestamp,
   getClientJsonBinCredentials,
+  JSONBIN_TEMPORARILY_DISABLED,
   saveJsonBinConfig,
 } from '../utils/cloudSync';
 import {
@@ -79,6 +80,14 @@ import {
   publishBroadcastMessageToFirestore,
   subscribeBroadcastMessagesFirestore,
 } from '../utils/firebaseMirror';
+import {
+  blockVisitor,
+  deleteVisitorRecord,
+  fetchVisitorsList,
+  getOrCreateVisitorId,
+  unblockVisitor,
+  VisitorRecord,
+} from '../utils/visitors';
 import { NavTab } from './Navbar';
 import { SiteActivityPanel } from './SiteActivityPanel';
 
@@ -96,7 +105,7 @@ interface AdminPanelViewProps {
   onSiteActivityUpdated?: (updated: SiteActivityConfig) => void;
 }
 
-type AdminWorkspaceTab = 'activity' | 'messages' | 'players' | 'jsonbin' | 'security';
+type AdminWorkspaceTab = 'activity' | 'visitors' | 'messages' | 'players' | 'jsonbin' | 'security';
 
 interface EnrichedAccount {
   username: string;
@@ -182,6 +191,136 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [msgSenderLabel, setMsgSenderLabel] = useState('Administration Road to 2000');
   const [isSendingMsg, setIsSendingMsg] = useState(false);
   const [deletingMsgId, setDeletingMsgId] = useState<string | null>(null);
+
+  // Visitor Tracking & Blocking state
+  const [visitors, setVisitors] = useState<VisitorRecord[]>([]);
+  const [visitorsCounts, setVisitorsCounts] = useState<{
+    onlineCount: number;
+    totalCount: number;
+    blockedCount: number;
+  }>({ onlineCount: 0, totalCount: 0, blockedCount: 0 });
+  const [visitorsLoading, setVisitorsLoading] = useState<boolean>(false);
+  const [visitorsError, setVisitorsError] = useState<string | null>(null);
+  const [visitorsUnauthorized, setVisitorsUnauthorized] = useState<boolean>(false);
+  const [visitorFilter, setVisitorFilter] = useState<'all' | 'online' | 'blocked'>('all');
+  const [visitorSearch, setVisitorSearch] = useState<string>('');
+  const [blockReasonDraft, setBlockReasonDraft] = useState<Record<string, string>>({});
+  const [blockIpDraft, setBlockIpDraft] = useState<Record<string, boolean>>({});
+  const [visitorActionBusyId, setVisitorActionBusyId] = useState<string | null>(null);
+  const currentAdminVisitorId = useMemo(() => getOrCreateVisitorId(), []);
+
+  const loadVisitors = async (silent = false) => {
+    if (!isAdmin) return;
+    if (!silent) setVisitorsLoading(true);
+    try {
+      const res = await fetchVisitorsList();
+      if (res.unauthorized) {
+        setVisitorsUnauthorized(true);
+        setVisitorsError(res.error || 'Authentification A2F serveur requise.');
+        return;
+      }
+      setVisitorsUnauthorized(false);
+      if (res.success) {
+        setVisitors(res.visitors || []);
+        setVisitorsCounts({
+          onlineCount: res.onlineCount || 0,
+          totalCount: res.totalCount || 0,
+          blockedCount: res.blockedCount || 0,
+        });
+        setVisitorsError(null);
+      } else {
+        setVisitorsError(res.error || 'Impossible de charger les connexions.');
+      }
+    } finally {
+      if (!silent) setVisitorsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    loadVisitors(false);
+    const interval = setInterval(
+      () => loadVisitors(true),
+      workspace === 'visitors' ? 8000 : 25000
+    );
+    return () => clearInterval(interval);
+  }, [isAdmin, workspace]);
+
+  const handleBlockVisitor = async (visitor: VisitorRecord) => {
+    if (visitor.visitorId === currentAdminVisitorId) {
+      onShowMessage('Impossible de bloquer votre propre appareil administrateur.', 'warning');
+      return;
+    }
+    setVisitorActionBusyId(visitor.visitorId);
+    try {
+      const res = await blockVisitor({
+        visitorId: visitor.visitorId,
+        blockIp: Boolean(blockIpDraft[visitor.visitorId]),
+        reason: (blockReasonDraft[visitor.visitorId] || '').trim() || undefined,
+      });
+      if (res.success) {
+        onShowMessage(`Visiteur ${visitor.ip || visitor.visitorId} bloqué.`, 'warning', 'Accès Bloqué');
+        await loadVisitors(true);
+      } else {
+        onShowMessage(res.error || 'Échec du blocage.', 'warning');
+      }
+    } finally {
+      setVisitorActionBusyId(null);
+    }
+  };
+
+  const handleUnblockVisitor = async (visitor: VisitorRecord) => {
+    setVisitorActionBusyId(visitor.visitorId);
+    try {
+      const res = await unblockVisitor({
+        visitorId: visitor.visitorId,
+        unblockIp: true,
+      });
+      if (res.success) {
+        onShowMessage(`Visiteur ${visitor.ip || visitor.visitorId} débloqué.`, 'success', 'Accès Rétabli');
+        await loadVisitors(true);
+      } else {
+        onShowMessage(res.error || 'Échec du déblocage.', 'warning');
+      }
+    } finally {
+      setVisitorActionBusyId(null);
+    }
+  };
+
+  const handleDeleteVisitor = async (visitor: VisitorRecord) => {
+    if (visitor.visitorId === currentAdminVisitorId) {
+      onShowMessage('Impossible de supprimer votre session active.', 'warning');
+      return;
+    }
+    setVisitorActionBusyId(visitor.visitorId);
+    try {
+      const res = await deleteVisitorRecord(visitor.visitorId);
+      if (res.success) {
+        onShowMessage('Entrée visiteur supprimée.', 'info');
+        await loadVisitors(true);
+      } else {
+        onShowMessage(res.error || 'Échec de suppression.', 'warning');
+      }
+    } finally {
+      setVisitorActionBusyId(null);
+    }
+  };
+
+  const filteredVisitors = useMemo(() => {
+    const q = visitorSearch.trim().toLowerCase();
+    return visitors.filter((v) => {
+      if (visitorFilter === 'online' && !v.isOnline) return false;
+      if (visitorFilter === 'blocked' && !v.blocked) return false;
+      if (!q) return true;
+      return (
+        (v.ip || '').toLowerCase().includes(q) ||
+        (v.username || '').toLowerCase().includes(q) ||
+        (v.browser || '').toLowerCase().includes(q) ||
+        (v.os || '').toLowerCase().includes(q) ||
+        (v.visitorId || '').toLowerCase().includes(q)
+      );
+    });
+  }, [visitors, visitorFilter, visitorSearch]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -686,14 +825,18 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           <div className="flex items-baseline justify-between gap-2">
             <span
               className={`text-sm font-bold ${
-                registryConfig.configured && registryConfig.lastStatus !== 'error'
+                JSONBIN_TEMPORARILY_DISABLED
+                  ? 'text-amber-300'
+                  : registryConfig.configured && registryConfig.lastStatus !== 'error'
                   ? 'text-[#10b981]'
                   : registryConfig.lastStatus === 'error'
                   ? 'text-[#ef4444]'
                   : 'text-amber-400'
               }`}
             >
-              {registryConfig.configured
+              {JSONBIN_TEMPORARILY_DISABLED
+                ? 'En pause (Test Firebase)'
+                : registryConfig.configured
                 ? registryConfig.lastStatus === 'error'
                   ? 'Erreur de connexion'
                   : 'Connecté'
@@ -736,6 +879,26 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
           <button
             type="button"
+            onClick={() => setWorkspace('visitors')}
+            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+              workspace === 'visitors'
+                ? 'bg-[#facc15] text-black font-bold'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Users className="h-3.5 w-3.5" />
+            <span>Connexions ({visitorsCounts.onlineCount}/{visitorsCounts.totalCount})</span>
+            {visitorsCounts.onlineCount > 0 && (
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  workspace === 'visitors' ? 'bg-black' : 'bg-[#10b981] animate-pulse'
+                }`}
+              />
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => setWorkspace('messages')}
             className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
               workspace === 'messages'
@@ -770,7 +933,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             }`}
           >
             <Database className="h-3.5 w-3.5" />
-            <span>Registre & JSONBin</span>
+            <span>Registre &amp; JSONBin</span>
           </button>
 
           <button
@@ -783,7 +946,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             }`}
           >
             <KeyRound className="h-3.5 w-3.5" />
-            <span>Sécurité & IPs</span>
+            <span>Sécurité &amp; IPs</span>
           </button>
         </div>
 
@@ -791,12 +954,12 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           <button
             type="button"
             onClick={handleManualPullRegistry}
-            disabled={isSyncingRegistry || !registryConfig.configured}
+            disabled={JSONBIN_TEMPORARILY_DISABLED || isSyncingRegistry || !registryConfig.configured}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-800 bg-[#0b0e14] hover:bg-neutral-900 text-xs font-semibold text-neutral-300 hover:text-white transition-colors disabled:opacity-40 whitespace-nowrap"
-            title="Synchroniser la liste des comptes depuis JSONBin"
+            title={JSONBIN_TEMPORARILY_DISABLED ? 'JSONBin en pause pour test Firebase' : 'Synchroniser la liste des comptes depuis JSONBin'}
           >
             <RefreshCw className={`h-3.5 w-3.5 text-[#facc15] ${isSyncingRegistry ? 'animate-spin' : ''}`} />
-            <span>Sync registre</span>
+            <span>{JSONBIN_TEMPORARILY_DISABLED ? 'Registre en pause' : 'Sync registre'}</span>
           </button>
 
           <button
@@ -825,6 +988,291 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       )}
 
       {/* ===================================================================== */}
+      {/* WORKSPACE 0A: LIVE VISITORS, ONLINE STATUS & BLOCKING                 */}
+      {/* ===================================================================== */}
+      {workspace === 'visitors' && (
+        <div className="space-y-5">
+          {/* Top Metrics & Controls */}
+          <section className="rounded-2xl border border-neutral-800/90 bg-[#0b0e14] p-5 sm:p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-neutral-800/80">
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <Users className="h-4 w-4 text-[#facc15]" />
+                  <span>Visiteurs &amp; Appareils Connectés</span>
+                </h2>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Suivez en direct qui est en ligne, l&apos;historique des connexions au site, et bloquez un appareil ou une IP.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => loadVisitors(false)}
+                disabled={visitorsLoading}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-neutral-800 bg-neutral-950 hover:bg-neutral-900 text-xs font-bold text-white transition-colors disabled:opacity-50 self-start sm:self-center"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 text-[#facc15] ${visitorsLoading ? 'animate-spin' : ''}`} />
+                <span>Actualiser</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.06] p-3.5 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-semibold text-neutral-400 block">En ligne maintenant</span>
+                  <span className="text-2xl font-bold font-mono tabular-nums text-[#10b981]">
+                    {visitorsCounts.onlineCount}
+                  </span>
+                </div>
+                <Wifi className="h-5 w-5 text-[#10b981]" />
+              </div>
+
+              <div className="rounded-xl border border-neutral-800 bg-neutral-950/70 p-3.5 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-semibold text-neutral-400 block">Total déjà connectés</span>
+                  <span className="text-2xl font-bold font-mono tabular-nums text-white">
+                    {visitorsCounts.totalCount}
+                  </span>
+                </div>
+                <Users className="h-5 w-5 text-[#facc15]" />
+              </div>
+
+              <div className="rounded-xl border border-[#ef4444]/30 bg-[#ef4444]/[0.06] p-3.5 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-semibold text-neutral-400 block">Appareils bloqués</span>
+                  <span className="text-2xl font-bold font-mono tabular-nums text-[#ef4444]">
+                    {visitorsCounts.blockedCount}
+                  </span>
+                </div>
+                <Ban className="h-5 w-5 text-[#ef4444]" />
+              </div>
+            </div>
+
+            {visitorsUnauthorized ? (
+              <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="text-amber-200">
+                  <strong>Jeton Admin serveur requis :</strong> revalidez votre code A2F pour consulter la liste complète et gérer les blocages.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenSecurityModal('Jeton Admin — Connexions Visiteurs', () => loadVisitors(false))}
+                  className="px-4 py-2 rounded-xl bg-[#facc15] hover:bg-[#eab308] text-black font-bold shrink-0"
+                >
+                  Valider A2F
+                </button>
+              </div>
+            ) : visitorsError ? (
+              <div className="rounded-xl border border-[#ef4444]/35 bg-[#ef4444]/10 p-3.5 text-xs text-[#ef4444]">
+                {visitorsError}
+              </div>
+            ) : (
+              <>
+                {/* Filters */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                  <div className="inline-flex items-center gap-1 p-1 rounded-xl border border-neutral-800 bg-neutral-950">
+                    {(
+                      [
+                        { id: 'all', label: `Tous (${visitors.length})` },
+                        { id: 'online', label: `En ligne (${visitorsCounts.onlineCount})` },
+                        { id: 'blocked', label: `Bloqués (${visitorsCounts.blockedCount})` },
+                      ] as const
+                    ).map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setVisitorFilter(f.id)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                          visitorFilter === f.id
+                            ? 'bg-[#facc15] text-black'
+                            : 'text-neutral-400 hover:text-white'
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="relative flex-1 max-w-xs">
+                    <Search className="h-3.5 w-3.5 text-neutral-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={visitorSearch}
+                      onChange={(e) => setVisitorSearch(e.target.value)}
+                      placeholder="Rechercher IP, OS, navigateur..."
+                      className="w-full rounded-xl border border-neutral-800 bg-neutral-950 pl-8 pr-3 py-2 text-xs text-white placeholder-neutral-500 focus:border-[#facc15] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Visitors List */}
+                {filteredVisitors.length === 0 ? (
+                  <div className="py-10 text-center text-xs text-neutral-400 space-y-2 border border-dashed border-neutral-800 rounded-xl">
+                    <Users className="h-7 w-7 mx-auto text-neutral-600" />
+                    <p>Aucun visiteur enregistré pour ce filtre.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredVisitors.map((v) => {
+                      const isSelf = v.visitorId === currentAdminVisitorId;
+                      const isBusy = visitorActionBusyId === v.visitorId;
+                      const DeviceIcon =
+                        v.deviceType === 'mobile'
+                          ? Smartphone
+                          : v.deviceType === 'tablet'
+                          ? Tablet
+                          : Monitor;
+
+                      return (
+                        <div
+                          key={v.visitorId}
+                          className={`rounded-xl border p-4 space-y-3 ${
+                            v.blocked
+                              ? 'border-[#ef4444]/40 bg-[#ef4444]/[0.06]'
+                              : v.isOnline
+                              ? 'border-emerald-500/35 bg-emerald-500/[0.04]'
+                              : 'border-neutral-800 bg-neutral-950/70'
+                          }`}
+                        >
+                          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                            <div className="space-y-1.5 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                {v.isOnline ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/40 text-[10px] font-bold text-[#10b981]">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-[#10b981] animate-pulse" />
+                                    <span>En ligne</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-neutral-900 border border-neutral-700 text-[10px] font-semibold text-neutral-400">
+                                    <WifiOff className="h-3 w-3" />
+                                    <span>Hors ligne</span>
+                                  </span>
+                                )}
+
+                                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-white">
+                                  <DeviceIcon className="h-3.5 w-3.5 text-[#facc15]" />
+                                  <span>{v.os} · {v.browser}</span>
+                                </span>
+
+                                <span className="font-mono text-xs text-neutral-300 bg-black/50 px-2 py-0.5 rounded border border-neutral-800">
+                                  {v.ip || 'IP inconnue'}
+                                </span>
+
+                                {isSelf && (
+                                  <span className="px-2 py-0.5 rounded-md bg-[#facc15]/15 border border-[#facc15]/35 text-[#facc15] text-[10px] font-bold">
+                                    Votre appareil
+                                  </span>
+                                )}
+
+                                {v.isAdminActive && (
+                                  <span className="px-2 py-0.5 rounded-md bg-sky-500/15 border border-sky-500/35 text-sky-300 text-[10px] font-bold">
+                                    Admin A2F
+                                  </span>
+                                )}
+
+                                {v.blocked && (
+                                  <span className="px-2 py-0.5 rounded-md bg-[#ef4444]/20 border border-[#ef4444]/40 text-[#ef4444] text-[10px] font-bold">
+                                    Bloqué {v.blockedByIp ? '(ID + IP)' : ''}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-neutral-400 font-mono">
+                                <span>ID: {v.visitorId.slice(0, 14)}…</span>
+                                {v.screen && <span>Écran: {v.screen}</span>}
+                                <span>Onglet: {v.currentTab || 'dashboard'}</span>
+                                <span>Connexions: {v.connectionCount}</span>
+                                <span className="inline-flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  Vu : {formatJsonBinTimestamp(v.lastSeen)}
+                                </span>
+                                <span>1re visite : {formatJsonBinTimestamp(v.firstSeen)}</span>
+                              </div>
+
+                              {v.blocked && v.blockReason && (
+                                <div className="text-[11px] text-rose-300">
+                                  Motif : {v.blockReason}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex flex-wrap items-center gap-2 shrink-0">
+                              {!v.blocked ? (
+                                !isSelf && (
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <input
+                                      type="text"
+                                      value={blockReasonDraft[v.visitorId] || ''}
+                                      onChange={(e) =>
+                                        setBlockReasonDraft((prev) => ({
+                                          ...prev,
+                                          [v.visitorId]: e.target.value,
+                                        }))
+                                      }
+                                      placeholder="Motif (optionnel)"
+                                      className="w-36 rounded-lg border border-neutral-800 bg-black px-2.5 py-1.5 text-[11px] text-white placeholder-neutral-600 focus:border-[#facc15] focus:outline-none"
+                                    />
+                                    <label className="inline-flex items-center gap-1.5 text-[11px] text-neutral-300 cursor-pointer select-none">
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(blockIpDraft[v.visitorId])}
+                                        onChange={(e) =>
+                                          setBlockIpDraft((prev) => ({
+                                            ...prev,
+                                            [v.visitorId]: e.target.checked,
+                                          }))
+                                        }
+                                        className="h-3.5 w-3.5 accent-[#ef4444]"
+                                      />
+                                      <span>+ IP</span>
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleBlockVisitor(v)}
+                                      disabled={isBusy}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#ef4444]/40 bg-[#ef4444]/15 hover:bg-[#ef4444]/25 text-[#ef4444] text-xs font-bold disabled:opacity-45"
+                                    >
+                                      <Ban className="h-3.5 w-3.5" />
+                                      <span>{isBusy ? '...' : 'Bloquer'}</span>
+                                    </button>
+                                  </div>
+                                )
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnblockVisitor(v)}
+                                  disabled={isBusy}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-[#10b981] text-xs font-bold disabled:opacity-45"
+                                >
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  <span>{isBusy ? '...' : 'Débloquer'}</span>
+                                </button>
+                              )}
+
+                              {!isSelf && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteVisitor(v)}
+                                  disabled={isBusy}
+                                  title="Supprimer cet historique visiteur"
+                                  className="h-8 w-8 rounded-lg border border-neutral-800 bg-neutral-900 hover:border-rose-500/40 text-neutral-400 hover:text-rose-400 flex items-center justify-center disabled:opacity-45"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
       {/* WORKSPACE 0B: OFFICIAL ADMIN BROADCAST LETTERS                        */}
       {/* ===================================================================== */}
       {workspace === 'messages' && (
@@ -832,7 +1280,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           {/* Composer */}
           <form
             onSubmit={handlePublishBroadcast}
-            className="liquid-glass-card lg:col-span-5 rounded-2xl border border-neutral-800/90 bg-[#0b0e14] p-5 sm:p-6 space-y-4 text-xs"
+            className="lg:col-span-5 rounded-2xl border border-neutral-800/90 bg-[#0b0e14] p-5 sm:p-6 space-y-4 text-xs"
           >
             <div className="flex items-center justify-between pb-3 border-b border-neutral-800/80">
               <div className="flex items-center gap-2">
@@ -909,7 +1357,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           </form>
 
           {/* Sent Messages Archive */}
-          <section className="liquid-glass-card lg:col-span-7 rounded-2xl border border-neutral-800/90 bg-[#0b0e14] p-5 sm:p-6 space-y-4">
+          <section className="lg:col-span-7 rounded-2xl border border-neutral-800/90 bg-[#0b0e14] p-5 sm:p-6 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-neutral-800/80">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <Mail className="h-4 w-4 text-sky-400" />
@@ -1014,20 +1462,30 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               </div>
               <span
                 className={`text-xs font-bold ${
-                  registryConfig.configured && registryConfig.lastStatus !== 'error'
+                  JSONBIN_TEMPORARILY_DISABLED
+                    ? 'text-amber-300'
+                    : registryConfig.configured && registryConfig.lastStatus !== 'error'
                     ? 'text-[#10b981]'
                     : registryConfig.lastStatus === 'error'
                     ? 'text-[#ef4444]'
                     : 'text-amber-400'
                 }`}
               >
-                {registryConfig.configured
+                {JSONBIN_TEMPORARILY_DISABLED
+                  ? 'En pause (Test Firebase · Données préservées)'
+                  : registryConfig.configured
                   ? registryConfig.lastStatus === 'error'
                     ? 'Erreur de connexion'
                     : `Actif · ${accounts.length} comptes`
                   : 'En attente de configuration'}
               </span>
             </div>
+
+            {JSONBIN_TEMPORARILY_DISABLED && (
+              <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 p-3.5 text-xs text-amber-200">
+                <strong>JSONBin temporairement désactivé :</strong> les appels réseau vers JSONBin sont suspendus pour tester Firebase. Aucune donnée ni clé JSONBin n&apos;a été supprimée.
+              </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               <form onSubmit={handleSaveRegistryConfig} className="lg:col-span-5 space-y-3.5 text-xs">
@@ -1081,20 +1539,20 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   <button
                     type="button"
                     onClick={handleManualPushRegistry}
-                    disabled={isSyncingRegistry || !registryConfig.configured}
+                    disabled={JSONBIN_TEMPORARILY_DISABLED || isSyncingRegistry || !registryConfig.configured}
                     className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-neutral-800 bg-neutral-950 hover:bg-neutral-900 text-white font-semibold disabled:opacity-40 whitespace-nowrap"
                   >
                     <RefreshCw className={`h-3.5 w-3.5 text-[#facc15] ${isSyncingRegistry ? 'animate-spin' : ''}`} />
-                    <span>Push</span>
+                    <span>{JSONBIN_TEMPORARILY_DISABLED ? 'Pause' : 'Push'}</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleManualPullRegistry}
-                    disabled={isSyncingRegistry || !registryConfig.configured}
+                    disabled={JSONBIN_TEMPORARILY_DISABLED || isSyncingRegistry || !registryConfig.configured}
                     className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-neutral-800 bg-neutral-950 hover:bg-neutral-900 text-sky-400 font-semibold disabled:opacity-40 whitespace-nowrap"
                   >
                     <Download className="h-3.5 w-3.5" />
-                    <span>Pull</span>
+                    <span>{JSONBIN_TEMPORARILY_DISABLED ? 'Pause' : 'Pull'}</span>
                   </button>
                 </div>
               </form>

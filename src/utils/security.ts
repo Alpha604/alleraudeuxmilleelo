@@ -6,6 +6,7 @@
 import QRCode from 'qrcode';
 import { scheduleAccountsRegistryPush } from './accountsRegistryCloud';
 import { safeApiFetch } from './backendApi';
+import { JSONBIN_TEMPORARILY_DISABLED } from './cloudSync';
 
 const ADMIN_AUTH_KEY = 'roadto2000_admin_session_v2';
 const ADMIN_PASSWORD_HASH_KEY = 'roadto2000_admin_pwd_hash_v3';
@@ -310,14 +311,34 @@ export function isAdminSessionActive(): boolean {
   }
 }
 
-/**
- * Sets an active admin session for the specified duration (default 30 mins)
- */
-export function setAdminSession(durationMs = SESSION_DURATION_MS): void {
+export function getAdminToken(): string | null {
+  try {
+    const raw = safeGet(ADMIN_AUTH_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw);
+    if (!session || !session.expiresAt || Date.now() > session.expiresAt) {
+      return null;
+    }
+    return typeof session.adminToken === 'string' && session.adminToken.trim()
+      ? session.adminToken.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function getAdminAuthHeaders(): Record<string, string> {
+  const token = getAdminToken();
+  return token ? { Authorization: `Bearer ${token}`, 'X-Admin-Token': token } : {};
+}
+
+export function setAdminSession(durationMs = SESSION_DURATION_MS, adminToken?: string | null): void {
+  const existingToken = getAdminToken();
   const session = {
     authenticated: true,
     startedAt: Date.now(),
     expiresAt: Date.now() + durationMs,
+    ...(adminToken ? { adminToken } : existingToken ? { adminToken: existingToken } : {}),
   };
   safeSet(ADMIN_AUTH_KEY, JSON.stringify(session));
 
@@ -651,6 +672,7 @@ export function setTotpEnrolled(enrolled: boolean): void {
 }
 
 async function pushTotpConfigToCloudDirect(secret: string, enrolled: boolean): Promise<boolean> {
+  if (JSONBIN_TEMPORARILY_DISABLED) return false;
   if (typeof fetch === 'undefined') return false;
   try {
     const readHeaders: Record<string, string> = {
@@ -691,6 +713,7 @@ async function pushTotpConfigToCloudDirect(secret: string, enrolled: boolean): P
 }
 
 async function pullTotpConfigFromCloudDirect(): Promise<{ secret: string; enrolled: boolean } | null> {
+  if (JSONBIN_TEMPORARILY_DISABLED) return null;
   if (typeof fetch === 'undefined') return null;
   try {
     const res = await fetch(`https://api.jsonbin.io/v3/b/${CLOUD_BIN_ID}/latest`, {
@@ -910,6 +933,7 @@ export async function verifyTotpCodeDetailed(
   remainingSeconds?: number;
   attemptsUntilLock?: number;
   error?: string;
+  adminToken?: string;
 }> {
   const lockStatus = getTotpLockoutStatus();
   if (lockStatus.locked) {
@@ -934,7 +958,26 @@ export async function verifyTotpCodeDetailed(
     const expected = generateTotpCodeSync(activeSecret, now + offset);
     if (clean === expected) {
       clearTotpFailures();
-      return { valid: true };
+      // Best-effort exchange for a server-signed Admin token for visitor & admin routes
+      let issuedToken: string | null = null;
+      try {
+        const tokRes = await safeApiFetch('/api/auth/admin-session/issue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: clean }),
+          timeoutMs: 2000,
+        });
+        if (tokRes && tokRes.ok) {
+          const tokData = await tokRes.json().catch(() => null);
+          if (typeof tokData?.adminToken === 'string') {
+            issuedToken = tokData.adminToken;
+            if (isAdminSessionActive()) {
+              setAdminSession(SESSION_DURATION_MS, issuedToken);
+            }
+          }
+        }
+      } catch {}
+      return { valid: true, ...(issuedToken ? { adminToken: issuedToken } : {}) };
     }
   }
 
@@ -968,7 +1011,10 @@ export async function verifyTotpCodeDetailed(
           setTotpSecret(data.activeSecret);
         }
         clearTotpFailures();
-        return { valid: true };
+        if (typeof data.adminToken === 'string' && isAdminSessionActive()) {
+          setAdminSession(SESSION_DURATION_MS, data.adminToken);
+        }
+        return { valid: true, ...(typeof data.adminToken === 'string' ? { adminToken: data.adminToken } : {}) };
       }
     }
   } catch {}
@@ -1284,7 +1330,7 @@ export async function authenticateWithTotpOnly(
   if (verification.valid) {
     const isAdminAccount = cleanUser === 'alpharomeo1500' || cleanUser === 'alpharomeo';
     if (isAdminAccount) {
-      setAdminSession();
+      setAdminSession(SESSION_DURATION_MS, verification.adminToken);
     }
     return { success: true, isAdmin: isAdminAccount };
   }

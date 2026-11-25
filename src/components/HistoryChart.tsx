@@ -796,7 +796,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
     });
 
     return (
-      <div className="liquid-glass-card rounded-xl sm:rounded-2xl border border-neutral-800 bg-[#0c0f14]/95 p-2.5 sm:p-4 text-[11px] sm:text-xs shadow-2xl space-y-1.5 sm:space-y-3 backdrop-blur-md min-w-[180px] max-w-[230px] sm:min-w-[260px] sm:max-w-none pointer-events-none">
+      <div className="rounded-xl sm:rounded-2xl border border-neutral-800 bg-[#0c0f14] p-2.5 sm:p-4 text-[11px] sm:text-xs shadow-2xl space-y-1.5 sm:space-y-3 min-w-[180px] max-w-[230px] sm:min-w-[260px] sm:max-w-none pointer-events-none">
         {/* Header with date and status badge */}
         <div className="font-bold text-white capitalize border-b border-neutral-800/80 pb-1.5 sm:pb-2 flex items-center justify-between gap-2">
           <span className="truncate">{fullDate}</span>
@@ -905,7 +905,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
   return (
     <div className="space-y-6">
       {/* 1. TOP HEADER & MAIN STATUS ROW */}
-      <div className="liquid-glass-card flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 sm:gap-4 bg-[#0d1117] border border-neutral-800 p-3 sm:p-5 rounded-2xl sm:rounded-3xl shadow-xl">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 sm:gap-4 bg-[#0d1117] border border-neutral-800 p-3 sm:p-5 rounded-2xl sm:rounded-3xl shadow-xl">
         <div className="hidden sm:block">
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <h2 className="text-sm sm:text-lg font-black text-white flex items-center gap-1.5 sm:gap-2">
@@ -1147,7 +1147,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
       )}
 
       {/* 3. MULTI-LEVEL FILTER & ZOOM TOOLBAR - Touch & Mobile Optimized */}
-      <div className="liquid-glass-card bg-[#0d1117] border border-neutral-800 p-3 sm:p-4 rounded-2xl sm:rounded-3xl space-y-3">
+      <div className="bg-[#0d1117] border border-neutral-800 p-3 sm:p-4 rounded-2xl sm:rounded-3xl space-y-3">
         {/* Row 1: Mode selector + Timeframe presets */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2.5 sm:gap-3">
           {/* Mode Selector + Non-cadence Problèmes toggle */}
@@ -1389,7 +1389,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({
       </div>
 
       {/* 4. MAIN RECHARTS COMPOSED CHART WITH BRUSH ZOOM */}
-      <div className="liquid-glass-card rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3 sm:p-6 shadow-2xl space-y-3 sm:space-y-4">
+      <div className="rounded-2xl sm:rounded-3xl border border-neutral-800 bg-[#0c0f14] p-3 sm:p-6 shadow-2xl space-y-3 sm:space-y-4">
         {/* Chart Title & Legend */}
         <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 pb-2 border-b border-neutral-800/80">
           <div className="flex items-center gap-1.5 sm:gap-2">

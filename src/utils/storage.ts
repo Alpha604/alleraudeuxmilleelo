@@ -343,6 +343,7 @@ export function getStoredSettings(username?: string): AppSettings {
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
+      theme: 'dark',
       username: sanitizedUser,
       siteVersion: normalizeSiteVersion(parsed.siteVersion),
       siteVersionCategory: normalizeReleaseCategory(parsed.siteVersionCategory),
@@ -367,8 +368,9 @@ export function getStoredSettings(username?: string): AppSettings {
 
 export function saveStoredSettings(settings: AppSettings): boolean {
   const cleanUser = settings.username.trim().toLowerCase();
-  const clean = {
+  const clean: AppSettings = {
     ...settings,
+    theme: 'dark',
     username: cleanUser,
   };
   const serialized = JSON.stringify(clean);

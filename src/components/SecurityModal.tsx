@@ -456,11 +456,11 @@ export const SecurityModal: React.FC<SecurityModalProps> = ({
       role="dialog"
       aria-modal="true"
       onClick={onClose}
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-xl p-3 sm:p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 p-3 sm:p-4 animate-in fade-in duration-200"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="liquid-glass-card relative w-full max-w-md rounded-3xl border border-white/[0.12] bg-[#0c1019]/95 p-4 sm:p-8 shadow-[0_20px_60px_rgba(0,0,0,0.8)] backdrop-blur-2xl space-y-4 sm:space-y-6"
+        className="relative w-full max-w-md rounded-3xl border border-neutral-800 bg-[#0c1019] p-4 sm:p-8 shadow-2xl space-y-4 sm:space-y-6"
       >
         {/* Close Button */}
         <button

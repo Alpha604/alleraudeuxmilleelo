@@ -39,7 +39,9 @@ const STORAGE_KEYS = {
   lastPullPrefix: 'roadto2000_jsonbin_lastpull_',
 };
 
-export type JsonBinSyncState = 'synced' | 'pending_keys' | 'error' | 'syncing';
+export const JSONBIN_TEMPORARILY_DISABLED = true;
+
+export type JsonBinSyncState = 'synced' | 'pending_keys' | 'error' | 'syncing' | 'disabled';
 
 export interface JsonBinUpdateEventDetail {
   username: string;
@@ -157,7 +159,7 @@ interface LocalMetrics {
   lastSignature?: string;
   confirmedDayHashes?: Record<string, string>;
   lastSkippedReason?: string | null;
-  lastStatus: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  lastStatus: JsonBinSyncState;
   lastError?: string | null;
 }
 
@@ -175,7 +177,7 @@ export function getLocalMetrics(username?: string): LocalMetrics {
     lastDayTracked: today,
     lastSyncTime: null,
     remoteUpdatedAt: null,
-    lastStatus: creds.binId ? 'synced' : 'pending_keys',
+    lastStatus: JSONBIN_TEMPORARILY_DISABLED ? 'disabled' : creds.binId ? 'synced' : 'pending_keys',
     lastError: null,
   };
 
@@ -213,9 +215,10 @@ export interface JsonBinStatusInfo {
   binId: string | null;
   hasApiKey: boolean;
   enabled: boolean;
+  disabledForFirebaseTest?: boolean;
   lastSyncTime: number | null;
   remoteUpdatedAt?: string | null;
-  lastStatus: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  lastStatus: JsonBinSyncState;
   lastError: string | null;
   confirmedDayHashes?: Record<string, string>;
   quotaInfo?: {
@@ -231,11 +234,12 @@ export interface JsonBinStatusInfo {
 export interface SaveServerDataResult {
   ok: boolean;
   jsonBinSynced: boolean;
+  disabledForFirebaseTest?: boolean;
   skipped?: boolean;
   reason?: string | null;
   lastSyncTime: number | null;
   remoteUpdatedAt?: string | null;
-  status: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  status: JsonBinSyncState;
   error?: string | null;
   history?: SyncRecord[];
   settings?: AppSettings | null;
@@ -354,17 +358,19 @@ export async function fetchServerData(username: string): Promise<{
     };
   }
 
-  // 2. Fallback to JSONBin if server has 0 records OR server is unavailable (Vercel)
-  const pullResult = await pullFromJsonBin(clean);
-  if (pullResult.success) {
-    return {
-      history: mergeSyncHistories(pullResult.history || [], serverHistory, clean),
-      settings: pullResult.settings || serverSettings,
-      lastUpdated: Date.now(),
-      jsonBinLastSyncTime: pullResult.lastSyncTime ?? null,
-      jsonBinRemoteUpdatedAt: pullResult.remoteUpdatedAt ?? null,
-      confirmedDayHashes: pullResult.confirmedDayHashes ?? confirmedDayHashes,
-    };
+  // 2. Fallback to JSONBin only when active (disabled during Firebase primary test)
+  if (!JSONBIN_TEMPORARILY_DISABLED) {
+    const pullResult = await pullFromJsonBin(clean);
+    if (pullResult.success) {
+      return {
+        history: mergeSyncHistories(pullResult.history || [], serverHistory, clean),
+        settings: pullResult.settings || serverSettings,
+        lastUpdated: Date.now(),
+        jsonBinLastSyncTime: pullResult.lastSyncTime ?? null,
+        jsonBinRemoteUpdatedAt: pullResult.remoteUpdatedAt ?? null,
+        confirmedDayHashes: pullResult.confirmedDayHashes ?? confirmedDayHashes,
+      };
+    }
   }
 
   if (serverAvailable) {
@@ -425,12 +431,15 @@ export async function saveServerData(
       if (contentType.includes('application/json')) {
         const data = await res.json();
         const jb = data.jsonBin || {};
-        const status: 'synced' | 'pending_keys' | 'error' | 'syncing' =
-          jb.status === 'error'
-            ? 'error'
-            : jb.status === 'pending_keys'
-            ? 'pending_keys'
-            : 'synced';
+        const status: JsonBinSyncState = JSONBIN_TEMPORARILY_DISABLED
+          ? 'disabled'
+          : jb.status === 'disabled'
+          ? 'disabled'
+          : jb.status === 'error'
+          ? 'error'
+          : jb.status === 'pending_keys'
+          ? 'pending_keys'
+          : 'synced';
         const lastSyncTime = jb.lastSyncTime ?? getLocalMetrics(clean).lastSyncTime;
         const remoteUpdatedAt = jb.remoteUpdatedAt ?? getLocalMetrics(clean).remoteUpdatedAt ?? null;
 
@@ -448,7 +457,7 @@ export async function saveServerData(
           lastSyncTime,
           remoteUpdatedAt,
           lastStatus: status,
-          lastError: jb.error || null,
+          lastError: JSONBIN_TEMPORARILY_DISABLED ? null : jb.error || null,
           lastSkippedReason: jb.reason || null,
           lastSignature: computeClientDataSignature(clean, data.history || history, data.settings || settings),
           ...(confirmedDayHashes ? { confirmedDayHashes } : {}),
@@ -459,40 +468,74 @@ export async function saveServerData(
           lastSyncTime,
           remoteUpdatedAt,
           lastStatus: status,
-          lastError: jb.error || null,
+          lastError: JSONBIN_TEMPORARILY_DISABLED ? null : jb.error || null,
           pushed: Boolean(jb.pushed),
           skipped: Boolean(jb.skipped),
           confirmedDayHashes,
         });
 
-        mirrorDataToFirestore({
+        const fbMirrorRes = await mirrorDataToFirestore({
           username: clean,
           history: Array.isArray(data.history) && !replaceExact ? data.history : history,
           settings: data.settings || settings || getStoredSettings(clean),
           jsonBinSyncedAt: remoteUpdatedAt,
           replaceExact,
-        }).catch(() => {});
+        }).catch(() => ({ ok: false }));
 
         return {
           ok: true,
           jsonBinSynced: Boolean(jb.pushed),
+          disabledForFirebaseTest: JSONBIN_TEMPORARILY_DISABLED,
           skipped: Boolean(jb.skipped),
           reason: jb.reason || null,
           lastSyncTime,
           remoteUpdatedAt,
           status,
-          error: jb.error || null,
+          error: JSONBIN_TEMPORARILY_DISABLED ? null : jb.error || null,
           history: data.history,
           settings: data.settings || null,
-          confirmedDayHashes,
+          confirmedDayHashes: fbMirrorRes.ok ? buildConfirmedDayHashes(data.history || history, clean) : confirmedDayHashes,
         };
       }
     }
   } catch {
-    // Express unreachable -> Vercel client-side direct fallback
+    // Express unreachable -> client-side Firestore + JSONBin fallback
   }
 
-  // 2. Direct client JSONBin push (Vercel / static hosting)
+  // 2. When JSONBin is paused for Firebase test, save directly to Firestore without calling api.jsonbin.io
+  if (JSONBIN_TEMPORARILY_DISABLED) {
+    const metrics = getLocalMetrics(clean);
+    const fbRes = await mirrorDataToFirestore({
+      username: clean,
+      history,
+      settings: settings || getStoredSettings(clean),
+      replaceExact,
+    }).catch(() => ({ ok: false }));
+    emitJsonBinUpdate({
+      username: clean,
+      lastSyncTime: metrics.lastSyncTime,
+      remoteUpdatedAt: metrics.remoteUpdatedAt,
+      lastStatus: 'disabled',
+      lastError: null,
+      pushed: false,
+      skipped: true,
+    });
+    return {
+      ok: fbRes.ok,
+      jsonBinSynced: false,
+      disabledForFirebaseTest: true,
+      skipped: true,
+      reason: 'JSONBin en pause (test Firebase actif — données préservées)',
+      lastSyncTime: metrics.lastSyncTime,
+      remoteUpdatedAt: metrics.remoteUpdatedAt ?? null,
+      status: 'disabled',
+      history,
+      settings: settings || null,
+      confirmedDayHashes: fbRes.ok ? buildConfirmedDayHashes(history, clean) : metrics.confirmedDayHashes,
+    };
+  }
+
+  // 3. Direct client JSONBin push (Vercel / static hosting)
   const directRes = await syncNowToJsonBin(clean, forcePush, {
     replaceExact,
     history,
@@ -644,7 +687,7 @@ export async function reconcileCloudSync(
     if (serverResult.confirmedDayHashes) confirmedDayHashes = serverResult.confirmedDayHashes;
   }
 
-  if (shouldPullJsonBin && (!isSpectator || remoteHistory.length === 0)) {
+  if (!JSONBIN_TEMPORARILY_DISABLED && shouldPullJsonBin && (!isSpectator || remoteHistory.length === 0)) {
     const binPull = await pullFromJsonBin(clean);
     if (binPull.success) {
       try {
@@ -779,16 +822,23 @@ export async function fetchJsonBinStatus(username = 'alpharomeo1500'): Promise<J
     binId: creds.binId || null,
     hasApiKey: Boolean(creds.apiKey),
     enabled: creds.enabled,
+    disabledForFirebaseTest: JSONBIN_TEMPORARILY_DISABLED,
     lastSyncTime: metrics.lastSyncTime,
     remoteUpdatedAt: metrics.remoteUpdatedAt || null,
-    lastStatus: creds.binId ? metrics.lastStatus : 'pending_keys',
-    lastError: metrics.lastError || null,
+    lastStatus: JSONBIN_TEMPORARILY_DISABLED
+      ? 'disabled'
+      : creds.binId
+      ? metrics.lastStatus
+      : 'pending_keys',
+    lastError: JSONBIN_TEMPORARILY_DISABLED ? null : metrics.lastError || null,
     confirmedDayHashes: metrics.confirmedDayHashes || {},
     quotaInfo: {
       requestsToday: metrics.requestsToday,
       savedRequests: metrics.savedRequests,
       quotaSaverActive: true,
-      lastSkippedReason: metrics.lastSkippedReason || null,
+      lastSkippedReason: JSONBIN_TEMPORARILY_DISABLED
+        ? 'JSONBin temporairement désactivé pour tester Firebase (données préservées)'
+        : metrics.lastSkippedReason || null,
     },
     template: {
       exportedAt: new Date().toISOString(),
@@ -812,7 +862,7 @@ export async function saveJsonBinConfig(config: {
   const userKeyKey = `roadto2000_jsonbin_apikey_${cleanUser}`;
   const userEnabledKey = `roadto2000_jsonbin_enabled_${cleanUser}`;
 
-  // Save locally in browser immediately
+  // Save locally in browser immediately (preserves credentials even while JSONBin is paused)
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       if (typeof config.binId === 'string') {
@@ -840,21 +890,33 @@ export async function saveJsonBinConfig(config: {
     if (serverRes && serverRes.ok) {
       const serverData = await serverRes.json();
       if (typeof serverData.configured === 'boolean') {
+        const resolvedStatus: JsonBinSyncState = JSONBIN_TEMPORARILY_DISABLED
+          ? 'disabled'
+          : serverData.lastStatus || 'synced';
         saveLocalMetrics(cleanUser, {
-          lastStatus: serverData.lastStatus || 'synced',
-          lastError: serverData.lastError || null,
+          lastStatus: resolvedStatus,
+          lastError: JSONBIN_TEMPORARILY_DISABLED ? null : serverData.lastError || null,
           lastSyncTime: serverData.lastSyncTime ?? getLocalMetrics(cleanUser).lastSyncTime,
           remoteUpdatedAt: serverData.remoteUpdatedAt ?? null,
         });
         return {
-          success: serverData.lastStatus !== 'error',
-          lastStatus: serverData.lastStatus,
-          lastError: serverData.lastError,
+          success: resolvedStatus !== 'error',
+          lastStatus: resolvedStatus,
+          lastError: JSONBIN_TEMPORARILY_DISABLED ? null : serverData.lastError,
           lastSyncTime: serverData.lastSyncTime ?? null,
         };
       }
     }
   } catch {}
+
+  if (JSONBIN_TEMPORARILY_DISABLED) {
+    saveLocalMetrics(cleanUser, { lastStatus: 'disabled', lastError: null });
+    return {
+      success: true,
+      lastStatus: 'disabled',
+      lastSyncTime: getLocalMetrics(cleanUser).lastSyncTime,
+    };
+  }
 
   // Test the bin credentials directly with JSONBin.io (CORS supported)
   const creds = getClientJsonBinCredentials(cleanUser);
@@ -913,6 +975,34 @@ export async function syncNowToJsonBin(
   const settings = options?.settings ?? getStoredSettings(cleanUser);
   const replaceExact = Boolean(options?.replaceExact);
 
+  if (JSONBIN_TEMPORARILY_DISABLED) {
+    const metrics = getLocalMetrics(cleanUser);
+    await mirrorDataToFirestore({
+      username: cleanUser,
+      history: localHistory,
+      settings,
+      replaceExact,
+    }).catch(() => {});
+    emitJsonBinUpdate({
+      username: cleanUser,
+      lastSyncTime: metrics.lastSyncTime,
+      remoteUpdatedAt: metrics.remoteUpdatedAt,
+      lastStatus: 'disabled',
+      lastError: null,
+      pushed: false,
+      skipped: true,
+    });
+    return {
+      success: true,
+      skipped: true,
+      reason: 'JSONBin en pause (Firebase prend la main — données conservées)',
+      lastSyncTime: metrics.lastSyncTime,
+      remoteUpdatedAt: metrics.remoteUpdatedAt,
+      history: localHistory,
+      confirmedDayHashes: metrics.confirmedDayHashes,
+    };
+  }
+
   // 1. Try Express server first (sending current client history, settings & credentials!)
   try {
     const res = await safeApiFetch('/api/jsonbin/sync', {
@@ -932,8 +1022,14 @@ export async function syncNowToJsonBin(
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         const data = await res.json();
-        const status: 'synced' | 'pending_keys' | 'error' | 'syncing' =
-          data.status === 'error' ? 'error' : data.status === 'pending_keys' ? 'pending_keys' : 'synced';
+        const status: JsonBinSyncState =
+          data.status === 'disabled'
+            ? 'disabled'
+            : data.status === 'error'
+            ? 'error'
+            : data.status === 'pending_keys'
+            ? 'pending_keys'
+            : 'synced';
         const lastSyncTime = data.lastSyncTime ?? getLocalMetrics(cleanUser).lastSyncTime;
         const remoteUpdatedAt = data.remoteUpdatedAt ?? null;
         const confirmedDayHashes =
@@ -1229,6 +1325,12 @@ export async function pullFromJsonBin(targetUsername?: string): Promise<{
   error?: string;
 }> {
   const cleanUser = (targetUsername || getStoredSettings().username || 'alpharomeo1500').trim().toLowerCase();
+  if (JSONBIN_TEMPORARILY_DISABLED) {
+    return {
+      success: false,
+      error: 'JSONBin en pause temporaire (Firebase actif — données JSONBin conservées).',
+    };
+  }
   const creds = getClientJsonBinCredentials(cleanUser);
 
   // 1. Try server first (passing user's binId/apiKey if configured in client)
@@ -1437,6 +1539,23 @@ export async function verifyJsonBinSync(
 }> {
   const cleanUser = username.trim().toLowerCase();
   const localRecords = localHistoryOverride ?? getStoredSyncHistory(cleanUser);
+
+  if (JSONBIN_TEMPORARILY_DISABLED) {
+    emitJsonBinUpdate({
+      username: cleanUser,
+      lastSyncTime: getLocalMetrics(cleanUser).lastSyncTime,
+      lastStatus: 'disabled',
+    });
+    return {
+      verified: false,
+      matchingDays: 0,
+      pendingDays: localRecords.length,
+      totalLocalDays: localRecords.length,
+      confirmedDayHashes: getLocalMetrics(cleanUser).confirmedDayHashes || {},
+      lastSyncTime: getLocalMetrics(cleanUser).lastSyncTime,
+      error: 'JSONBin en pause pour le test Firebase (données préservées).',
+    };
+  }
 
   emitJsonBinUpdate({
     username: cleanUser,

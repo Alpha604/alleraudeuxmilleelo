@@ -16,6 +16,8 @@ const __dirname = path.dirname(__filename);
 import fs from 'fs';
 import crypto from 'crypto';
 
+const JSONBIN_TEMPORARILY_DISABLED = true;
+
 interface AuthSession {
   sessionId: string;
   scanning: boolean;
@@ -280,13 +282,82 @@ async function startServer() {
   app.use((_req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Admin-Token');
     if (_req.method === 'OPTIONS') {
       res.sendStatus(200);
       return;
     }
     next();
   });
+
+  // Persistent storage directory shared across TOTP, Admin tokens, User Sync, and Visitor Tracking
+  const DATA_DIR = path.resolve(__dirname, 'data');
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('[RoadTo2000] Could not create data dir, fallback to tmpdir:', err);
+  }
+  const storageDir = fs.existsSync(DATA_DIR) ? DATA_DIR : os.tmpdir();
+
+  // Persistent ephemeral HMAC secret for Admin A2F session tokens
+  const ADMIN_HMAC_KEY_FILE = path.resolve(storageDir, 'roadto2000_admin_hmac.key');
+  let adminHmacSecret = '';
+  try {
+    if (fs.existsSync(ADMIN_HMAC_KEY_FILE)) {
+      const existingKey = fs.readFileSync(ADMIN_HMAC_KEY_FILE, 'utf-8').trim();
+      if (/^[a-f0-9]{64}$/i.test(existingKey)) {
+        adminHmacSecret = existingKey;
+      }
+    }
+    if (!adminHmacSecret) {
+      adminHmacSecret = crypto.randomBytes(32).toString('hex');
+      fs.writeFileSync(ADMIN_HMAC_KEY_FILE, adminHmacSecret, { encoding: 'utf-8', mode: 0o600 });
+    }
+  } catch {
+    adminHmacSecret = crypto.randomBytes(32).toString('hex');
+  }
+
+  function issueAdminToken(ttlMs = 24 * 60 * 60 * 1000): string {
+    const payload = {
+      scope: 'admin',
+      iat: Date.now(),
+      exp: Date.now() + ttlMs,
+      nonce: crypto.randomBytes(8).toString('hex'),
+    };
+    const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url');
+    const sig = crypto.createHmac('sha256', adminHmacSecret).update(payloadB64).digest('base64url');
+    return `${payloadB64}.${sig}`;
+  }
+
+  function verifyAdminToken(req: Request): boolean {
+    try {
+      const authHeader = typeof req.headers.authorization === 'string' ? req.headers.authorization.trim() : '';
+      const xHeader = typeof req.headers['x-admin-token'] === 'string' ? req.headers['x-admin-token'].trim() : '';
+      const rawToken = authHeader.toLowerCase().startsWith('bearer ')
+        ? authHeader.slice(7).trim()
+        : xHeader;
+      if (!rawToken || !rawToken.includes('.')) return false;
+      const parts = rawToken.split('.');
+      if (parts.length !== 2) return false;
+      const [payloadB64, sigB64] = parts;
+      if (!payloadB64 || !sigB64) return false;
+
+      const expectedSig = crypto.createHmac('sha256', adminHmacSecret).update(payloadB64).digest('base64url');
+      const sigBuf = Buffer.from(sigB64);
+      const expectedBuf = Buffer.from(expectedSig);
+      if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+        return false;
+      }
+
+      const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8'));
+      if (!payload || payload.scope !== 'admin' || typeof payload.exp !== 'number') return false;
+      return payload.exp > Date.now();
+    } catch {
+      return false;
+    }
+  }
 
   // 1. Client IP lookup endpoint
   app.get('/api/auth/client-ip', (req: Request, res: Response) => {
@@ -475,6 +546,7 @@ function generateSessionValidationCode(sessionId: string): string {
       sessionId,
       unlocked: true,
       reason: session.unlockReason,
+      adminToken: issueAdminToken(),
     });
   });
 
@@ -482,10 +554,7 @@ const TOTP_ROTATION_VERSION = 3;
 const DEFAULT_TOTP_SECRET = 'BKEN3KF7SV47667G';
 const TOTP_CLOUD_BIN_ID = '6af9f1d7ffd5d16053c38f30';
 const TOTP_CLOUD_API_KEY = '$2a$10$nOO6WNU996CcWwBht/K8MuDshQsOPktO28uEy.WTBESmEHAsRjcZy';
-const TOTP_CONFIG_FILE = path.resolve(
-  fs.existsSync(path.resolve(__dirname, 'data')) ? path.resolve(__dirname, 'data') : os.tmpdir(),
-  'roadto2000_totp_config.json'
-);
+const TOTP_CONFIG_FILE = path.resolve(storageDir, 'roadto2000_totp_config.json');
 
 interface ServerTotpConfig {
   secret: string;
@@ -534,6 +603,7 @@ function saveServerTotpConfig(cfg: ServerTotpConfig): void {
 
 async function pullTotpConfigFromCloud(force = false): Promise<ServerTotpConfig> {
   const local = loadServerTotpConfig();
+  if (JSONBIN_TEMPORARILY_DISABLED) return local;
   const now = Date.now();
   if (!force && now - lastCloudTotpPullAt < 5000) return local;
 
@@ -572,6 +642,7 @@ async function pullTotpConfigFromCloud(force = false): Promise<ServerTotpConfig>
 }
 
 async function pushTotpConfigToCloud(cfg: ServerTotpConfig): Promise<boolean> {
+  if (JSONBIN_TEMPORARILY_DISABLED) return false;
   try {
     const headers: Record<string, string> = {
       'X-Master-Key': TOTP_CLOUD_API_KEY,
@@ -765,7 +836,7 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
     const cfg = await pullTotpConfigFromCloud(false);
     if (verifyServerTotpCode(cleanCode, cfg.secret)) {
       clearTotpFailuresServer(req);
-      res.json({ valid: true, activeSecret: cfg.secret, serverTime: Date.now() });
+      res.json({ valid: true, activeSecret: cfg.secret, adminToken: issueAdminToken(), serverTime: Date.now() });
       return;
     }
 
@@ -774,13 +845,13 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
       : '';
     if (cleanClient.length >= 16 && verifyServerTotpCode(cleanCode, cleanClient)) {
       clearTotpFailuresServer(req);
-      res.json({ valid: true, activeSecret: cleanClient, serverTime: Date.now() });
+      res.json({ valid: true, activeSecret: cleanClient, adminToken: issueAdminToken(), serverTime: Date.now() });
       return;
     }
 
     if (!cfg.isCustom && verifyServerTotpCode(cleanCode, DEFAULT_TOTP_SECRET)) {
       clearTotpFailuresServer(req);
-      res.json({ valid: true, activeSecret: DEFAULT_TOTP_SECRET, serverTime: Date.now() });
+      res.json({ valid: true, activeSecret: DEFAULT_TOTP_SECRET, adminToken: issueAdminToken(), serverTime: Date.now() });
       return;
     }
 
@@ -797,6 +868,25 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
     }
 
     res.json({ valid: false, serverTime: Date.now() });
+  });
+
+  // Exchange a freshly validated TOTP code (or verified local secret check) for a signed Admin token
+  app.post('/api/auth/admin-session/issue', async (req: Request, res: Response) => {
+    const limit = checkTotpRateLimit(req);
+    if (limit.locked) {
+      res.status(429).json({ success: false, locked: true, remainingSeconds: limit.remainingSeconds });
+      return;
+    }
+    const { code } = req.body || {};
+    const cleanCode = String(code || '').trim().replace(/\D/g, '');
+    const cfg = loadServerTotpConfig();
+    if (verifyServerTotpCode(cleanCode, cfg.secret) || (!cfg.isCustom && verifyServerTotpCode(cleanCode, DEFAULT_TOTP_SECRET))) {
+      clearTotpFailuresServer(req);
+      res.json({ success: true, adminToken: issueAdminToken() });
+      return;
+    }
+    recordTotpFailureServer(req);
+    res.status(401).json({ success: false, error: 'Code A2F invalide' });
   });
 
   // 6b. Verify 6-digit activation code or TOTP code submitted from desktop or phone
@@ -847,7 +937,7 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
       sessions.set(sessionId, session);
       broadcastSessionUpdate(session);
 
-      res.json({ success: true, unlocked: true, reason: unlockReason });
+      res.json({ success: true, unlocked: true, reason: unlockReason, adminToken: issueAdminToken() });
       return;
     }
 
@@ -894,6 +984,7 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
       isTrusted: session.isTrusted,
       unlockReason: session.unlockReason,
       updatedAt: session.updatedAt,
+      ...(session.unlocked ? { adminToken: issueAdminToken() } : {}),
     });
   });
 
@@ -944,15 +1035,6 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
   });
 
   // 8. User Persistent Cloud Sync API (Syncs history & settings between PC & Phone)
-  const DATA_DIR = path.resolve(__dirname, 'data');
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-  } catch (err) {
-    console.warn('[RoadTo2000] Could not create data dir, fallback to tmpdir:', err);
-  }
-
   function getUserDataFilePath(username: string): string {
     const clean = (username || 'default').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
     const preferredDir = fs.existsSync(DATA_DIR) ? DATA_DIR : os.tmpdir();
@@ -1211,7 +1293,6 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
   });
 
   // 8c. JSONBin.io Cloud Cache Integration (Strictly Isolated Per Account)
-  const storageDir = fs.existsSync(DATA_DIR) ? DATA_DIR : os.tmpdir();
   const JSONBIN_CONFIG_FILE = path.resolve(storageDir, 'roadto2000_jsonbin_config.json');
   const DEFAULT_ALPHA_BIN_ID = '6af3559affd5d16053b75b82';
   const DEFAULT_ALPHA_API_KEY = '$2a$10$nOO6WNU996CcWwBht/K8MuDshQsOPktO28uEy.WTBESmEHAsRjcZy';
@@ -1542,6 +1623,18 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
     const force = Boolean(options.force);
     const replaceExact = Boolean(options.replaceExact);
 
+    if (JSONBIN_TEMPORARILY_DISABLED) {
+      return {
+        pushed: false,
+        skipped: true,
+        reason: 'JSONBin temporairement désactivé (test Firebase — données préservées)',
+        lastSyncTime: cfg.lastSyncTime,
+        remoteUpdatedAt: cfg.remoteUpdatedAt || null,
+        status: 'disabled',
+        confirmedDayHashes: cfg.confirmedDayHashes || {},
+      };
+    }
+
     if (!cfg.enabled) {
       return {
         pushed: false,
@@ -1782,16 +1875,19 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
       binId: cfg.binId || null,
       hasApiKey: Boolean(cfg.apiKey),
       enabled: cfg.enabled,
+      disabledForFirebaseTest: JSONBIN_TEMPORARILY_DISABLED,
       lastSyncTime: cfg.lastSyncTime,
       remoteUpdatedAt: cfg.remoteUpdatedAt || null,
-      lastStatus: cfg.lastStatus,
-      lastError: cfg.lastError || null,
+      lastStatus: JSONBIN_TEMPORARILY_DISABLED ? 'disabled' : cfg.lastStatus,
+      lastError: JSONBIN_TEMPORARILY_DISABLED ? null : cfg.lastError || null,
       confirmedDayHashes: cfg.confirmedDayHashes || {},
       quotaInfo: {
         requestsToday: cfg.requestsToday || 0,
         savedRequests: cfg.savedRequests || 0,
         quotaSaverActive: true,
-        lastSkippedReason: cfg.lastSkippedReason || null,
+        lastSkippedReason: JSONBIN_TEMPORARILY_DISABLED
+          ? 'JSONBin temporairement en pause (test Firebase — données préservées)'
+          : cfg.lastSkippedReason || null,
       },
       template: getBaseJsonTemplate(username),
     });
@@ -1815,6 +1911,23 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
       if (typeof enabled === 'boolean') patch.enabled = enabled;
 
       const cfg = updateJsonBinUserConfig(username, patch);
+
+      if (JSONBIN_TEMPORARILY_DISABLED) {
+        saveJsonBinStoreToDisk();
+        res.json({
+          success: true,
+          username,
+          configured: Boolean(cfg.binId),
+          binId: cfg.binId || null,
+          hasApiKey: Boolean(cfg.apiKey),
+          disabledForFirebaseTest: true,
+          lastStatus: 'disabled',
+          lastError: null,
+          lastSyncTime: cfg.lastSyncTime,
+          remoteUpdatedAt: cfg.remoteUpdatedAt || null,
+        });
+        return;
+      }
 
       // Test connection if Bin ID is present
       if (cfg.binId) {
@@ -1959,6 +2072,15 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
             ? { apiKey: overrideApiKey.trim() }
             : {}),
         });
+      }
+
+      if (JSONBIN_TEMPORARILY_DISABLED) {
+        res.json({
+          success: false,
+          disabledForFirebaseTest: true,
+          message: 'JSONBin temporairement désactivé pour test Firebase (données préservées).',
+        });
+        return;
       }
 
       const cfg = getJsonBinUserConfig(requestedUser);
@@ -2214,12 +2336,16 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
   }
 
   async function pullSiteActivityFromCloud(force = false) {
+    const localCfg = loadSiteActivityServer();
+    if (JSONBIN_TEMPORARILY_DISABLED) {
+      return { config: localCfg, cloudSynced: true };
+    }
+
     const now = Date.now();
     if (!force && now - lastCloudActivityPullAt < 5000) {
       return { config: loadSiteActivityServer(), cloudSynced: lastCloudActivitySynced };
     }
 
-    const localCfg = loadSiteActivityServer();
     const { binId, apiKey } = getRegistryBinCreds();
     if (!binId) return { config: localCfg, cloudSynced: false };
 
@@ -2279,6 +2405,10 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
   }
 
   async function pushSiteActivityToCloud(config: any): Promise<{ cloudSynced: boolean; cloudError?: string }> {
+    if (JSONBIN_TEMPORARILY_DISABLED) {
+      return { cloudSynced: true };
+    }
+
     const { binId, apiKey } = getRegistryBinCreds();
     if (!binId) return { cloudSynced: false, cloudError: 'Bin ID absent' };
 
@@ -2365,6 +2495,320 @@ function verifyServerTotpCode(candidate: string, secret?: string): boolean {
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Failed to save site activity config' });
     }
+  });
+
+  // 8f. Real-time Visitor Tracking, Online Presence & Blocking API
+  const VISITORS_FILE = path.resolve(storageDir, 'roadto2000_visitors.json');
+  const ONLINE_TTL_MS = 45 * 1000;
+
+  interface StoredVisitor {
+    visitorId: string;
+    ip: string;
+    ipHistory: string[];
+    deviceType: 'desktop' | 'mobile' | 'tablet';
+    browser: string;
+    os: string;
+    screen: string;
+    currentTab: string;
+    username: string;
+    isGoogleAuth: boolean;
+    isAdminActive: boolean;
+    firstSeen: number;
+    lastSeen: number;
+    connectionCount: number;
+    blocked: boolean;
+    blockedAt: number | null;
+    blockReason: string | null;
+    userAgent: string;
+  }
+
+  interface VisitorStore {
+    visitors: Record<string, StoredVisitor>;
+    blockedIps: Record<string, { reason: string | null; blockedAt: number }>;
+  }
+
+  function loadVisitorStore(): VisitorStore {
+    try {
+      if (fs.existsSync(VISITORS_FILE)) {
+        const parsed = JSON.parse(fs.readFileSync(VISITORS_FILE, 'utf-8'));
+        return {
+          visitors: parsed?.visitors && typeof parsed.visitors === 'object' ? parsed.visitors : {},
+          blockedIps: parsed?.blockedIps && typeof parsed.blockedIps === 'object' ? parsed.blockedIps : {},
+        };
+      }
+    } catch {}
+    return { visitors: {}, blockedIps: {} };
+  }
+
+  const visitorStore: VisitorStore = loadVisitorStore();
+
+  let visitorSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  function saveVisitorStore(immediate = false) {
+    if (immediate) {
+      if (visitorSaveTimer) {
+        clearTimeout(visitorSaveTimer);
+        visitorSaveTimer = null;
+      }
+      try {
+        fs.writeFileSync(VISITORS_FILE, JSON.stringify(visitorStore, null, 2), 'utf-8');
+      } catch (err) {
+        console.warn('[RoadTo2000] Failed to save visitor store:', err);
+      }
+      return;
+    }
+    if (visitorSaveTimer) return;
+    visitorSaveTimer = setTimeout(() => {
+      visitorSaveTimer = null;
+      try {
+        fs.writeFileSync(VISITORS_FILE, JSON.stringify(visitorStore, null, 2), 'utf-8');
+      } catch {}
+    }, 1000);
+  }
+
+  function sanitizeVisitorText(val: unknown, maxLen = 80): string {
+    if (typeof val !== 'string') return '';
+    return val.replace(/[\r\n\t]+/g, ' ').trim().slice(0, maxLen);
+  }
+
+  function isValidVisitorId(id: unknown): id is string {
+    return typeof id === 'string' && /^[a-zA-Z0-9_-]{8,64}$/.test(id.trim());
+  }
+
+  app.post('/api/visitors/heartbeat', (req: Request, res: Response) => {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const rawId = typeof body.visitorId === 'string' ? body.visitorId.trim() : '';
+    if (!isValidVisitorId(rawId)) {
+      res.status(400).json({ error: 'visitorId invalide' });
+      return;
+    }
+
+    const now = Date.now();
+    const ip = extractClientIp(req) || 'Inconnue';
+    const isVerifiedAdmin = verifyAdminToken(req);
+    const deviceRaw = body.deviceType;
+    const deviceType: 'desktop' | 'mobile' | 'tablet' =
+      deviceRaw === 'mobile' || deviceRaw === 'tablet' ? deviceRaw : 'desktop';
+    const browser = sanitizeVisitorText(body.browser, 40) || 'Navigateur';
+    const osName = sanitizeVisitorText(body.os, 40) || 'Inconnu';
+    const screen = sanitizeVisitorText(body.screen, 24) || '';
+    const currentTab = sanitizeVisitorText(body.currentTab, 32) || 'dashboard';
+    const username = sanitizeVisitorText(body.username, 40).toLowerCase() || 'visiteur';
+    const isGoogleAuth = Boolean(body.isGoogleAuth);
+    const userAgent = sanitizeVisitorText(req.headers['user-agent'], 200);
+
+    const existing = visitorStore.visitors[rawId];
+    let updated: StoredVisitor;
+    if (!existing) {
+      updated = {
+        visitorId: rawId,
+        ip,
+        ipHistory: ip && ip !== 'Inconnue' ? [ip] : [],
+        deviceType,
+        browser,
+        os: osName,
+        screen,
+        currentTab,
+        username,
+        isGoogleAuth,
+        isAdminActive: isVerifiedAdmin,
+        firstSeen: now,
+        lastSeen: now,
+        connectionCount: 1,
+        blocked: false,
+        blockedAt: null,
+        blockReason: null,
+        userAgent,
+      };
+    } else {
+      const returnedAfterOffline = now - existing.lastSeen > 5 * 60 * 1000;
+      const ipSet = new Set(existing.ipHistory || []);
+      if (ip && ip !== 'Inconnue') ipSet.add(ip);
+      const nextIpHistory = Array.from(ipSet).slice(-5);
+
+      updated = {
+        ...existing,
+        ip,
+        ipHistory: nextIpHistory,
+        deviceType,
+        browser,
+        os: osName,
+        screen,
+        currentTab,
+        username,
+        isGoogleAuth,
+        isAdminActive: isVerifiedAdmin,
+        lastSeen: now,
+        connectionCount: existing.connectionCount + (returnedAfterOffline ? 1 : 0),
+        userAgent,
+      };
+    }
+
+    visitorStore.visitors[rawId] = updated;
+    saveVisitorStore(false);
+
+    const ipBlockEntry = ip && ip !== 'Inconnue' ? visitorStore.blockedIps[ip] : undefined;
+    const isBlocked = !isVerifiedAdmin && (Boolean(updated.blocked) || Boolean(ipBlockEntry));
+    const blockReason = isBlocked
+      ? updated.blockReason || ipBlockEntry?.reason || 'Accès restreint par l’administrateur.'
+      : null;
+
+    res.json({
+      ok: true,
+      isOnline: true,
+      blocked: isBlocked,
+      blockReason,
+      ip,
+      ipPrefix: formatIpPrefix(ip),
+      serverTime: now,
+    });
+  });
+
+  app.get('/api/visitors', (req: Request, res: Response) => {
+    if (!verifyAdminToken(req)) {
+      res.status(401).json({ error: 'Authentification Administrateur A2F requise' });
+      return;
+    }
+
+    const now = Date.now();
+    const list = Object.values(visitorStore.visitors)
+      .map((v) => {
+        const ipBlockEntry = v.ip ? visitorStore.blockedIps[v.ip] : undefined;
+        const effectiveBlocked = Boolean(v.blocked || ipBlockEntry);
+        const isOnline = now - v.lastSeen <= ONLINE_TTL_MS;
+        return {
+          ...v,
+          isOnline,
+          blocked: effectiveBlocked,
+          blockedByIp: Boolean(ipBlockEntry),
+          blockReason: v.blockReason || ipBlockEntry?.reason || null,
+        };
+      })
+      .sort((a, b) => {
+        if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+        return b.lastSeen - a.lastSeen;
+      });
+
+    res.json({
+      success: true,
+      visitors: list,
+      onlineCount: list.filter((v) => v.isOnline).length,
+      totalCount: list.length,
+      blockedCount: list.filter((v) => v.blocked).length,
+      serverTime: now,
+    });
+  });
+
+  app.post('/api/visitors/block', (req: Request, res: Response) => {
+    if (!verifyAdminToken(req)) {
+      res.status(401).json({ error: 'Authentification Administrateur A2F requise' });
+      return;
+    }
+
+    const { visitorId, blockIp = false, reason, currentAdminVisitorId } = req.body || {};
+    if (!isValidVisitorId(visitorId)) {
+      res.status(400).json({ error: 'visitorId invalide' });
+      return;
+    }
+
+    const target = visitorStore.visitors[visitorId.trim()];
+    if (!target) {
+      res.status(404).json({ error: 'Visiteur introuvable' });
+      return;
+    }
+
+    if (
+      (typeof currentAdminVisitorId === 'string' && currentAdminVisitorId.trim() === target.visitorId) ||
+      target.isAdminActive
+    ) {
+      res.status(400).json({ error: 'Impossible de bloquer une session Administrateur A2F active.' });
+      return;
+    }
+
+    const cleanReason =
+      sanitizeVisitorText(reason, 160) || 'Accès bloqué manuellement par l’administrateur.';
+    const now = Date.now();
+
+    target.blocked = true;
+    target.blockedAt = now;
+    target.blockReason = cleanReason;
+
+    if (blockIp && target.ip && target.ip !== 'Inconnue') {
+      visitorStore.blockedIps[target.ip] = {
+        reason: cleanReason,
+        blockedAt: now,
+      };
+    }
+
+    saveVisitorStore(true);
+    res.json({
+      success: true,
+      visitor: {
+        ...target,
+        isOnline: now - target.lastSeen <= ONLINE_TTL_MS,
+      },
+    });
+  });
+
+  app.post('/api/visitors/unblock', (req: Request, res: Response) => {
+    if (!verifyAdminToken(req)) {
+      res.status(401).json({ error: 'Authentification Administrateur A2F requise' });
+      return;
+    }
+
+    const { visitorId, unblockIp = true } = req.body || {};
+    if (!isValidVisitorId(visitorId)) {
+      res.status(400).json({ error: 'visitorId invalide' });
+      return;
+    }
+
+    const target = visitorStore.visitors[visitorId.trim()];
+    if (!target) {
+      res.status(404).json({ error: 'Visiteur introuvable' });
+      return;
+    }
+
+    target.blocked = false;
+    target.blockedAt = null;
+    target.blockReason = null;
+
+    if (unblockIp && target.ip && visitorStore.blockedIps[target.ip]) {
+      delete visitorStore.blockedIps[target.ip];
+    }
+
+    saveVisitorStore(true);
+    res.json({
+      success: true,
+      visitor: {
+        ...target,
+        isOnline: Date.now() - target.lastSeen <= ONLINE_TTL_MS,
+      },
+    });
+  });
+
+  app.delete('/api/visitors/:visitorId', (req: Request, res: Response) => {
+    if (!verifyAdminToken(req)) {
+      res.status(401).json({ error: 'Authentification Administrateur A2F requise' });
+      return;
+    }
+
+    const rawId = (req.params.visitorId || '').trim();
+    if (!isValidVisitorId(rawId)) {
+      res.status(400).json({ error: 'visitorId invalide' });
+      return;
+    }
+
+    const target = visitorStore.visitors[rawId];
+    if (!target) {
+      res.status(404).json({ error: 'Visiteur introuvable' });
+      return;
+    }
+
+    if (target.ip && visitorStore.blockedIps[target.ip]) {
+      delete visitorStore.blockedIps[target.ip];
+    }
+    delete visitorStore.visitors[rawId];
+    saveVisitorStore(true);
+    res.json({ success: true });
   });
 
   // 9. Chess.com API proxy route

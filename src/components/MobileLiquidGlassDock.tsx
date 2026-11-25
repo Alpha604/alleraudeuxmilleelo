@@ -70,12 +70,14 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
     active: boolean;
     pointerId: number | null;
     startX: number;
+    startSlot: number;
     moved: boolean;
     lastSlot: number;
   }>({
     active: false,
     pointerId: null,
     startX: 0,
+    startSlot: activeIndex,
     moved: false,
     lastSlot: activeIndex,
   });
@@ -115,18 +117,19 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
-    const { frac, slot } = computePositionFromClientX(e.clientX);
+    const { slot } = computePositionFromClientX(e.clientX);
     pointerStateRef.current = {
       active: true,
       pointerId: e.pointerId,
       startX: e.clientX,
+      startSlot: slot,
       moved: false,
       lastSlot: slot,
     };
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {}
-    setDragPosition(frac);
+    setDragPosition(null);
     setIsDragging(false);
   };
 
@@ -135,7 +138,8 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
     if (!st.active || st.pointerId !== e.pointerId) return;
 
     const deltaX = Math.abs(e.clientX - st.startX);
-    if (deltaX > 5 && !st.moved) {
+    if (!st.moved) {
+      if (deltaX <= 7) return;
       st.moved = true;
       setIsDragging(true);
     }
@@ -160,14 +164,16 @@ export const MobileLiquidGlassDock: React.FC<MobileLiquidGlassDockProps> = ({
     } catch {}
 
     const { slot } = computePositionFromClientX(e.clientX);
-    const chosenItem = items[slot];
+    const chosenSlot = st.moved ? slot : st.startSlot;
+    const chosenItem = items[chosenSlot];
 
     pointerStateRef.current = {
       active: false,
       pointerId: null,
       startX: 0,
+      startSlot: chosenSlot,
       moved: false,
-      lastSlot: slot,
+      lastSlot: chosenSlot,
     };
     setIsDragging(false);
     setDragPosition(null);

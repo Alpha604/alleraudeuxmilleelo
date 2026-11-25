@@ -119,7 +119,7 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
     return (
       <div
         ref={dropdownRef}
-        className={`absolute ${positionClasses} z-50 w-72 sm:w-80 rounded-2xl border border-sky-500/30 bg-[#0c0f14]/98 backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.85)] overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-left`}
+        className={`absolute ${positionClasses} z-50 w-72 sm:w-80 rounded-2xl border border-sky-500/30 bg-[#0c0f14] shadow-[0_20px_50px_rgba(0,0,0,0.85)] overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-left`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header minimal info */}
@@ -192,7 +192,7 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
   return (
     <div
       ref={dropdownRef}
-      className={`absolute ${positionClasses} z-50 w-80 sm:w-88 rounded-2xl border border-neutral-800 bg-[#0c0f14]/95 backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-left`}
+      className={`absolute ${positionClasses} z-50 w-80 sm:w-88 rounded-2xl border border-neutral-800 bg-[#0c0f14] shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-left`}
       onClick={(e) => e.stopPropagation()}
     >
       {/* 1. Header Profile Banner with Blurred Photo Background & Base Info */}
@@ -255,19 +255,19 @@ export const UserDropdown: React.FC<UserDropdownProps> = ({
           </div>
 
           <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-neutral-800/60 font-mono text-center">
-            <div className="p-1.5 rounded-xl bg-neutral-900/80 border border-neutral-800/80 backdrop-blur-sm">
+            <div className="p-1.5 rounded-xl bg-neutral-900 border border-neutral-800">
               <span className="text-[9px] text-neutral-400 block font-sans uppercase">Bullet</span>
               <span className="text-xs font-bold text-white">
                 {stats?.chess_bullet?.last?.rating ?? '—'}
               </span>
             </div>
-            <div className="p-1.5 rounded-xl bg-neutral-900/80 border border-neutral-800/80 backdrop-blur-sm">
+            <div className="p-1.5 rounded-xl bg-neutral-900 border border-neutral-800">
               <span className="text-[9px] text-neutral-400 block font-sans uppercase">Blitz</span>
               <span className="text-xs font-bold text-[#facc15]">
                 {stats?.chess_blitz?.last?.rating ?? '—'}
               </span>
             </div>
-            <div className="p-1.5 rounded-xl bg-neutral-900/80 border border-neutral-800/80 backdrop-blur-sm">
+            <div className="p-1.5 rounded-xl bg-neutral-900 border border-neutral-800">
               <span className="text-[9px] text-neutral-400 block font-sans uppercase">Rapide</span>
               <span className="text-xs font-bold text-white">
                 {stats?.chess_rapid?.last?.rating ?? '—'}

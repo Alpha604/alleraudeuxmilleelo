@@ -22,7 +22,12 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
-import { formatJsonBinShortTime, formatJsonBinTimestamp } from '../utils/cloudSync';
+import {
+  formatJsonBinShortTime,
+  formatJsonBinTimestamp,
+  JSONBIN_TEMPORARILY_DISABLED,
+  JsonBinSyncState,
+} from '../utils/cloudSync';
 import { FirebaseIndicatorStatus } from '../utils/syncDiagnostics';
 import { BrandLogo } from './BrandLogo';
 import { UserDropdown } from './UserDropdown';
@@ -47,7 +52,7 @@ interface NavbarProps {
   onOpenSecurityModal: (title?: string, onGranted?: () => void) => void;
   onLockAdmin: () => void;
   onOpenNetworkModal?: () => void;
-  jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  jsonBinStatus?: JsonBinSyncState;
   onOpenFirebaseModal?: () => void;
   firebaseStatus?: FirebaseIndicatorStatus;
   lastFirebaseSyncTime?: number | null;
@@ -134,7 +139,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   return (
-    <header className="sticky top-0 z-30 w-full border-b border-neutral-800 bg-[#07090e]/95 backdrop-blur-xl transition-all overflow-x-clip">
+    <header className="sticky top-0 z-30 w-full border-b border-neutral-800 bg-[#07090e] transition-all overflow-x-clip">
       <div className="w-full flex h-14 sm:h-16 items-center justify-between gap-1.5 sm:gap-4 px-2 sm:px-6 lg:px-8">
         {/* Brand identity: Minimalist King Crown + Rising Elo Arrow */}
         <button
@@ -191,14 +196,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Unified Mobile Cloud Button (< sm, Admin 2FA ONLY) */}
           {isAdmin && !isSpectator && onOpenMobileCloudMenu && (() => {
+            const isJsonDisabled = JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled';
             const hasCloudError =
               !isNetworkOnline ||
-              jsonBinStatus === 'error' ||
+              (!isJsonDisabled && jsonBinStatus === 'error') ||
               firebaseStatus === 'error' ||
               firebaseStatus === 'offline';
             const allCloudGreen =
               isNetworkOnline &&
-              jsonBinStatus === 'synced' &&
+              (isJsonDisabled || jsonBinStatus === 'synced') &&
               firebaseStatus === 'synced' &&
               firebaseIssuesCount === 0;
             return (
@@ -235,43 +241,56 @@ export const Navbar: React.FC<NavbarProps> = ({
           })()}
 
           {/* Live Network & JSONBin Status Button (Desktop/Tablet + Strictly Admin 2FA Only) */}
-          {isAdmin && !isSpectator && (
-            <button
-              onClick={onOpenNetworkModal}
-              className={`hidden sm:flex h-9 items-center justify-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition-all ${
-                !isNetworkOnline
-                  ? 'border-[#ef4444]/40 bg-[#ef4444]/15 text-[#ef4444] hover:bg-[#ef4444]/25'
-                  : jsonBinStatus === 'error'
-                  ? 'border-[#ef4444]/40 bg-[#ef4444]/15 text-[#ef4444] hover:bg-[#ef4444]/25'
-                  : jsonBinStatus === 'synced'
-                  ? 'border-[#10b981]/40 bg-[#10b981]/15 text-[#10b981] hover:bg-[#10b981]/25'
-                  : 'border-[#facc15]/40 bg-[#facc15]/10 text-[#facc15] hover:bg-[#facc15]/20'
-              }`}
-              title={`Réseau : ${isNetworkOnline ? 'En ligne' : 'Déconnecté'} · JSONBin : ${
-                jsonBinStatus === 'synced'
-                  ? 'Synchronisé'
-                  : jsonBinStatus === 'syncing'
-                  ? 'Synchro en cours...'
-                  : jsonBinStatus === 'error'
-                  ? 'Erreur de sauvegarde'
-                  : 'En attente de clés'
-              } · Dernière MàJ JSONBin : ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`}
-            >
-              <Database className="h-3.5 w-3.5 shrink-0" />
-              <span className="hidden md:inline">
-                {lastJsonBinSyncTime ? `JSONBin · ${formatJsonBinShortTime(lastJsonBinSyncTime)}` : 'JSONBin'}
-              </span>
-              <span
-                className={`h-2 w-2 rounded-full shrink-0 ${
-                  !isNetworkOnline || jsonBinStatus === 'error'
-                    ? 'bg-[#ef4444]'
+          {isAdmin && !isSpectator && (() => {
+            const isJsonDisabled = JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled';
+            return (
+              <button
+                onClick={onOpenNetworkModal}
+                className={`hidden sm:flex h-9 items-center justify-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition-all ${
+                  !isNetworkOnline
+                    ? 'border-[#ef4444]/40 bg-[#ef4444]/15 text-[#ef4444] hover:bg-[#ef4444]/25'
+                    : isJsonDisabled
+                    ? 'border-sky-500/35 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20'
+                    : jsonBinStatus === 'error'
+                    ? 'border-[#ef4444]/40 bg-[#ef4444]/15 text-[#ef4444] hover:bg-[#ef4444]/25'
                     : jsonBinStatus === 'synced'
-                    ? 'bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.7)]'
-                    : 'bg-[#facc15] shadow-[0_0_8px_rgba(250,204,21,0.7)]'
+                    ? 'border-[#10b981]/40 bg-[#10b981]/15 text-[#10b981] hover:bg-[#10b981]/25'
+                    : 'border-[#facc15]/40 bg-[#facc15]/10 text-[#facc15] hover:bg-[#facc15]/20'
                 }`}
-              />
-            </button>
-          )}
+                title={`Réseau : ${isNetworkOnline ? 'En ligne' : 'Déconnecté'} · JSONBin : ${
+                  isJsonDisabled
+                    ? 'En pause (Test Firebase)'
+                    : jsonBinStatus === 'synced'
+                    ? 'Synchronisé'
+                    : jsonBinStatus === 'syncing'
+                    ? 'Synchro en cours...'
+                    : jsonBinStatus === 'error'
+                    ? 'Erreur de sauvegarde'
+                    : 'En attente de clés'
+                } · Dernière MàJ JSONBin : ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`}
+              >
+                <Database className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden md:inline">
+                  {isJsonDisabled
+                    ? 'JSONBin (Pause)'
+                    : lastJsonBinSyncTime
+                    ? `JSONBin · ${formatJsonBinShortTime(lastJsonBinSyncTime)}`
+                    : 'JSONBin'}
+                </span>
+                <span
+                  className={`h-2 w-2 rounded-full shrink-0 ${
+                    !isNetworkOnline || (!isJsonDisabled && jsonBinStatus === 'error')
+                      ? 'bg-[#ef4444]'
+                      : isJsonDisabled
+                      ? 'bg-sky-400'
+                      : jsonBinStatus === 'synced'
+                      ? 'bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.7)]'
+                      : 'bg-[#facc15] shadow-[0_0_8px_rgba(250,204,21,0.7)]'
+                  }`}
+                />
+              </button>
+            );
+          })()}
 
           {/* Live Firebase Sync & Diagnostics Indicator Button (Desktop/Tablet + Strictly Admin 2FA Only) */}
           {isAdmin && !isSpectator && onOpenFirebaseModal && (

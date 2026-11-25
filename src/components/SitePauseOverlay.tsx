@@ -180,7 +180,7 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
       <div className="h-4 shrink-0" aria-hidden="true" />
 
       {/* Main Centered Visitor Notice Card */}
-      <div className="liquid-glass-card relative z-10 mx-auto w-full max-w-xl rounded-3xl border border-neutral-800 bg-[#0b0e14]/95 backdrop-blur-2xl p-6 sm:p-10 shadow-2xl space-y-5 text-center">
+      <div className="relative z-10 mx-auto w-full max-w-xl rounded-3xl border border-neutral-800 bg-[#0b0e14] p-6 sm:p-10 shadow-2xl space-y-5 text-center">
         {/* Brand Header */}
         <div className="flex flex-wrap items-center justify-center gap-2.5 text-xs font-display font-bold tracking-wider">
           <BrandLogo size="sm" />
@@ -322,11 +322,11 @@ export const SitePauseOverlay: React.FC<SitePauseOverlayProps> = ({
           aria-modal="true"
           aria-label="Déverrouillage Administrateur A2F"
           onClick={() => setAdminDrawerOpen(false)}
-          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150"
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 animate-in fade-in duration-150"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="liquid-glass-card relative w-full max-w-md rounded-3xl border border-neutral-800 bg-[#0b0e14] p-5 sm:p-6 shadow-2xl space-y-4 text-left"
+            className="relative w-full max-w-md rounded-3xl border border-neutral-800 bg-[#0b0e14] p-5 sm:p-6 shadow-2xl space-y-4 text-left"
           >
             <div className="flex items-center justify-between gap-3 border-b border-neutral-800 pb-3">
               <div className="flex items-center gap-2 text-xs font-bold text-[#facc15]">

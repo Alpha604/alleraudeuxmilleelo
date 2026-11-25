@@ -306,7 +306,7 @@ export const FirebaseSyncModal: React.FC<FirebaseSyncModalProps> = ({
       aria-modal="true"
       aria-labelledby="firebase-sync-modal-title"
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 animate-in fade-in duration-200"
     >
       <div
         onClick={(e) => e.stopPropagation()}

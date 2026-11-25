@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { NavTab } from './Navbar';
 import { triggerNotificationHaptic } from '../utils/notifications';
+import { JSONBIN_TEMPORARILY_DISABLED, JsonBinSyncState } from '../utils/cloudSync';
 import { FirebaseIndicatorStatus } from '../utils/syncDiagnostics';
 
 interface MobileMoreSheetProps {
@@ -35,7 +36,7 @@ interface MobileMoreSheetProps {
   hasAdminAccess: boolean;
   isSyncing: boolean;
   unreadNotificationsCount: number;
-  jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  jsonBinStatus?: JsonBinSyncState;
   firebaseStatus?: FirebaseIndicatorStatus;
   firebaseIssuesCount?: number;
   onOpenSecurityModal: (title?: string, onGranted?: () => void) => void;
@@ -380,7 +381,7 @@ export const MobileMoreSheet: React.FC<MobileMoreSheetProps> = ({
         opacity: entered ? dragOpacityFactor : 0,
         transition: isDragging ? 'none' : 'opacity 240ms cubic-bezier(0.22, 1, 0.36, 1)',
       }}
-      className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-md sm:p-4"
+      className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/80 sm:p-4"
     >
       <div
         role="dialog"
@@ -396,7 +397,7 @@ export const MobileMoreSheet: React.FC<MobileMoreSheetProps> = ({
             ? 'none'
             : 'transform 300ms cubic-bezier(0.22, 1, 0.36, 1)',
         }}
-        className="liquid-glass-sheet w-full sm:max-w-md max-h-[86vh] flex flex-col rounded-t-[30px] sm:rounded-3xl border border-white/[0.16] bg-[#0a0e16]/94 backdrop-blur-2xl backdrop-saturate-[180%] shadow-[0_-18px_50px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.24)] overflow-hidden text-left will-change-transform"
+        className="w-full sm:max-w-md max-h-[86vh] flex flex-col rounded-t-[30px] sm:rounded-3xl border border-neutral-800 bg-[#0a0e16] shadow-2xl overflow-hidden text-left will-change-transform"
       >
         {/* Top Swipe Handle & Header */}
         <div
@@ -506,7 +507,9 @@ export const MobileMoreSheet: React.FC<MobileMoreSheetProps> = ({
               >
                 <div
                   className={`h-9 w-9 rounded-xl border flex items-center justify-center shrink-0 ${
-                    jsonBinStatus === 'synced'
+                    JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled'
+                      ? 'bg-sky-500/15 border-sky-500/35 text-sky-400'
+                      : jsonBinStatus === 'synced'
                       ? 'bg-[#10b981]/15 border-[#10b981]/35 text-[#10b981]'
                       : jsonBinStatus === 'error'
                       ? 'bg-[#ef4444]/15 border-[#ef4444]/35 text-[#ef4444]'
@@ -518,7 +521,9 @@ export const MobileMoreSheet: React.FC<MobileMoreSheetProps> = ({
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-white truncate">Cloud JSONBin</div>
                   <div className="text-[10px] text-neutral-400 truncate">
-                    {jsonBinStatus === 'synced'
+                    {JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled'
+                      ? 'En pause (Firebase)'
+                      : jsonBinStatus === 'synced'
                       ? 'Synchronisé'
                       : jsonBinStatus === 'error'
                       ? 'Erreur'

@@ -35,7 +35,12 @@ import {
   normalizeParisDayKey,
   saveStoredSyncHistory,
 } from '../utils/storage';
-import { computeRecordVerificationHash, formatJsonBinTimestamp } from '../utils/cloudSync';
+import {
+  computeRecordVerificationHash,
+  formatJsonBinTimestamp,
+  JSONBIN_TEMPORARILY_DISABLED,
+  JsonBinSyncState,
+} from '../utils/cloudSync';
 import { SecurePurgeModal } from './SecurePurgeModal';
 
 interface SyncLogProps {
@@ -49,7 +54,7 @@ interface SyncLogProps {
   onOpenSecurityModal?: (title?: string) => void;
   startDateStr?: string;
   lastJsonBinSyncTime?: number | null;
-  jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  jsonBinStatus?: JsonBinSyncState;
   confirmedDayHashes?: Record<string, string>;
   onVerifyJsonBinSync?: () => Promise<void> | void;
   isVerifyingJsonBin?: boolean;
@@ -509,42 +514,55 @@ export const SyncLog: React.FC<SyncLogProps> = ({
           </p>
           {isAdmin && (
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={onOpenNetworkModal}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-mono transition-colors ${
-                  jsonBinStatus === 'error'
-                    ? 'border-[#ef4444]/40 bg-[#ef4444]/10 text-[#ef4444]'
-                    : jsonBinStatus === 'syncing' || isVerifyingJsonBin
-                    ? 'border-[#facc15]/40 bg-[#facc15]/10 text-[#facc15]'
-                    : pendingCloudCount > 0
-                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
-                    : 'border-[#10b981]/30 bg-[#10b981]/10 text-[#10b981] hover:bg-[#10b981]/20'
-                }`}
-              >
-                <Clock className="h-3 w-3 shrink-0" />
-                <span>
-                  {jsonBinStatus === 'syncing' || isVerifyingJsonBin
-                    ? 'Vérification JSONBin en cours...'
-                    : jsonBinStatus === 'error'
-                    ? 'Erreur JSONBin (cliquez pour vérifier)'
-                    : pendingCloudCount > 0
-                    ? `${pendingCloudCount} relevé(s) en attente de confirmation · MàJ : ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`
-                    : `Confirmé JSONBin (${verifiedCloudCount}/${syncedDaysCount}) · ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`}
-                </span>
-              </button>
-
-              {onVerifyJsonBinSync && !isIframe && (
+              {JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled' ? (
                 <button
                   type="button"
-                  onClick={() => onVerifyJsonBinSync()}
-                  disabled={isVerifyingJsonBin || jsonBinStatus === 'syncing'}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-neutral-700 bg-neutral-900 hover:border-[#facc15] text-[11px] font-bold text-neutral-200 hover:text-white transition-colors disabled:opacity-50"
-                  title="Contrôler en direct sur JSONBin que chaque relevé correspond exactement"
+                  onClick={onOpenNetworkModal}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-sky-500/35 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 text-[11px] font-mono transition-colors"
                 >
-                  <Zap className={`h-3 w-3 text-[#facc15] ${isVerifyingJsonBin ? 'animate-pulse' : ''}`} />
-                  <span>{isVerifyingJsonBin ? 'Vérification...' : 'Vérifier JSONBin'}</span>
+                  <Clock className="h-3 w-3 shrink-0" />
+                  <span>JSONBin en pause (Test Firebase en direct actif)</span>
                 </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={onOpenNetworkModal}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-mono transition-colors ${
+                      jsonBinStatus === 'error'
+                        ? 'border-[#ef4444]/40 bg-[#ef4444]/10 text-[#ef4444]'
+                        : jsonBinStatus === 'syncing' || isVerifyingJsonBin
+                        ? 'border-[#facc15]/40 bg-[#facc15]/10 text-[#facc15]'
+                        : pendingCloudCount > 0
+                        ? 'border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+                        : 'border-[#10b981]/30 bg-[#10b981]/10 text-[#10b981] hover:bg-[#10b981]/20'
+                    }`}
+                  >
+                    <Clock className="h-3 w-3 shrink-0" />
+                    <span>
+                      {jsonBinStatus === 'syncing' || isVerifyingJsonBin
+                        ? 'Vérification JSONBin en cours...'
+                        : jsonBinStatus === 'error'
+                        ? 'Erreur JSONBin (cliquez pour vérifier)'
+                        : pendingCloudCount > 0
+                        ? `${pendingCloudCount} relevé(s) en attente de confirmation · MàJ : ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`
+                        : `Confirmé JSONBin (${verifiedCloudCount}/${syncedDaysCount}) · ${formatJsonBinTimestamp(lastJsonBinSyncTime)}`}
+                    </span>
+                  </button>
+
+                  {onVerifyJsonBinSync && !isIframe && (
+                    <button
+                      type="button"
+                      onClick={() => onVerifyJsonBinSync()}
+                      disabled={isVerifyingJsonBin || jsonBinStatus === 'syncing'}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-neutral-700 bg-neutral-900 hover:border-[#facc15] text-[11px] font-bold text-neutral-200 hover:text-white transition-colors disabled:opacity-50"
+                      title="Contrôler en direct sur JSONBin que chaque relevé correspond exactement"
+                    >
+                      <Zap className={`h-3 w-3 text-[#facc15] ${isVerifyingJsonBin ? 'animate-pulse' : ''}`} />
+                      <span>{isVerifyingJsonBin ? 'Vérification...' : 'Vérifier JSONBin'}</span>
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -760,7 +778,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
       </div>
 
       {/* Main Table: Shows EVERY Day with Green (Done) and Red (Missing) Rows */}
-      <div className="liquid-glass-card overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0c1019]/90 shadow-[0_8px_30px_rgba(0,0,0,0.4)] backdrop-blur-xl">
+      <div className="overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0c1019] shadow-[0_8px_30px_rgba(0,0,0,0.4)]">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
@@ -1004,7 +1022,7 @@ export const SyncLog: React.FC<SyncLogProps> = ({
           role="dialog"
           aria-modal="true"
           onClick={() => setManualModalOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
         >
           <div
             onClick={(e) => e.stopPropagation()}

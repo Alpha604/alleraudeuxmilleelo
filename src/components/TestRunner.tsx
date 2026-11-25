@@ -301,7 +301,7 @@ export const TestRunner: React.FC<TestRunnerProps> = ({
       </div>
 
       {/* Summary Scorecard */}
-      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 shadow-xl backdrop-blur-sm flex flex-wrap items-center justify-between gap-4">
+      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/90 p-5 shadow-xl flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div
             className={`flex h-10 w-10 items-center justify-center rounded-xl border ${

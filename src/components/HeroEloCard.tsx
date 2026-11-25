@@ -109,7 +109,7 @@ export const HeroEloCard: React.FC<HeroEloCardProps> = ({
   });
 
   return (
-    <div className="liquid-glass-card relative overflow-hidden rounded-3xl border border-neutral-800 bg-[#0c0f14] shadow-2xl transition-all">
+    <div className="relative overflow-hidden rounded-3xl border border-neutral-800 bg-[#0c0f14] shadow-2xl transition-all">
       {/* Cinematic Knight Visual Backdrop with high-end ambient mask */}
       <div className="absolute inset-0 z-0 pointer-events-none select-none overflow-hidden">
         <img

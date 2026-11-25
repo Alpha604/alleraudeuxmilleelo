@@ -95,7 +95,7 @@ export const LiquidGlassDurationSlider: React.FC<LiquidGlassDurationSliderProps>
 
   return (
     <div
-      className={`liquid-glass-card rounded-2xl border border-white/[0.14] bg-white/[0.05] backdrop-blur-xl shadow-[0_8px_28px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.2)] ${
+      className={`rounded-2xl border border-neutral-800 bg-[#0c0f14] shadow-lg ${
         compact ? 'p-3 space-y-2.5' : 'p-4 space-y-3'
       }`}
     >
@@ -105,12 +105,12 @@ export const LiquidGlassDurationSlider: React.FC<LiquidGlassDurationSliderProps>
           <Clock className="h-3.5 w-3.5 text-[#facc15] shrink-0" />
           <span>{label}</span>
         </span>
-        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-[#facc15]/20 border border-[#facc15]/45 text-[11px] font-mono font-black text-[#facc15] shadow-[inset_0_1px_0_rgba(255,255,255,0.25)]">
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-[#facc15]/15 border border-[#facc15]/40 text-[11px] font-mono font-black text-[#facc15]">
           {currentStop.label}
         </span>
       </div>
 
-      {/* Tactile Liquid Glass Slider Track */}
+      {/* Tactile Matte Dark Slider Track */}
       <div
         ref={trackRef}
         role="slider"
@@ -125,19 +125,19 @@ export const LiquidGlassDurationSlider: React.FC<LiquidGlassDurationSliderProps>
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUpOrCancel}
         onPointerCancel={handlePointerUpOrCancel}
-        className="liquid-glass-track relative h-12 rounded-2xl border border-white/[0.16] bg-white/[0.04] backdrop-blur-2xl shadow-[inset_0_2px_6px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.16)] p-1.5 cursor-pointer select-none touch-none focus:outline-none focus:ring-2 focus:ring-[#facc15]/50"
+        className="relative h-12 rounded-2xl border border-neutral-800 bg-neutral-900 p-1.5 cursor-pointer select-none touch-none focus:outline-none focus:ring-2 focus:ring-[#facc15]/50"
       >
-        {/* Specular Liquid Fill Bar */}
+        {/* Solid Gold Progress Fill */}
         <div
           aria-hidden="true"
           style={{
             width: `calc((100% - 12px) * ${selectedIndex / (DURATION_STOPS.length - 1)} + 24%)`,
             transition: isDragging ? 'none' : 'width 240ms cubic-bezier(0.22, 1, 0.36, 1)',
           }}
-          className="absolute inset-y-1.5 left-1.5 rounded-xl bg-gradient-to-r from-[#facc15]/15 via-[#facc15]/25 to-[#facc15]/35 pointer-events-none"
+          className="absolute inset-y-1.5 left-1.5 rounded-xl bg-[#facc15]/15 pointer-events-none"
         />
 
-        {/* Sliding Frosted Glass Droplet Indicator */}
+        {/* Sliding Solid Gold Indicator */}
         <div
           aria-hidden="true"
           style={{
@@ -145,7 +145,7 @@ export const LiquidGlassDurationSlider: React.FC<LiquidGlassDurationSliderProps>
             transform: `translate3d(${selectedIndex * 100}%, 0, 0)`,
             transition: isDragging ? 'none' : 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1)',
           }}
-          className="liquid-glass-thumb absolute inset-y-1.5 left-1.5 rounded-xl bg-gradient-to-b from-[#fde047] via-[#facc15] to-[#eab308] border border-white/50 shadow-[0_6px_18px_rgba(250,204,21,0.4),inset_0_1px_1px_rgba(255,255,255,0.75)] pointer-events-none"
+          className="absolute inset-y-1.5 left-1.5 rounded-xl bg-[#facc15] border border-amber-300/60 shadow-sm pointer-events-none"
         />
 
         {/* 4 Magnetic Segment Labels */}
@@ -163,7 +163,7 @@ export const LiquidGlassDurationSlider: React.FC<LiquidGlassDurationSliderProps>
                 }}
                 className={`flex items-center justify-center text-xs font-mono font-extrabold rounded-xl transition-colors cursor-pointer ${
                   isSelected
-                    ? 'liquid-glass-thumb-label text-black'
+                    ? 'text-black'
                     : 'text-neutral-300 hover:text-white'
                 }`}
               >

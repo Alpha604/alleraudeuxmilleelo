@@ -4,6 +4,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Ban, Lock } from 'lucide-react';
 import { AdminPanelView } from './components/AdminPanelView';
 import { DailyObjectiveCard } from './components/DailyObjectiveCard';
 import { FirebaseErrorBoundary } from './components/FirebaseErrorBoundary';
@@ -44,6 +45,7 @@ import {
   getFirebaseMirrorStatus,
   mirrorDataToFirestore,
   subscribeBroadcastMessagesFirestore,
+  subscribePlayerDataRealtime,
 } from './utils/firebaseMirror';
 import {
   deriveFirebaseIndicatorStatus,
@@ -52,14 +54,18 @@ import {
   SyncDiagnosticsSnapshot,
 } from './utils/syncDiagnostics';
 import {
+  computeClientDataSignature,
   fetchJsonBinStatus,
   formatJsonBinTimestamp,
   getLocalMetrics,
+  JSONBIN_TEMPORARILY_DISABLED,
+  JsonBinSyncState,
   JsonBinUpdateEventDetail,
   reconcileCloudSync,
   saveServerData,
   verifyJsonBinSync,
 } from './utils/cloudSync';
+import { sendVisitorHeartbeat } from './utils/visitors';
 import { fetchChessComData } from './utils/chessApi';
 import {
   calculateDailyObjective,
@@ -112,6 +118,7 @@ import {
   purgeAllUserData,
   purgeLegacyAndStaleData,
   saveStoredSettings,
+  saveStoredSyncHistory,
 } from './utils/storage';
 import {
   AppNotificationItem,
@@ -154,10 +161,11 @@ export default function App() {
   const [securityModalTitle, setSecurityModalTitle] = useState('Accès Protégé');
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
-  // Load settings bound strictly to @alpharomeo1500
+  // Load settings bound strictly to @alpharomeo1500 & locked to base dark theme
   const [settings, setSettings] = useState<AppSettings>(() => {
     const s = getStoredSettings('alpharomeo1500');
     s.username = 'alpharomeo1500';
+    s.theme = 'dark';
     purgeLegacyAndStaleData('alpharomeo1500');
     return s;
   });
@@ -205,7 +213,9 @@ export default function App() {
   const [isFirebaseMirrorSyncing, setIsFirebaseMirrorSyncing] = useState<boolean>(
     () => getFirebaseMirrorStatus().status === 'syncing'
   );
-  const [jsonBinStatus, setJsonBinStatus] = useState<'synced' | 'pending_keys' | 'error' | 'syncing'>('pending_keys');
+  const [jsonBinStatus, setJsonBinStatus] = useState<JsonBinSyncState>(
+    JSONBIN_TEMPORARILY_DISABLED ? 'disabled' : 'pending_keys'
+  );
   const [lastJsonBinSyncTime, setLastJsonBinSyncTime] = useState<number | null>(() => {
     return getLocalMetrics('alpharomeo1500').lastSyncTime;
   });
@@ -216,6 +226,22 @@ export default function App() {
   const manualSyncAfterReconcileRef = useRef<boolean>(false);
   const [isNetworkOnline, setIsNetworkOnline] = useState<boolean>(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+
+  // Visitor blocking state
+  const [visitorBlockState, setVisitorBlockState] = useState<{
+    blocked: boolean;
+    reason: string | null;
+  }>({ blocked: false, reason: null });
+
+  // Refs to prevent live Firestore sync echo loops
+  const latestDataRef = useRef<{ history: SyncRecord[]; settings: AppSettings }>({
+    history: syncHistory,
+    settings,
+  });
+  latestDataRef.current = { history: syncHistory, settings };
+  const lastCloudSignatureRef = useRef<string>(
+    computeClientDataSignature('alpharomeo1500', syncHistory, settings)
   );
 
   // Site Activity / Maintenance & Pause Control state
@@ -248,38 +274,17 @@ export default function App() {
     });
   }, []);
 
-  // Apply theme to document element (base=dark, light, ocean, colors, and system Desktop auto-detection)
+  // Strictly lock theme to base dark theme across the entire app
   useEffect(() => {
     const root = document.documentElement;
-    const applyResolvedTheme = (resolved: 'dark' | 'light' | 'ocean' | 'colors') => {
-      root.setAttribute('data-theme', resolved);
-      if (resolved === 'light') {
-        root.classList.remove('dark');
-      } else {
-        root.classList.add('dark');
-      }
-    };
-
-    const applyTheme = (theme: AppTheme) => {
-      if (theme === 'system') {
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        applyResolvedTheme(prefersDark ? 'dark' : 'light');
-      } else if (theme === 'light' || theme === 'ocean' || theme === 'colors') {
-        applyResolvedTheme(theme);
-      } else {
-        applyResolvedTheme('dark');
-      }
-    };
-
-    applyTheme(settings.theme);
-
-    if (settings.theme === 'system') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const handler = (e: MediaQueryListEvent) => {
-        applyResolvedTheme(e.matches ? 'dark' : 'light');
-      };
-      mediaQuery.addEventListener('change', handler);
-      return () => mediaQuery.removeEventListener('change', handler);
+    root.setAttribute('data-theme', 'dark');
+    root.classList.add('dark');
+    if (settings.theme !== 'dark') {
+      setSettings((prev) => {
+        const next: AppSettings = { ...prev, theme: 'dark' };
+        saveStoredSettings(next);
+        return next;
+      });
     }
   }, [settings.theme]);
 
@@ -292,6 +297,10 @@ export default function App() {
     window.addEventListener('offline', handleOffline);
 
     const checkJsonBin = async () => {
+      if (JSONBIN_TEMPORARILY_DISABLED) {
+        setJsonBinStatus('disabled');
+        return;
+      }
       try {
         const info = await fetchJsonBinStatus(settings.username);
         if (info) {
@@ -307,6 +316,10 @@ export default function App() {
     };
 
     const handleJsonBinUpdated = (e: Event) => {
+      if (JSONBIN_TEMPORARILY_DISABLED) {
+        setJsonBinStatus('disabled');
+        return;
+      }
       const detail = (e as CustomEvent<JsonBinUpdateEventDetail>).detail;
       if (!detail) return;
       if (detail.username?.toLowerCase() === settings.username.trim().toLowerCase()) {
@@ -392,12 +405,16 @@ export default function App() {
         });
         if (!active) return;
         if (res.didUpdate) {
+          const nextSettings = res.settings
+            ? { ...res.settings, username: 'alpharomeo1500', theme: 'dark' as AppTheme }
+            : latestDataRef.current.settings;
+          lastCloudSignatureRef.current = computeClientDataSignature(settings.username, res.history, nextSettings);
           setSyncHistory(res.history);
           if (res.history.length > 0) setLastSyncTime(res.history[0].timestamp);
-          if (res.settings) setSettings({ ...res.settings, username: 'alpharomeo1500' });
+          if (res.settings) setSettings(nextSettings);
         }
         if (res.sourceUsed === 'firebase') {
-          setJsonBinStatus('synced');
+          setJsonBinStatus(JSONBIN_TEMPORARILY_DISABLED ? 'disabled' : 'synced');
           if (res.confirmedDayHashes) setConfirmedDayHashes(res.confirmedDayHashes);
         } else if (syncHistory.length > 0) {
           mirrorDataToFirestore({
@@ -567,6 +584,86 @@ export default function App() {
     });
     return () => unsub();
   }, [googleAuthState.ready, googleAuthState.authorized, isAdmin]);
+
+  // Live Cross-Device Sync Log & Profile Real-Time Listener (PC <-> Mobile instant sync via Firestore)
+  useEffect(() => {
+    const canListen =
+      !userSession?.isSpectator &&
+      (isExplicitReadOnlyEmbed() || (googleAuthState.ready && googleAuthState.authorized));
+    if (!canListen) return;
+
+    const unsub = subscribePlayerDataRealtime(settings.username, {
+      onUpdate: ({ history, settingsPatch }) => {
+        const current = latestDataRef.current;
+        const nextHistory = history ?? current.history;
+        const nextSettings: AppSettings = settingsPatch
+          ? {
+              ...current.settings,
+              ...settingsPatch,
+              username: 'alpharomeo1500',
+              theme: 'dark',
+            }
+          : current.settings;
+
+        const incomingSig = computeClientDataSignature(settings.username, nextHistory, nextSettings);
+        if (incomingSig === lastCloudSignatureRef.current) return;
+
+        lastCloudSignatureRef.current = incomingSig;
+
+        if (history) {
+          saveStoredSyncHistory(nextHistory, settings.username);
+          setSyncHistory(nextHistory);
+          setLastSyncTime(nextHistory[0]?.timestamp ?? null);
+        }
+        if (settingsPatch) {
+          saveStoredSettings(nextSettings);
+          setSettings(nextSettings);
+        }
+      },
+    });
+
+    return () => unsub();
+  }, [
+    settings.username,
+    userSession?.isSpectator,
+    googleAuthState.ready,
+    googleAuthState.authorized,
+  ]);
+
+  // Visitor Live Heartbeat & Block Status Polling
+  useEffect(() => {
+    let active = true;
+
+    const ping = async () => {
+      const res = await sendVisitorHeartbeat({
+        currentTab,
+        username: settings.username,
+        isGoogleAuth: googleAuthState.authorized,
+      });
+      if (!active || !res) return;
+      if (res.ip && !clientIpRef.current) {
+        clientIpRef.current = res.ip;
+        setClientIp(res.ip);
+      }
+      setVisitorBlockState({
+        blocked: Boolean(res.blocked),
+        reason: res.blockReason || null,
+      });
+    };
+
+    ping();
+    const interval = setInterval(ping, 15000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') ping();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [currentTab, settings.username, googleAuthState.authorized, isAdmin]);
 
   // Periodic check for admin session validity & BroadcastChannel synchronization
   useEffect(() => {
@@ -865,13 +962,14 @@ export default function App() {
       options?: { force?: boolean; replaceExact?: boolean; notifySuccess?: boolean }
     ) => {
       if (userSession?.isSpectator) return null;
-      setJsonBinStatus('syncing');
+      lastCloudSignatureRef.current = computeClientDataSignature(targetUser, historyToSave, settingsToSave);
+      setJsonBinStatus(JSONBIN_TEMPORARILY_DISABLED ? 'disabled' : 'syncing');
       const result = await saveServerData(targetUser, historyToSave, settingsToSave, {
         force: options?.force ?? true,
         replaceExact: options?.replaceExact ?? false,
       });
 
-      setJsonBinStatus(result.status);
+      setJsonBinStatus(JSONBIN_TEMPORARILY_DISABLED ? 'disabled' : result.status);
       if (result.lastSyncTime) {
         setLastJsonBinSyncTime(result.lastSyncTime);
       }
@@ -880,7 +978,12 @@ export default function App() {
       }
 
       if (result.history && result.history.length > 0 && !options?.replaceExact) {
+        lastCloudSignatureRef.current = computeClientDataSignature(targetUser, result.history, settingsToSave);
         setSyncHistory(result.history);
+      }
+
+      if (JSONBIN_TEMPORARILY_DISABLED) {
+        return result;
       }
 
       if (result.status === 'error') {
@@ -1144,19 +1247,28 @@ export default function App() {
 
         if (res.lastJsonBinSyncTime) {
           setLastJsonBinSyncTime(res.lastJsonBinSyncTime);
-          setJsonBinStatus('synced');
+          setJsonBinStatus(JSONBIN_TEMPORARILY_DISABLED ? 'disabled' : 'synced');
         }
         if (res.confirmedDayHashes) {
           setConfirmedDayHashes(res.confirmedDayHashes);
         }
+        const reconciledSettings: AppSettings = res.settings
+          ? { ...res.settings, username: 'alpharomeo1500', theme: 'dark' }
+          : settings;
         if (res.didUpdate || (res.history.length > 0 && syncHistory.length === 0)) {
+          lastCloudSignatureRef.current = computeClientDataSignature(activeUser, res.history, reconciledSettings);
           setSyncHistory(res.history);
           if (res.history.length > 0) {
             setLastSyncTime(res.history[0].timestamp);
           }
         }
-        if (res.settings && JSON.stringify(res.settings) !== JSON.stringify(settings)) {
-          setSettings({ ...res.settings, username: 'alpharomeo1500' });
+        if (res.settings && JSON.stringify(reconciledSettings) !== JSON.stringify(settings)) {
+          lastCloudSignatureRef.current = computeClientDataSignature(
+            activeUser,
+            res.didUpdate ? res.history : syncHistory,
+            reconciledSettings
+          );
+          setSettings(reconciledSettings);
         }
       } catch (err) {
         console.warn('Reconciliation error:', err);
@@ -1216,6 +1328,7 @@ export default function App() {
     const lockedUpdated: AppSettings = {
       ...updated,
       username: 'alpharomeo1500',
+      theme: 'dark',
     };
 
     if (requestedUser && requestedUser !== 'alpharomeo1500') {
@@ -1226,6 +1339,7 @@ export default function App() {
       );
     }
 
+    lastCloudSignatureRef.current = computeClientDataSignature('alpharomeo1500', syncHistory, lockedUpdated);
     setSettings(lockedUpdated);
     saveStoredSettings(lockedUpdated);
 
@@ -1289,6 +1403,7 @@ export default function App() {
 
       const nextSettings = getStoredSettings(cleanUser);
       nextSettings.username = cleanUser;
+      nextSettings.theme = 'dark';
       setSettings(nextSettings);
       saveStoredSettings(nextSettings);
 
@@ -1347,27 +1462,14 @@ export default function App() {
     );
   }, [showToast]);
 
-  // Instant theme update helper (preview + local persistence)
-  const handlePreviewTheme = useCallback((nextTheme: AppTheme) => {
+  // Theme locked strictly to base dark theme
+  const handlePreviewTheme = useCallback((_nextTheme: AppTheme) => {
     setSettings((prev) => {
-      const updated: AppSettings = { ...prev, theme: nextTheme };
+      const updated: AppSettings = { ...prev, theme: 'dark' };
       saveStoredSettings(updated);
       return updated;
     });
   }, []);
-
-  // Toggle Theme cycling (dark -> light -> ocean -> colors -> system)
-  const handleToggleTheme = () => {
-    const cycleMap: Record<AppTheme, AppTheme> = {
-      dark: 'light',
-      light: 'ocean',
-      ocean: 'colors',
-      colors: 'system',
-      system: 'dark',
-    };
-    const nextTheme = cycleMap[settings.theme] || 'dark';
-    handlePreviewTheme(nextTheme);
-  };
 
   // Compute active ratings and best mode
   const { currentElo, activeBestMode } = useMemo(() => {
@@ -1473,6 +1575,59 @@ export default function App() {
       pointsToNextMilestone,
     };
   }, [syncHistory, currentElo, settings.startElo, settings.targetElo, activeBestMode]);
+
+  // Render Visitor Block Screen if this visitor/IP has been blocked by Admin (non-bypassable unless A2F unlocked)
+  if (!isAdmin && visitorBlockState.blocked) {
+    return (
+      <div className="min-h-screen w-full bg-[#07090e] text-neutral-100 flex flex-col justify-between p-4 sm:p-8 font-sans">
+        <div />
+        <div className="w-full max-w-md mx-auto rounded-2xl border border-[#ef4444]/40 bg-[#0b0e14] p-6 sm:p-8 text-center space-y-5 shadow-2xl">
+          <div className="mx-auto h-14 w-14 rounded-2xl border border-[#ef4444]/35 bg-[#ef4444]/10 flex items-center justify-center text-[#ef4444]">
+            <Ban className="h-7 w-7" />
+          </div>
+          <div className="space-y-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-[#ef4444]/15 border border-[#ef4444]/35 text-[11px] font-bold uppercase tracking-wider text-[#ef4444]">
+              Accès Bloqué
+            </span>
+            <h1 className="text-xl font-bold text-white font-display">
+              Votre accès à ce site a été restreint
+            </h1>
+            <p className="text-xs text-neutral-300 leading-relaxed">
+              {visitorBlockState.reason ||
+                "L'administrateur a bloqué la connexion depuis cet appareil ou cette adresse IP."}
+            </p>
+          </div>
+          {clientIp && (
+            <div className="rounded-xl border border-neutral-800 bg-black/50 px-3 py-2 text-[11px] font-mono text-neutral-400">
+              Adresse détectée : {clientIp}
+            </div>
+          )}
+        </div>
+
+        <div className="pt-6 text-center">
+          <button
+            type="button"
+            onClick={() => handleOpenSecurityModal('Déverrouillage Administrateur')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium text-neutral-600 hover:text-neutral-300 transition-colors"
+          >
+            <Lock className="h-3 w-3" />
+            <span>Accès Admin</span>
+          </button>
+        </div>
+
+        <NotificationToast toasts={toasts} onDismiss={dismissToast} />
+        {securityModalOpen && (
+          <SecurityModal
+            isOpen={securityModalOpen}
+            onClose={() => setSecurityModalOpen(false)}
+            onSuccess={handleSecuritySuccess}
+            actionTitle={securityModalTitle}
+            onShowMessage={showToast}
+          />
+        )}
+      </div>
+    );
+  }
 
   // Render pause overlay when Site Activity Manager blocks the current session (device / iframe / IP)
   if (siteActivityEvaluation.isBlocked) {
@@ -1646,10 +1801,10 @@ export default function App() {
       {/* Main Content Viewport - Fully responsive for Mobile, Tablet & PC */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-28 sm:pb-8 space-y-5 sm:space-y-8">
         {/* Scheduled Countdown Warning Banner */}
-        {siteActivityEvaluation.isCountdownActive && siteActivityConfig.showCountdownBanner && (
-          <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs backdrop-blur-sm">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-2 font-black text-amber-300">
+        {siteActivityEvaluation.isCountdownActive && (isAdmin || siteActivityConfig.showCountdownBanner) && (
+          <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2 font-black text-amber-300">
                 <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
                 <span>
                   Pause programmée ({SITE_PAUSE_MODE_META[siteActivityConfig.mode].label}) dans{' '}
@@ -1657,44 +1812,144 @@ export default function App() {
                     {formatRemainingDuration(siteActivityEvaluation.secondsUntilPause)}
                   </span>
                 </span>
+                {isAdmin && siteActivityConfig.upcomingVersion && (
+                  <span className="px-2 py-0.5 rounded bg-sky-500/15 border border-sky-500/35 text-sky-300 font-mono text-[10px]">
+                    v{siteActivityConfig.upcomingVersion.replace(/^v+/i, '')}
+                  </span>
+                )}
               </div>
               <p className="text-neutral-300">
-                {siteActivityConfig.customTitle} — Pensez à enregistrer vos saisies avant l'interruption.
+                {siteActivityConfig.customTitle} — Pensez à enregistrer vos saisies avant l&apos;interruption.
               </p>
+              {isAdmin && (
+                <p className="text-[11px] font-mono text-amber-200/90">
+                  Début : {siteActivityConfig.pauseAtTimestamp ? formatJsonBinTimestamp(siteActivityConfig.pauseAtTimestamp) : 'Bientôt'}
+                  {' · '}
+                  Fin :{' '}
+                  {siteActivityConfig.resumeType === 'manual'
+                    ? 'Réouverture manuelle'
+                    : siteActivityConfig.resumeAtTimestamp
+                    ? `${formatJsonBinTimestamp(siteActivityConfig.resumeAtTimestamp)} (${
+                        siteActivityConfig.autoResume ? 'Auto' : 'Estimatif'
+                      })`
+                    : 'Non définie'}
+                </p>
+              )}
             </div>
             {isAdmin && (
-              <button
-                type="button"
-                onClick={() => setCurrentTab('admin')}
-                className="px-3 py-1.5 rounded-xl bg-amber-500 text-black font-bold text-xs hover:bg-amber-400 transition-colors shrink-0 self-start sm:self-center"
-              >
-                Gérer la programmation
-              </button>
+              <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    saveSiteActivity({
+                      ...siteActivityConfig,
+                      enabled: false,
+                      revision: (siteActivityConfig.revision || 0) + 1,
+                      updatedAt: Date.now(),
+                    }).then((res) => {
+                      setSiteActivityConfig(res.config);
+                      showToast('Programmation de pause annulée.', 'success', 'Activité du site');
+                    });
+                  }}
+                  className="px-3 py-1.5 rounded-xl border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-200 font-bold text-xs transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentTab('admin')}
+                  className="px-3 py-1.5 rounded-xl bg-amber-500 text-black font-bold text-xs hover:bg-amber-400 transition-colors"
+                >
+                  Gérer la programmation
+                </button>
+              </div>
             )}
           </div>
         )}
 
-        {/* Admin Bypass Active Banner while site is paused for visitors */}
+        {/* Admin Bypass Active Banner while site is paused for visitors (Complete Schedule Info) */}
         {siteActivityEvaluation.isBypassedByAdmin && (
-          <div className="rounded-2xl border border-[#10b981]/35 bg-[#10b981]/10 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs backdrop-blur-sm">
-            <div className="flex items-center gap-2.5">
-              <span className="h-2 w-2 rounded-full bg-[#10b981]" />
-              <div>
+          <div className="rounded-2xl border border-[#10b981]/35 bg-[#10b981]/10 p-3.5 sm:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+            <div className="space-y-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-[#10b981] shrink-0" />
                 <strong className="text-[#10b981] font-bold">
                   Site en pause ({SITE_PAUSE_MODE_META[siteActivityConfig.mode].label})
                 </strong>
-                <span className="text-neutral-300 ml-2">
-                  Accès maintenu via votre session Administrateur 2FA.
+                {siteActivityConfig.upcomingVersion && (
+                  <span className="px-2 py-0.5 rounded bg-sky-500/15 border border-sky-500/35 text-sky-300 font-mono text-[10px] font-bold">
+                    v{siteActivityConfig.upcomingVersion.replace(/^v+/i, '')}
+                  </span>
+                )}
+                <span className="text-[11px] font-mono text-neutral-400">
+                  rév. #{siteActivityConfig.revision || 1}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-neutral-300 font-mono">
+                <span>
+                  Fin :{' '}
+                  {siteActivityConfig.resumeType === 'manual' ? (
+                    <strong className="text-amber-300">Réouverture manuelle</strong>
+                  ) : siteActivityConfig.resumeAtTimestamp ? (
+                    <>
+                      <strong className="text-white">
+                        {formatJsonBinTimestamp(siteActivityConfig.resumeAtTimestamp)}
+                      </strong>{' '}
+                      {siteActivityEvaluation.secondsUntilResume !== null && (
+                        <span className="text-[#10b981] font-bold">
+                          (dans {formatRemainingDuration(siteActivityEvaluation.secondsUntilResume)})
+                        </span>
+                      )}
+                      {' · '}
+                      <span className="text-neutral-400">
+                        {siteActivityConfig.autoResume ? 'Automatique' : 'Estimatif'}
+                      </span>
+                    </>
+                  ) : (
+                    'À définir'
+                  )}
+                </span>
+                <span aria-hidden="true" className="text-neutral-600">·</span>
+                <span>
+                  Cible :{' '}
+                  {siteActivityConfig.devices?.all
+                    ? 'Tous appareils'
+                    : [
+                        siteActivityConfig.devices?.desktop && 'PC',
+                        siteActivityConfig.devices?.mobile && 'Mobile',
+                        siteActivityConfig.devices?.tablet && 'Tablette',
+                      ]
+                        .filter(Boolean)
+                        .join(' + ')}
                 </span>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setCurrentTab('admin')}
-              className="px-3 py-1.5 rounded-xl bg-[#10b981] text-black font-bold text-xs hover:bg-emerald-400 transition-colors shrink-0 self-start sm:self-center"
-            >
-              Activité du site
-            </button>
+            <div className="flex flex-wrap items-center gap-2 shrink-0 self-start lg:self-center">
+              <button
+                type="button"
+                onClick={() => {
+                  saveSiteActivity({
+                    ...siteActivityConfig,
+                    enabled: false,
+                    revision: (siteActivityConfig.revision || 0) + 1,
+                    updatedAt: Date.now(),
+                  }).then((res) => {
+                    setSiteActivityConfig(res.config);
+                    showToast('Le site est de nouveau en ligne pour tous les visiteurs.', 'success', 'Site en ligne');
+                  });
+                }}
+                className="px-3 py-1.5 rounded-xl border border-[#10b981]/40 bg-black/40 hover:bg-black/70 text-[#10b981] font-bold text-xs transition-colors"
+              >
+                Remettre en ligne
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentTab('admin')}
+                className="px-3 py-1.5 rounded-xl bg-[#10b981] text-black font-bold text-xs hover:bg-emerald-400 transition-colors"
+              >
+                Activité du site
+              </button>
+            </div>
           </div>
         )}
         {/* TAB 1: DASHBOARD */}
@@ -1767,6 +2022,7 @@ export default function App() {
               setSyncHistory(updated);
               persistToCloudAndNotify(settings.username, updated, settings, {
                 force: true,
+                replaceExact: true,
                 notifySuccess: true,
               });
             }}
@@ -1811,6 +2067,7 @@ export default function App() {
               setSyncHistory(updated);
               persistToCloudAndNotify(settings.username, updated, settings, {
                 force: true,
+                replaceExact: true,
                 notifySuccess: true,
               });
             }}
@@ -1927,6 +2184,7 @@ export default function App() {
             setSyncHistory(updated);
             persistToCloudAndNotify(settings.username, updated, settings, {
               force: true,
+              replaceExact: true,
               notifySuccess: false,
             });
           }}
@@ -1972,9 +2230,13 @@ export default function App() {
               { isSpectator: Boolean(userSession?.isSpectator), forcePull: true }
             );
             if (res.didUpdate) {
+              const nextSettings: AppSettings = res.settings
+                ? { ...res.settings, username: 'alpharomeo1500', theme: 'dark' }
+                : settings;
+              lastCloudSignatureRef.current = computeClientDataSignature(activeUser, res.history, nextSettings);
               setSyncHistory(res.history);
               if (res.history.length > 0) setLastSyncTime(res.history[0].timestamp);
-              if (res.settings) setSettings({ ...res.settings, username: 'alpharomeo1500' });
+              if (res.settings) setSettings(nextSettings);
             }
             if (res.confirmedDayHashes) setConfirmedDayHashes(res.confirmedDayHashes);
             if (res.lastJsonBinSyncTime) setLastJsonBinSyncTime(res.lastJsonBinSyncTime);
@@ -2001,7 +2263,7 @@ export default function App() {
       )}
 
       {/* Editorial Clean Footer - Responsive for Mobile & Tablet */}
-      <footer className="relative z-10 border-t border-white/[0.06] bg-[#070a10]/90 pt-4 pb-24 sm:py-6 text-center text-xs text-neutral-400 transition-colors backdrop-blur-md">
+      <footer className="relative z-10 border-t border-white/[0.06] bg-[#070a10] pt-4 pb-28 sm:py-6 text-center text-xs text-neutral-400 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3 text-center sm:text-left">
           <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
             <span className="font-bold text-white tracking-wide">ROAD TO 2000 ELO</span>
@@ -2085,9 +2347,13 @@ export default function App() {
               { isSpectator: Boolean(userSession?.isSpectator), forcePull: true }
             );
             if (res.didUpdate) {
+              const nextSettings: AppSettings = res.settings
+                ? { ...res.settings, username: 'alpharomeo1500', theme: 'dark' }
+                : settings;
+              lastCloudSignatureRef.current = computeClientDataSignature(activeUser, res.history, nextSettings);
               setSyncHistory(res.history);
               if (res.history.length > 0) setLastSyncTime(res.history[0].timestamp);
-              if (res.settings) setSettings({ ...res.settings, username: 'alpharomeo1500' });
+              if (res.settings) setSettings(nextSettings);
             }
             if (res.confirmedDayHashes) setConfirmedDayHashes(res.confirmedDayHashes);
             if (res.lastJsonBinSyncTime) setLastJsonBinSyncTime(res.lastJsonBinSyncTime);

@@ -21,7 +21,12 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { ChessComProfileResponse, ChessComStatsResponse } from '../types/chess';
-import { formatJsonBinShortTime, formatJsonBinTimestamp } from '../utils/cloudSync';
+import {
+  formatJsonBinShortTime,
+  formatJsonBinTimestamp,
+  JSONBIN_TEMPORARILY_DISABLED,
+  JsonBinSyncState,
+} from '../utils/cloudSync';
 import { FirebaseIndicatorStatus } from '../utils/syncDiagnostics';
 import { NavTab } from './Navbar';
 import { UserDropdown } from './UserDropdown';
@@ -39,7 +44,7 @@ interface SidebarProps {
   onOpenSecurityModal: (title?: string, onGranted?: () => void) => void;
   onLockAdmin: () => void;
   onOpenNetworkModal?: () => void;
-  jsonBinStatus?: 'synced' | 'pending_keys' | 'error' | 'syncing';
+  jsonBinStatus?: JsonBinSyncState;
   onOpenFirebaseModal?: () => void;
   firebaseStatus?: FirebaseIndicatorStatus;
   lastFirebaseSyncTime?: number | null;
@@ -134,7 +139,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside
       aria-label="Navigation latérale gauche"
-      className={`hidden lg:flex fixed top-0 left-0 bottom-0 z-40 flex-col bg-[#07090e]/95 backdrop-blur-2xl border-r border-neutral-800/80 transition-all duration-300 ease-in-out shadow-2xl ${
+      className={`hidden lg:flex fixed top-0 left-0 bottom-0 z-40 flex-col bg-[#07090e] border-r border-neutral-800/80 transition-all duration-300 ease-in-out shadow-2xl ${
         isExpanded ? 'w-64' : 'w-20'
       }`}
     >
@@ -267,7 +272,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             type="button"
             onClick={onOpenNetworkModal}
             title={`Réseau : ${isNetworkOnline ? 'En ligne' : 'Déconnecté'} · JSONBin : ${
-              jsonBinStatus === 'synced'
+              JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled'
+                ? 'En pause (Test Firebase)'
+                : jsonBinStatus === 'synced'
                 ? 'Synchronisé'
                 : jsonBinStatus === 'error'
                 ? 'Erreur'
@@ -282,6 +289,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             } ${
               !isNetworkOnline || jsonBinStatus === 'error'
                 ? 'border-[#ef4444]/40 text-[#ef4444]'
+                : JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled'
+                ? 'border-amber-500/40 text-amber-300'
                 : jsonBinStatus === 'synced'
                 ? 'border-[#10b981]/40 text-[#10b981]'
                 : 'border-[#facc15]/40 text-[#facc15]'
@@ -293,12 +302,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="flex flex-col min-w-0">
                   <span className="text-neutral-200">Cache JSONBin</span>
                   <span className="text-[10px] font-mono text-neutral-400 truncate">
-                    {lastJsonBinSyncTime ? `MàJ : ${formatJsonBinShortTime(lastJsonBinSyncTime)}` : 'Jamais MàJ'}
+                    {JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled'
+                      ? 'Test Firebase actif'
+                      : lastJsonBinSyncTime
+                      ? `MàJ : ${formatJsonBinShortTime(lastJsonBinSyncTime)}`
+                      : 'Jamais MàJ'}
                   </span>
                 </div>
                 <span
                   className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono shrink-0 ${
-                    jsonBinStatus === 'error'
+                    JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled'
+                      ? 'bg-amber-500/20 text-amber-300'
+                      : jsonBinStatus === 'error'
                       ? 'bg-[#ef4444]/20 text-[#ef4444]'
                       : jsonBinStatus === 'synced'
                       ? 'bg-[#10b981]/20 text-[#10b981]'
@@ -307,14 +322,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <span
                     className={`h-1.5 w-1.5 rounded-full ${
-                      jsonBinStatus === 'error'
+                      JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled'
+                        ? 'bg-amber-400'
+                        : jsonBinStatus === 'error'
                         ? 'bg-[#ef4444]'
                         : jsonBinStatus === 'synced'
                         ? 'bg-[#10b981]'
                         : 'bg-[#facc15]'
                     }`}
                   />
-                  {jsonBinStatus === 'error' ? 'Err' : jsonBinStatus === 'synced' ? 'OK' : 'Sync'}
+                  {JSONBIN_TEMPORARILY_DISABLED || jsonBinStatus === 'disabled'
+                    ? 'Pause'
+                    : jsonBinStatus === 'error'
+                    ? 'Err'
+                    : jsonBinStatus === 'synced'
+                    ? 'OK'
+                    : 'Sync'}
                 </span>
               </div>
             )}

@@ -306,14 +306,8 @@ export async function mirrorDataToFirestore(params: {
       params.settings.autoSyncMinutes <= 1440
         ? Math.round(params.settings.autoSyncMinutes)
         : 15;
-    const theme =
-      params.settings?.theme === 'dark' ||
-      params.settings?.theme === 'light' ||
-      params.settings?.theme === 'ocean' ||
-      params.settings?.theme === 'colors' ||
-      params.settings?.theme === 'system'
-        ? params.settings.theme
-        : 'dark';
+    // Theme is locked to base dark mode across the entire platform
+    const theme: AppTheme = 'dark';
 
     const playerPayload: Record<string, any> = {
       ownerUid: user.uid,
@@ -714,7 +708,6 @@ export async function fetchPlayerDataFromFirestore(username: string): Promise<{
       return { available: false, history: [], reason: 'empty' };
     }
 
-    const validThemes: AppTheme[] = ['dark', 'light', 'ocean', 'colors', 'system'];
     const validTrajectories: TrajectoryModel[] = ['linear', 'milestones', 'custom'];
 
     let parsedHistory = undefined;
@@ -729,6 +722,7 @@ export async function fetchPlayerDataFromFirestore(username: string): Promise<{
 
     const settingsPatch: Partial<AppSettings> = {
       username: playerId,
+      theme: 'dark',
       ...(typeof pData.startElo === 'number' ? { startElo: pData.startElo } : {}),
       ...(typeof pData.targetElo === 'number' ? { targetElo: pData.targetElo } : {}),
       ...(typeof pData.startDate === 'string' ? { startDate: pData.startDate } : {}),
@@ -745,7 +739,6 @@ export async function fetchPlayerDataFromFirestore(username: string): Promise<{
       ...(typeof pData.autoSyncMinutes === 'number'
         ? { autoSyncMinutes: pData.autoSyncMinutes }
         : {}),
-      ...(validThemes.includes(pData.theme) ? { theme: pData.theme } : {}),
       ...(typeof pData.siteVersion === 'string' && pData.siteVersion.trim()
         ? { siteVersion: pData.siteVersion.trim() }
         : {}),
@@ -803,6 +796,153 @@ export async function fetchPlayerDataFromFirestore(username: string): Promise<{
     }
     return { available: false, history: [], reason: 'error' };
   }
+}
+
+/**
+ * Live Cross-Device Real-Time Player Data & Daily Records Subscription:
+ * Keeps PC and Mobile synchronized instantaneously whenever sync records or settings change in Firestore.
+ */
+export function subscribePlayerDataRealtime(
+  username: string,
+  callbacks: {
+    onUpdate: (data: {
+      history?: SyncRecord[];
+      settingsPatch?: Partial<AppSettings>;
+      updatedAt?: string | null;
+    }) => void;
+    onError?: (err: Error) => void;
+  }
+): Unsubscribe {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) {
+    return () => {};
+  }
+
+  const playerId = sanitizePlayerId(username);
+  const validTrajectories: TrajectoryModel[] = ['linear', 'milestones', 'custom'];
+  const validSources: SyncRecord['source'][] = [
+    'API Chess.com directe',
+    'Proxy API',
+    'Import fichier',
+    'Saisie manuelle',
+  ];
+
+  const unsubPlayer = onSnapshot(
+    doc(db, 'players', playerId),
+    (snap) => {
+      if (!snap.exists()) return;
+      const pData = snap.data();
+
+      let parsedHistory = undefined;
+      if (typeof pData.siteVersionHistoryJson === 'string' && pData.siteVersionHistoryJson.trim()) {
+        try {
+          parsedHistory = normalizeSiteReleaseHistory(JSON.parse(pData.siteVersionHistoryJson));
+        } catch {}
+      }
+      const latestRelease =
+        Array.isArray(parsedHistory) && parsedHistory.length > 0 ? parsedHistory[0] : undefined;
+
+      const settingsPatch: Partial<AppSettings> = {
+        username: playerId,
+        theme: 'dark',
+        ...(typeof pData.startElo === 'number' ? { startElo: pData.startElo } : {}),
+        ...(typeof pData.targetElo === 'number' ? { targetElo: pData.targetElo } : {}),
+        ...(typeof pData.startDate === 'string' ? { startDate: pData.startDate } : {}),
+        ...(typeof pData.targetDate === 'string' ? { targetDate: pData.targetDate } : {}),
+        ...(pData.selectedMode === 'auto' ||
+        pData.selectedMode === 'bullet' ||
+        pData.selectedMode === 'blitz' ||
+        pData.selectedMode === 'rapid'
+          ? { selectedMode: pData.selectedMode }
+          : {}),
+        ...(validTrajectories.includes(pData.trajectoryModel)
+          ? { trajectoryModel: pData.trajectoryModel }
+          : {}),
+        ...(typeof pData.autoSyncMinutes === 'number'
+          ? { autoSyncMinutes: pData.autoSyncMinutes }
+          : {}),
+        ...(typeof pData.siteVersion === 'string' && pData.siteVersion.trim()
+          ? { siteVersion: pData.siteVersion.trim() }
+          : {}),
+        ...(typeof pData.siteVersionNote === 'string'
+          ? { siteVersionNote: pData.siteVersionNote }
+          : {}),
+        ...(typeof pData.siteVersionTitle === 'string'
+          ? { siteVersionTitle: pData.siteVersionTitle }
+          : {}),
+        ...(pData.siteVersionCategory
+          ? { siteVersionCategory: normalizeReleaseCategory(pData.siteVersionCategory) }
+          : {}),
+        ...(latestRelease?.changes ? { siteVersionChanges: latestRelease.changes } : {}),
+        ...(Array.isArray(parsedHistory) ? { siteVersionHistory: parsedHistory } : {}),
+        ...(typeof pData.siteVersionUpdatedAt === 'string'
+          ? { siteVersionUpdatedAt: pData.siteVersionUpdatedAt }
+          : {}),
+      };
+
+      callbacks.onUpdate({
+        settingsPatch,
+        updatedAt: formatFirestoreTimestamp(pData.updatedAt),
+      });
+    },
+    (error) => {
+      if (callbacks.onError) {
+        callbacks.onError(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+  );
+
+  const recordsQuery = query(
+    collection(db, 'players', playerId, 'dailyRecords'),
+    orderBy('dayKey', 'desc')
+  );
+
+  const unsubRecords = onSnapshot(
+    recordsQuery,
+    (snapshot) => {
+      // Ignore empty snapshots only if local cache hasn't hydrated yet? No, empty remote purge should apply when from server.
+      const history: SyncRecord[] = snapshot.docs
+        .map((docSnap) => {
+          const d = docSnap.data();
+          const source = validSources.includes(d.source) ? d.source : 'API Chess.com directe';
+          return {
+            id: typeof d.recordId === 'string' && d.recordId ? d.recordId : docSnap.id,
+            username: playerId,
+            timestamp: typeof d.timestamp === 'string' ? d.timestamp : `${d.dayKey}T12:00:00.000Z`,
+            bullet: typeof d.bullet === 'number' ? d.bullet : null,
+            blitz: typeof d.blitz === 'number' ? d.blitz : null,
+            rapid: typeof d.rapid === 'number' ? d.rapid : null,
+            puzzles: typeof d.puzzles === 'number' ? d.puzzles : null,
+            ...(typeof d.puzzlesConfirmed === 'boolean' ? { puzzlesConfirmed: d.puzzlesConfirmed } : {}),
+            ...(typeof d.puzzlesUpdatedAt === 'string' ? { puzzlesUpdatedAt: d.puzzlesUpdatedAt } : {}),
+            bestRating: typeof d.bestRating === 'number' ? d.bestRating : 1500,
+            bestMode: isValidMode(d.bestMode),
+            source,
+            ...(typeof d.note === 'string' && d.note ? { note: d.note } : {}),
+          };
+        })
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      updateFirebaseDiagnostics({
+        connection: 'online',
+        activeReadSource: 'firebase',
+        lastRealtimeEventAt: Date.now(),
+        recordsCount: history.length,
+      });
+
+      callbacks.onUpdate({ history });
+    },
+    (error) => {
+      if (callbacks.onError) {
+        callbacks.onError(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+  );
+
+  return () => {
+    unsubPlayer();
+    unsubRecords();
+  };
 }
 
 function mapFirestoreSiteActivityDoc(d: Record<string, any>): SiteActivityConfig {

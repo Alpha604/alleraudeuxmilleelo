@@ -28,6 +28,7 @@ import { safeApiFetch } from '../utils/backendApi';
 import {
   fetchJsonBinStatus,
   formatJsonBinTimestamp,
+  JSONBIN_TEMPORARILY_DISABLED,
   JsonBinStatusInfo,
   pullFromJsonBin,
   saveJsonBinConfig,
@@ -247,7 +248,7 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
       aria-modal="true"
       aria-labelledby="network-modal-title"
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 animate-in fade-in duration-200"
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -335,7 +336,12 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
               </div>
 
               {/* Status Pill */}
-              {statusInfo?.configured ? (
+              {JSONBIN_TEMPORARILY_DISABLED || statusInfo?.disabledForFirebaseTest ? (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-sky-500/15 text-sky-300 border border-sky-500/40">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                  <span>En pause (Test Firebase)</span>
+                </div>
+              ) : statusInfo?.configured ? (
                 statusInfo.lastStatus === 'synced' ? (
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/40">
                     <span className="h-1.5 w-1.5 rounded-full bg-[#10b981]" />
@@ -359,6 +365,12 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
                 </div>
               )}
             </div>
+
+            {(JSONBIN_TEMPORARILY_DISABLED || statusInfo?.disabledForFirebaseTest) && (
+              <div className="p-3 rounded-xl bg-sky-500/10 border border-sky-500/35 text-xs text-sky-200 leading-relaxed">
+                <strong>Mode Test Firebase actif :</strong> les requêtes sortantes JSONBin sont temporairement suspendues pour vérifier la prise en charge complète par Firebase. Vos identifiants (Bin ID), clés et données existantes sur JSONBin sont intégralement conservés et intacts.
+              </div>
+            )}
 
             <p className="text-xs text-neutral-400">
               {statusInfo?.configured ? (
@@ -401,8 +413,8 @@ export const NetworkAndJsonBinModal: React.FC<NetworkAndJsonBinModalProps> = ({
               </div>
             )}
 
-            {/* Action buttons if configured */}
-            {statusInfo?.configured && (
+            {/* Action buttons if configured and not paused */}
+            {statusInfo?.configured && !(JSONBIN_TEMPORARILY_DISABLED || statusInfo?.disabledForFirebaseTest) && (
               <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-neutral-800">
                 <button
                   onClick={handleManualSyncNow}

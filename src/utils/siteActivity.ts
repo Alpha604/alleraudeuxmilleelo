@@ -9,6 +9,7 @@ import {
   subscribeSiteActivityFirestore,
 } from './firebaseMirror';
 import { safeApiFetch } from './backendApi';
+import { JSONBIN_TEMPORARILY_DISABLED } from './cloudSync';
 import { resolveSyncIssuesByKeyPrefix } from './syncDiagnostics';
 
 export { subscribeSiteActivityFirestore };
@@ -483,6 +484,7 @@ function getRegistryCreds() {
 }
 
 async function pullSiteActivityFromCloudDirect(): Promise<SiteActivityConfig | null> {
+  if (JSONBIN_TEMPORARILY_DISABLED) return null;
   const { binId, apiKey } = getRegistryCreds();
   if (!binId || typeof fetch === 'undefined') return null;
 
@@ -509,6 +511,9 @@ async function pullSiteActivityFromCloudDirect(): Promise<SiteActivityConfig | n
 async function pushSiteActivityToCloudDirect(
   config: SiteActivityConfig
 ): Promise<{ success: boolean; error?: string }> {
+  if (JSONBIN_TEMPORARILY_DISABLED) {
+    return { success: false };
+  }
   const { binId, apiKey } = getRegistryCreds();
   if (!binId || typeof fetch === 'undefined') {
     return { success: false, error: 'Bin Cloud non configuré' };
@@ -682,8 +687,8 @@ export async function saveSiteActivity(
           setLocalSiteActivityConfig(serverNorm);
           const fbRes = await firestorePromise;
 
-          // If Express failed to reach JSONBin, try direct client push as fallback
-          if (!data.cloudSynced) {
+          // If Express could not confirm cloud sync and JSONBin is active, try direct client push
+          if (!data.cloudSynced && !JSONBIN_TEMPORARILY_DISABLED) {
             const directFallback = await pushSiteActivityToCloudDirect(serverNorm);
             return {
               success: directFallback.success || fbRes.ok,
@@ -696,17 +701,17 @@ export async function saveSiteActivity(
           return {
             success: true,
             config: serverNorm,
-            cloudSynced: true,
+            cloudSynced: Boolean(fbRes.ok || data.cloudSynced),
           };
         }
       }
     }
   } catch {}
 
-  const [fbRes, directRes] = await Promise.all([
-    firestorePromise,
-    pushSiteActivityToCloudDirect(normalized),
-  ]);
+  const fbRes = await firestorePromise;
+  const directRes = JSONBIN_TEMPORARILY_DISABLED
+    ? { success: false, error: undefined }
+    : await pushSiteActivityToCloudDirect(normalized);
 
   return {
     success: fbRes.ok || directRes.success,
